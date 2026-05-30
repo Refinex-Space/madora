@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "desktop:build": "tauri build",
+    "desktop:dev": "tauri dev",
+    "build:desktop:web": "node scripts/build-tauri-web.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.195",
@@ -48,6 +52,13 @@
     "@platejs/toggle": "^53.0.0",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-toolbar": "^1.1.11",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-shell": "^2.3.5",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@udecode/cn": "^52.3.4",
     "@uploadthing/react": "^7.3.3",
     "ai": "^6.0.193",
@@ -87,6 +98,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.11.2",
+    "@types/lodash": "^4.17.24",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
