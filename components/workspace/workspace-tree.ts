@@ -1,18 +1,5 @@
 import type { WorkspaceNode, WorkspaceSearchResult } from './workspace-types';
 
-export function normalizeMarkdownTitle(content: string, fileName: string) {
-  const heading = content
-    .split(/\r?\n/, 80)
-    .map((line) => line.trim())
-    .find((line) => line.startsWith('# ') && line.length > 2);
-
-  if (heading) {
-    return heading.replace(/^#\s+/, '').trim();
-  }
-
-  return fileName.replace(/\.(md|mdx)$/i, '');
-}
-
 export function flattenDocuments(nodes: WorkspaceNode[]): WorkspaceSearchResult[] {
   return nodes.flatMap((node) => {
     if (node.kind === 'document') {
@@ -20,7 +7,7 @@ export function flattenDocuments(nodes: WorkspaceNode[]): WorkspaceSearchResult[
         {
           id: node.id,
           name: node.name,
-          title: node.title || node.name.replace(/\.(md|mdx)$/i, ''),
+          title: node.title || node.name.replace(/\.plate\.json$/i, ''),
           relativePath: node.relativePath,
           absolutePath: node.absolutePath,
         },

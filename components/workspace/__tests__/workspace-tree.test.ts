@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   filterWorkspaceNodes,
   flattenDocuments,
-  normalizeMarkdownTitle,
   searchWorkspace,
 } from '../workspace-tree';
 import type { WorkspaceNode } from '../workspace-types';
@@ -18,38 +17,33 @@ const nodes: WorkspaceNode[] = [
     children: [
       {
         id: 'doc-a',
-        name: 'intro.md',
+        name: 'intro.plate.json',
         kind: 'document',
-        relativePath: 'Guides/intro.md',
-        absolutePath: '/repo/Guides/intro.md',
+        relativePath: 'Guides/intro.plate.json',
+        absolutePath: '/repo/Guides/intro.plate.json',
         title: '入门指南',
       },
     ],
   },
   {
     id: 'doc-root',
-    name: 'README.md',
+    name: 'README.plate.json',
     kind: 'document',
-    relativePath: 'README.md',
-    absolutePath: '/repo/README.md',
+    relativePath: 'README.plate.json',
+    absolutePath: '/repo/README.plate.json',
     title: '项目说明',
   },
 ];
 
 describe('workspace-tree', () => {
-  it('normalizes first markdown h1 and falls back to filename', () => {
-    expect(normalizeMarkdownTitle('# 标题\n\n正文', 'a.md')).toBe('标题');
-    expect(normalizeMarkdownTitle('正文', 'note.md')).toBe('note');
-  });
-
-  it('flattens document nodes only', () => {
+  it('flattens native Plate document nodes only', () => {
     expect(flattenDocuments(nodes).map((item) => item.relativePath)).toEqual([
-      'Guides/intro.md',
-      'README.md',
+      'Guides/intro.plate.json',
+      'README.plate.json',
     ]);
   });
 
-  it('searches by filename, path, and h1 title', () => {
+  it('searches by filename, path, and native title', () => {
     expect(searchWorkspace(nodes, '入门')).toHaveLength(1);
     expect(searchWorkspace(nodes, 'guides')).toHaveLength(1);
     expect(searchWorkspace(nodes, 'readme')).toHaveLength(1);
@@ -59,7 +53,11 @@ describe('workspace-tree', () => {
     expect(filterWorkspaceNodes(nodes, 'intro')).toEqual([
       expect.objectContaining({
         kind: 'directory',
-        children: [expect.objectContaining({ relativePath: 'Guides/intro.md' })],
+        children: [
+          expect.objectContaining({
+            relativePath: 'Guides/intro.plate.json',
+          }),
+        ],
       }),
     ]);
   });
