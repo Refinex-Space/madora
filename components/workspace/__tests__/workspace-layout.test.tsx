@@ -14,7 +14,33 @@ import { WorkspaceLayout } from '../workspace-layout';
 import type { WorkspaceSnapshot } from '../workspace-types';
 
 vi.mock('@/components/editor/plate-editor', () => ({
-  PlateEditor: () => <div data-testid="plate-editor" />,
+  PlateEditor: ({
+    onTocSnapshotChange,
+  }: {
+    onTocSnapshotChange?: (snapshot: unknown) => void;
+  }) => (
+    <button
+      data-testid="plate-editor"
+      type="button"
+      onClick={() =>
+        onTocSnapshotChange?.({
+          activeContentId: 'h2-a',
+          items: [
+            {
+              depth: 1,
+              id: 'h2-a',
+              originalDepth: 2,
+              title: '背景',
+              type: 'h2',
+            },
+          ],
+          scrollToHeading: vi.fn(),
+        })
+      }
+    >
+      editor
+    </button>
+  ),
 }));
 
 vi.mock('../workspace-api', async (importOriginal) => {
@@ -143,6 +169,28 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByTestId('ai-panel-icon-button').className).not.toContain(
       'bg-[#3574f0]',
     );
+  });
+
+  it('renders toc snapshot from the active Plate editor in the right toc panel', async () => {
+    const user = userEvent.setup();
+    readPlateDocumentMock.mockResolvedValueOnce({
+      envelope: {
+        schemaVersion: 1,
+        title: '项目说明',
+        createdAt: '2026-05-30T00:00:00.000Z',
+        updatedAt: '2026-05-30T00:00:00.000Z',
+        content: [{ children: [{ text: '项目说明' }], type: 'h1' }],
+      },
+      modifiedAt: 1,
+      path: '/repo/README.plate.json',
+    });
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByText('项目说明'));
+    await user.click(await screen.findByTestId('plate-editor'));
+    await user.click(screen.getByRole('button', { name: '展开目录面板' }));
+
+    expect(screen.getByRole('button', { name: '背景' })).toBeTruthy();
   });
 
   it('shows workspace guide in the top workspace entry when there is no history', async () => {

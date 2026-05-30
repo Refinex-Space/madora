@@ -5,6 +5,10 @@ import * as React from 'react';
 import { normalizeStaticValue, type Value } from 'platejs';
 import { Plate, usePlateEditor } from 'platejs/react';
 
+import {
+  DocumentTocBridge,
+  type DocumentTocSnapshot,
+} from '@/components/editor/document-toc-bridge';
 import { EditorKit } from '@/components/editor/editor-kit';
 import { SettingsDialog } from '@/components/editor/settings-dialog';
 import { Editor, EditorContainer } from '@/components/ui/editor';
@@ -13,6 +17,7 @@ interface PlateEditorProps {
   documentKey?: string;
   value?: Value;
   onSaveRequested?: () => void;
+  onTocSnapshotChange?: (snapshot: DocumentTocSnapshot) => void;
   onValueChange?: (value: Value) => void;
   variant?: 'demo' | 'workspace';
 }
@@ -22,6 +27,7 @@ const emptyValue: Value = [{ children: [{ text: '' }], type: 'p' }];
 export function PlateEditor({
   documentKey,
   onSaveRequested,
+  onTocSnapshotChange,
   onValueChange,
   value,
   variant = 'demo',
@@ -58,6 +64,10 @@ export function PlateEditor({
           }}
         />
       </EditorContainer>
+
+      {variant === 'workspace' && onTocSnapshotChange ? (
+        <DocumentTocBridge onSnapshotChange={onTocSnapshotChange} />
+      ) : null}
 
       <SettingsDialog />
     </Plate>

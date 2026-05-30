@@ -12,6 +12,9 @@ const getApiMock = vi.fn(() => ({
   },
 }));
 const usePlateEditorMock = vi.fn();
+const { documentTocBridgeMock } = vi.hoisted(() => ({
+  documentTocBridgeMock: vi.fn(),
+}));
 
 vi.mock('platejs', () => ({
   normalizeStaticValue: vi.fn((value) => value),
@@ -57,6 +60,18 @@ vi.mock('@/components/editor/settings-dialog', () => ({
   SettingsDialog: () => null,
 }));
 
+vi.mock('@/components/editor/document-toc-bridge', () => ({
+  DocumentTocBridge: ({
+    onSnapshotChange,
+  }: {
+    onSnapshotChange: (snapshot: unknown) => void;
+  }) => {
+    documentTocBridgeMock(onSnapshotChange);
+
+    return <div data-testid="document-toc-bridge" />;
+  },
+}));
+
 vi.mock('@/components/ui/editor', () => ({
   Editor: ({
     onKeyDown,
@@ -84,6 +99,7 @@ describe('PlateEditor', () => {
     serializeMock.mockReset();
     getApiMock.mockClear();
     usePlateEditorMock.mockClear();
+    documentTocBridgeMock.mockClear();
   });
 
   it('initializes workspace editor with native Plate value', () => {
@@ -143,5 +159,27 @@ describe('PlateEditor', () => {
     });
 
     expect(onSaveRequested).toHaveBeenCalledTimes(1);
+  });
+
+  it('mounts document toc bridge for workspace editor', () => {
+    const onTocSnapshotChange = vi.fn();
+
+    render(
+      <PlateEditor
+        documentKey="/repo/guide.plate.json:1"
+        value={[{ children: [{ text: '标题' }], type: 'h1' }]}
+        variant="workspace"
+        onTocSnapshotChange={onTocSnapshotChange}
+      />,
+    );
+
+    expect(screen.getByTestId('document-toc-bridge')).toBeTruthy();
+    expect(documentTocBridgeMock).toHaveBeenCalledWith(onTocSnapshotChange);
+  });
+
+  it('does not mount document toc bridge for demo editor', () => {
+    render(<PlateEditor variant="demo" />);
+
+    expect(screen.queryByTestId('document-toc-bridge')).toBeNull();
   });
 });

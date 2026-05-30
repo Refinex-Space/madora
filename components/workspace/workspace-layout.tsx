@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Folder, FolderOpen } from 'lucide-react';
 
+import type { DocumentTocSnapshot } from '@/components/editor/document-toc-bridge';
 import { PlateEditor } from '@/components/editor/plate-editor';
 import { cn } from '@/lib/utils';
 
@@ -21,6 +22,8 @@ export function WorkspaceLayout({
   initialSnapshot = null,
 }: WorkspaceLayoutProps) {
   const workspace = useWorkspace(initialSnapshot);
+  const [tocSnapshot, setTocSnapshot] =
+    React.useState<DocumentTocSnapshot | null>(null);
   const documentTitle =
     workspace.currentDocument?.title || workspace.currentDocument?.name;
   const isWorkspaceEmpty =
@@ -29,6 +32,10 @@ export function WorkspaceLayout({
   React.useEffect(() => {
     void setAppWindowTitle(documentTitle ?? 'Refinex Wiki');
   }, [documentTitle]);
+
+  React.useEffect(() => {
+    setTocSnapshot(null);
+  }, [workspace.currentDocument?.absolutePath]);
 
   return (
     <main className="relative flex h-screen w-full gap-2 overflow-hidden bg-muted/50 p-2 text-foreground">
@@ -81,6 +88,7 @@ export function WorkspaceLayout({
               value={workspace.draftEnvelope.content}
               variant="workspace"
               onSaveRequested={() => void workspace.saveCurrentDocumentNow()}
+              onTocSnapshotChange={setTocSnapshot}
               onValueChange={workspace.updateDocumentValue}
             />
           ) : null}
@@ -90,7 +98,7 @@ export function WorkspaceLayout({
       <RightSidePanel
         currentDocument={workspace.currentDocument}
         mode={workspace.rightPanelMode}
-        tocSnapshot={null}
+        tocSnapshot={tocSnapshot}
       />
       <RightToolRail
         mode={workspace.rightPanelMode}
