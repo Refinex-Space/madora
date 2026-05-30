@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 
+import { MarkdownPlugin } from '@platejs/markdown';
 import { normalizeStaticValue } from 'platejs';
 import { Plate, usePlateEditor } from 'platejs/react';
 
@@ -10,19 +11,69 @@ import { SettingsDialog } from '@/components/editor/settings-dialog';
 import { Editor, EditorContainer } from '@/components/ui/editor';
 
 interface PlateEditorProps {
+  documentKey?: string;
+  markdown?: string;
+  onMarkdownChange?: (markdown: string) => void;
+  onSaveRequested?: () => void;
   variant?: 'demo' | 'workspace';
 }
 
-export function PlateEditor({ variant = 'demo' }: PlateEditorProps) {
-  const editor = usePlateEditor({
-    plugins: EditorKit,
-    value,
-  });
+export function PlateEditor({
+  documentKey,
+  markdown,
+  onMarkdownChange,
+  onSaveRequested,
+  variant = 'demo',
+}: PlateEditorProps) {
+  const editor = usePlateEditor(
+    {
+      plugins: EditorKit,
+      value: (editorInstance) => {
+        if (variant === 'workspace') {
+          const nodes = editorInstance
+            .getApi(MarkdownPlugin)
+            .markdown.deserialize(markdown ?? '');
+
+          return nodes.length > 0
+            ? nodes
+            : [{ children: [{ text: '' }], type: 'p' }];
+        }
+
+        return value;
+      },
+    },
+    [documentKey, variant],
+  );
 
   return (
-    <Plate editor={editor}>
+    <Plate
+      editor={editor}
+      onChange={({ value }) => {
+        if (variant !== 'workspace' || !onMarkdownChange) {
+          return;
+        }
+
+        const nextMarkdown = editor
+          .getApi(MarkdownPlugin)
+          .markdown.serialize({ value });
+
+        onMarkdownChange(nextMarkdown);
+      }}
+    >
       <EditorContainer>
-        <Editor variant={variant === 'workspace' ? 'default' : 'demo'} />
+        <Editor
+          variant={variant === 'workspace' ? 'default' : 'demo'}
+          onKeyDown={(event) => {
+            if (
+              variant === 'workspace' &&
+              (event.metaKey || event.ctrlKey) &&
+              event.key.toLowerCase() === 's'
+            ) {
+              event.preventDefault();
+              onSaveRequested?.();
+            }
+          }}
+        />
       </EditorContainer>
 
       <SettingsDialog />
