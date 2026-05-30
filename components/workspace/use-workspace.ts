@@ -9,6 +9,7 @@ import {
   readDocument,
   recordWorkspaceHistory,
   removeWorkspaceHistory,
+  saveDocument,
   saveRecentWorkspacePath,
   selectWorkspaceRoot,
 } from './workspace-api';
@@ -144,6 +145,77 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     }
   }, [currentDocument, openDocument]);
 
+  const saveCurrentDocumentNow = React.useCallback(
+    async (contentOverride?: string) => {
+      if (!snapshot || !currentDocument || currentDocument.kind !== 'document') {
+        return;
+      }
+
+      const content = contentOverride ?? draftMarkdown;
+
+      clearPendingSave();
+
+      if (content === lastSavedMarkdownRef.current) {
+        setSaveState('saved');
+        return;
+      }
+
+      setSaveState('saving');
+      setSaveError(null);
+
+      try {
+        const meta = await saveDocument(
+          snapshot.rootPath,
+          currentDocument.absolutePath,
+          content,
+        );
+
+        lastSavedMarkdownRef.current = content;
+        setDocumentContent((previous) =>
+          previous
+            ? {
+                ...previous,
+                content,
+                modifiedAt: meta.modifiedAt,
+              }
+            : previous,
+        );
+        setLastSavedAt(meta.modifiedAt);
+        setSaveState('saved');
+      } catch (saveDocumentError) {
+        setSaveState('error');
+        setSaveError(
+          saveDocumentError instanceof Error
+            ? saveDocumentError.message
+            : '无法保存文档内容',
+        );
+      }
+    },
+    [clearPendingSave, currentDocument, draftMarkdown, snapshot],
+  );
+
+  const updateDocumentMarkdown = React.useCallback(
+    (nextMarkdown: string) => {
+      setDraftMarkdown(nextMarkdown);
+
+      if (nextMarkdown === lastSavedMarkdownRef.current) {
+        clearPendingSave();
+        setSaveState('saved');
+        setSaveError(null);
+        return;
+      }
+
+      setSaveState('dirty');
+      setSaveError(null);
+      clearPendingSave();
+
+      pendingSaveTimerRef.current = setTimeout(() => {
+        void saveCurrentDocumentNow(nextMarkdown);
+      }, 800);
+    },
+    [clearPendingSave, saveCurrentDocumentNow],
+  );
+
   const workspaceHistory = React.useMemo(() => {
     return storedWorkspaceHistory;
   }, [storedWorkspaceHistory]);
@@ -186,6 +258,12 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     }
   }, [loadWorkspace, snapshot]);
 
+  React.useEffect(() => {
+    return () => {
+      clearPendingSave();
+    };
+  }, [clearPendingSave]);
+
   return {
     currentDocument,
     documentContent,
@@ -203,6 +281,7 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     retryCurrentDocument,
     saveError,
     saveState,
+    saveCurrentDocumentNow,
     searchQuery,
     searchResults: snapshot ? searchWorkspace(snapshot.nodes, searchQuery) : [],
     setAiPanelCollapsed,
@@ -211,6 +290,7 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     setSidebarCollapsed,
     snapshot,
     switchWorkspace: loadWorkspace,
+    updateDocumentMarkdown,
     workspaceHistory,
     removeWorkspace,
   };

@@ -74,6 +74,8 @@ export function WorkspaceLayout({
               documentKey={`${workspace.documentContent.path}:${workspace.documentVersion}`}
               markdown={workspace.documentContent.content}
               variant="workspace"
+              onMarkdownChange={workspace.updateDocumentMarkdown}
+              onSaveRequested={workspace.saveCurrentDocumentNow}
             />
           ) : null}
         </EditorPane>

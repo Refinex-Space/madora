@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { readDocument, saveDocument } from '../workspace-api';
 import { WorkspaceLayout } from '../workspace-layout';
@@ -10,12 +10,27 @@ vi.mock('@/components/editor/plate-editor', () => ({
   PlateEditor: ({
     documentKey,
     markdown,
+    onMarkdownChange,
+    onSaveRequested,
   }: {
     documentKey?: string;
     markdown?: string;
+    onMarkdownChange?: (markdown: string) => void;
+    onSaveRequested?: () => void;
   }) => (
-    <div data-document-key={documentKey} data-testid="plate-editor">
-      {markdown}
+    <div>
+      <div data-document-key={documentKey} data-testid="plate-editor">
+        {markdown}
+      </div>
+      <button
+        type="button"
+        onClick={() => onMarkdownChange?.('# 指南\n更新正文')}
+      >
+        模拟编辑
+      </button>
+      <button type="button" onClick={() => onSaveRequested?.()}>
+        模拟快捷保存
+      </button>
     </div>
   ),
 }));
@@ -54,6 +69,10 @@ describe('Workspace document flow', () => {
     window.localStorage.clear();
     readDocumentMock.mockReset();
     saveDocumentMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('loads the selected markdown document into the editor', async () => {
@@ -105,5 +124,95 @@ describe('Workspace document flow', () => {
 
     expect(screen.getByText('指南')).toBeTruthy();
     expect(screen.queryByTestId('plate-editor')).toBeNull();
+  });
+
+  it('auto saves edited markdown after debounce', async () => {
+    const user = userEvent.setup();
+    readDocumentMock.mockResolvedValueOnce({
+      path: '/repo/guide.md',
+      content: '# 指南\n正文',
+      modifiedAt: 1,
+    });
+    saveDocumentMock.mockResolvedValueOnce({
+      path: '/repo/guide.md',
+      modifiedAt: 2,
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByText('指南'));
+    await screen.findByTestId('plate-editor');
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByText('模拟编辑'));
+
+    expect(screen.getByText('有未保存更改')).toBeTruthy();
+
+    vi.advanceTimersByTime(800);
+    vi.useRealTimers();
+
+    await waitFor(() => {
+      expect(saveDocumentMock).toHaveBeenCalledWith(
+        '/repo',
+        '/repo/guide.md',
+        '# 指南\n更新正文',
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByText('已保存')).toBeTruthy();
+    });
+  });
+
+  it('saves immediately when save is requested', async () => {
+    const user = userEvent.setup();
+    readDocumentMock.mockResolvedValueOnce({
+      path: '/repo/guide.md',
+      content: '# 指南\n正文',
+      modifiedAt: 1,
+    });
+    saveDocumentMock.mockResolvedValueOnce({
+      path: '/repo/guide.md',
+      modifiedAt: 3,
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByText('指南'));
+    await screen.findByTestId('plate-editor');
+    await user.click(screen.getByText('模拟编辑'));
+    await user.click(screen.getByText('模拟快捷保存'));
+
+    await waitFor(() => {
+      expect(saveDocumentMock).toHaveBeenCalledWith(
+        '/repo',
+        '/repo/guide.md',
+        '# 指南\n更新正文',
+      );
+    });
+  });
+
+  it('keeps edited content visible when save fails', async () => {
+    const user = userEvent.setup();
+    readDocumentMock.mockResolvedValueOnce({
+      path: '/repo/guide.md',
+      content: '# 指南\n正文',
+      modifiedAt: 1,
+    });
+    saveDocumentMock.mockRejectedValueOnce(new Error('无法保存文档内容'));
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByText('指南'));
+    await screen.findByTestId('plate-editor');
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByText('模拟编辑'));
+
+    vi.advanceTimersByTime(800);
+    vi.useRealTimers();
+
+    await waitFor(() => {
+      expect(screen.getByText('无法保存文档内容')).toBeTruthy();
+    });
+
+    expect(screen.getByTestId('plate-editor')).toBeTruthy();
   });
 });
