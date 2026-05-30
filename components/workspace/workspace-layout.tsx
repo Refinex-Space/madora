@@ -59,11 +59,24 @@ export function WorkspaceLayout({
       <section className="min-w-0 flex-1 overflow-hidden rounded-lg border bg-background shadow-sm">
         <EditorPane
           currentDocument={workspace.currentDocument}
+          documentLoadError={workspace.documentLoadError}
+          documentLoadState={workspace.documentLoadState}
           hasWorkspace={workspace.snapshot !== null}
+          saveError={workspace.saveError}
+          saveState={workspace.saveState}
           onOpenWorkspace={workspace.openWorkspace}
+          onRetryDocument={workspace.retryCurrentDocument}
         >
-          {workspace.currentDocument ? (
-            <PlateEditor variant="workspace" />
+          {workspace.currentDocument &&
+          workspace.draftEnvelope &&
+          workspace.documentLoadState === 'loaded' ? (
+            <PlateEditor
+              documentKey={`${workspace.documentContent?.path ?? workspace.currentDocument.absolutePath}:${workspace.documentVersion}`}
+              value={workspace.draftEnvelope.content}
+              variant="workspace"
+              onSaveRequested={() => void workspace.saveCurrentDocumentNow()}
+              onValueChange={workspace.updateDocumentValue}
+            />
           ) : null}
         </EditorPane>
       </section>
