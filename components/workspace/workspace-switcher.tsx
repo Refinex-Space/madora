@@ -117,7 +117,7 @@ export function WorkspaceSwitcher({
               <div>
                 <p className="font-medium">还没有打开过的工作区</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  选择一个包含 Markdown 文档的目录，后续可在这里快速切换。
+                  选择一个工作区目录，后续可在这里快速切换。
                 </p>
               </div>
               <Button

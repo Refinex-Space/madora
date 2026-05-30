@@ -15,20 +15,20 @@ const nodes: WorkspaceNode[] = [
     children: [
       {
         id: 'intro',
-        name: 'intro.md',
+        name: 'intro.plate.json',
         kind: 'document',
-        relativePath: 'Guides/intro.md',
-        absolutePath: '/repo/Guides/intro.md',
+        relativePath: 'Guides/intro.plate.json',
+        absolutePath: '/repo/Guides/intro.plate.json',
         title: '入门',
       },
     ],
   },
   {
     id: 'readme',
-    name: 'README.md',
+    name: 'README.plate.json',
     kind: 'document',
-    relativePath: 'README.md',
-    absolutePath: '/repo/README.md',
+    relativePath: 'README.plate.json',
+    absolutePath: '/repo/README.plate.json',
     title: '项目说明',
   },
 ];
@@ -42,6 +42,9 @@ describe('DocumentTree', () => {
         currentDocumentPath={null}
         nodes={nodes}
         searchQuery=""
+        onCreateDirectory={vi.fn()}
+        onCreateDocument={vi.fn()}
+        onImportMarkdown={vi.fn()}
         onSelectDocument={vi.fn()}
       />,
     );
@@ -55,5 +58,40 @@ describe('DocumentTree', () => {
 
     expect(screen.getByTestId('directory-folder-open-guides')).toBeTruthy();
     expect(screen.queryByTestId('directory-folder-closed-guides')).toBeNull();
+  });
+
+  it('selects native documents and exposes folder actions', async () => {
+    const user = userEvent.setup();
+    const onSelectDocument = vi.fn();
+    const onCreateDocument = vi.fn();
+    const onCreateDirectory = vi.fn();
+    const onImportMarkdown = vi.fn();
+
+    render(
+      <DocumentTree
+        currentDocumentPath={null}
+        nodes={nodes}
+        searchQuery=""
+        onCreateDirectory={onCreateDirectory}
+        onCreateDocument={onCreateDocument}
+        onImportMarkdown={onImportMarkdown}
+        onSelectDocument={onSelectDocument}
+      />,
+    );
+
+    await user.click(screen.getByText('Guides'));
+    await user.click(screen.getByText('入门'));
+
+    expect(onSelectDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'intro.plate.json' }),
+    );
+
+    await user.click(screen.getByLabelText('在 Guides 中新建文档'));
+    await user.click(screen.getByLabelText('在 Guides 中新建目录'));
+    await user.click(screen.getByLabelText('导入 Markdown 到 Guides'));
+
+    expect(onCreateDocument).toHaveBeenCalledWith('Guides');
+    expect(onCreateDirectory).toHaveBeenCalledWith('Guides');
+    expect(onImportMarkdown).toHaveBeenCalledWith('Guides');
   });
 });

@@ -37,6 +37,9 @@ export function WorkspaceSidebar({ workspace }: WorkspaceSidebarProps) {
                 }
                 nodes={workspace.snapshot.nodes}
                 searchQuery={workspace.searchQuery}
+                onCreateDirectory={workspace.createDirectory}
+                onCreateDocument={workspace.createDocument}
+                onImportMarkdown={workspace.importMarkdownDocuments}
                 onSelectDocument={workspace.openDocument}
               />
             ) : null}
