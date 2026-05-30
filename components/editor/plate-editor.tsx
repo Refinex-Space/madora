@@ -9,7 +9,11 @@ import { EditorKit } from '@/components/editor/editor-kit';
 import { SettingsDialog } from '@/components/editor/settings-dialog';
 import { Editor, EditorContainer } from '@/components/ui/editor';
 
-export function PlateEditor() {
+interface PlateEditorProps {
+  variant?: 'demo' | 'workspace';
+}
+
+export function PlateEditor({ variant = 'demo' }: PlateEditorProps) {
   const editor = usePlateEditor({
     plugins: EditorKit,
     value,
@@ -18,7 +22,7 @@ export function PlateEditor() {
   return (
     <Plate editor={editor}>
       <EditorContainer>
-        <Editor variant="demo" />
+        <Editor variant={variant === 'workspace' ? 'default' : 'demo'} />
       </EditorContainer>
 
       <SettingsDialog />

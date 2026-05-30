@@ -1,13 +1,12 @@
 import { Toaster } from 'sonner';
 
-import { PlateEditor } from '@/components/editor/plate-editor';
+import { WorkspaceLayout } from '@/components/workspace/workspace-layout';
 
 export default function Page() {
   return (
-    <div className="h-screen w-full">
-      <PlateEditor />
-
+    <>
+      <WorkspaceLayout />
       <Toaster />
-    </div>
+    </>
   );
 }
