@@ -61,6 +61,14 @@ const snapshot: WorkspaceSnapshot = {
       absolutePath: '/repo/guide.md',
       title: '指南',
     },
+    {
+      id: 'notes',
+      name: 'notes.md',
+      kind: 'document',
+      relativePath: 'notes.md',
+      absolutePath: '/repo/notes.md',
+      title: '笔记',
+    },
   ],
 };
 
@@ -214,5 +222,44 @@ describe('Workspace document flow', () => {
     });
 
     expect(screen.getByTestId('plate-editor')).toBeTruthy();
+  });
+
+  it('saves dirty content before opening another document', async () => {
+    const user = userEvent.setup();
+    readDocumentMock
+      .mockResolvedValueOnce({
+        path: '/repo/guide.md',
+        content: '# 指南\n正文',
+        modifiedAt: 1,
+      })
+      .mockResolvedValueOnce({
+        path: '/repo/notes.md',
+        content: '# 笔记',
+        modifiedAt: 4,
+      });
+    saveDocumentMock.mockResolvedValueOnce({
+      path: '/repo/guide.md',
+      modifiedAt: 3,
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByText('指南'));
+    await screen.findByTestId('plate-editor');
+    await user.click(screen.getByText('模拟编辑'));
+    await user.click(screen.getByText('笔记'));
+
+    await waitFor(() => {
+      expect(saveDocumentMock).toHaveBeenCalledWith(
+        '/repo',
+        '/repo/guide.md',
+        '# 指南\n更新正文',
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('plate-editor').textContent).toContain(
+        '# 笔记',
+      );
+    });
   });
 });

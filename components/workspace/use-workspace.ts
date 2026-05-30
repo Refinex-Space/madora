@@ -100,51 +100,6 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     [resetDocumentState],
   );
 
-  const openDocument = React.useCallback(
-    async (node: WorkspaceNode) => {
-      if (!snapshot || node.kind !== 'document') {
-        return;
-      }
-
-      clearPendingSave();
-      setCurrentDocument(node);
-      setDocumentContent(null);
-      setDocumentLoadState('loading');
-      setDocumentLoadError(null);
-      setSaveState('idle');
-      setSaveError(null);
-
-      try {
-        const content = await readDocument(snapshot.rootPath, node.absolutePath);
-
-        setDocumentContent(content);
-        setDraftMarkdown(content.content);
-        lastSavedMarkdownRef.current = content.content;
-        setDocumentVersion((version) => version + 1);
-        setDocumentLoadState('loaded');
-        setSaveState('saved');
-        setLastSavedAt(content.modifiedAt);
-      } catch (documentError) {
-        setDocumentContent(null);
-        setDraftMarkdown('');
-        lastSavedMarkdownRef.current = '';
-        setDocumentLoadState('error');
-        setDocumentLoadError(
-          documentError instanceof Error
-            ? documentError.message
-            : '无法读取文档内容',
-        );
-      }
-    },
-    [clearPendingSave, snapshot],
-  );
-
-  const retryCurrentDocument = React.useCallback(() => {
-    if (currentDocument) {
-      void openDocument(currentDocument);
-    }
-  }, [currentDocument, openDocument]);
-
   const saveCurrentDocumentNow = React.useCallback(
     async (contentOverride?: string) => {
       if (!snapshot || !currentDocument || currentDocument.kind !== 'document') {
@@ -193,6 +148,61 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     },
     [clearPendingSave, currentDocument, draftMarkdown, snapshot],
   );
+
+  const openDocument = React.useCallback(
+    async (node: WorkspaceNode) => {
+      if (!snapshot || node.kind !== 'document') {
+        return;
+      }
+
+      if (saveState === 'dirty' || saveState === 'saving') {
+        await saveCurrentDocumentNow(draftMarkdown);
+      }
+
+      clearPendingSave();
+      setCurrentDocument(node);
+      setDocumentContent(null);
+      setDocumentLoadState('loading');
+      setDocumentLoadError(null);
+      setSaveState('idle');
+      setSaveError(null);
+
+      try {
+        const content = await readDocument(snapshot.rootPath, node.absolutePath);
+
+        setDocumentContent(content);
+        setDraftMarkdown(content.content);
+        lastSavedMarkdownRef.current = content.content;
+        setDocumentVersion((version) => version + 1);
+        setDocumentLoadState('loaded');
+        setSaveState('saved');
+        setLastSavedAt(content.modifiedAt);
+      } catch (documentError) {
+        setDocumentContent(null);
+        setDraftMarkdown('');
+        lastSavedMarkdownRef.current = '';
+        setDocumentLoadState('error');
+        setDocumentLoadError(
+          documentError instanceof Error
+            ? documentError.message
+            : '无法读取文档内容',
+        );
+      }
+    },
+    [
+      clearPendingSave,
+      draftMarkdown,
+      saveCurrentDocumentNow,
+      saveState,
+      snapshot,
+    ],
+  );
+
+  const retryCurrentDocument = React.useCallback(() => {
+    if (currentDocument) {
+      void openDocument(currentDocument);
+    }
+  }, [currentDocument, openDocument]);
 
   const updateDocumentMarkdown = React.useCallback(
     (nextMarkdown: string) => {
