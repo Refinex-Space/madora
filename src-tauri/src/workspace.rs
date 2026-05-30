@@ -51,6 +51,58 @@ pub struct PlateDocumentEnvelope {
     pub content: Value,
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlateDocumentContent {
+    pub path: String,
+    pub envelope: PlateDocumentEnvelope,
+    pub modified_at: u128,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentContentMeta {
+    pub path: String,
+    pub modified_at: u128,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedPlateDocument {
+    pub node: WorkspaceNode,
+    pub envelope: PlateDocumentEnvelope,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkdownSourceFile {
+    pub path: String,
+    pub file_name: String,
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedPlateDocumentInput {
+    pub title: String,
+    pub source_file_name: String,
+    pub content: Value,
+}
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedPlateDocumentResult {
+    pub created: Vec<CreatedPlateDocument>,
+    pub failed: Vec<ImportFailure>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportFailure {
+    pub source_file_name: String,
+    pub message: String,
+}
+
 #[tauri::command]
 pub fn ensure_workspace(root_path: String) -> Result<WorkspaceMetadata, String> {
     let root = canonical_workspace_root(&root_path)?;
@@ -62,6 +114,184 @@ pub fn load_workspace_tree(root_path: String) -> Result<WorkspaceSnapshot, Strin
     let root = canonical_workspace_root(&root_path)?;
     ensure_workspace_metadata(&root).map_err(|error| format!("初始化工作区失败：{error}"))?;
     build_workspace_snapshot(&root).map_err(|error| format!("读取工作区失败：{error}"))
+}
+
+#[tauri::command]
+pub fn read_plate_document(
+    root_path: String,
+    document_path: String,
+) -> Result<PlateDocumentContent, String> {
+    let document = validate_existing_plate_document_path(&root_path, &document_path)?;
+    let raw = fs::read_to_string(&document).map_err(|_| "无法读取文档内容".to_string())?;
+    let envelope = serde_json::from_str::<PlateDocumentEnvelope>(&raw)
+        .map_err(|_| "文档格式损坏".to_string())?;
+    validate_plate_envelope(&envelope)?;
+
+    Ok(PlateDocumentContent {
+        path: document.to_string_lossy().to_string(),
+        envelope,
+        modified_at: read_modified_at(&document)?,
+    })
+}
+
+#[tauri::command]
+pub fn save_plate_document(
+    root_path: String,
+    document_path: String,
+    envelope: PlateDocumentEnvelope,
+) -> Result<DocumentContentMeta, String> {
+    validate_plate_envelope(&envelope)?;
+    let document = validate_plate_document_path(&root_path, &document_path)?;
+
+    write_json_pretty(&document, &envelope).map_err(|_| "无法保存文档内容".to_string())?;
+    let document = document
+        .canonicalize()
+        .map_err(|_| "无法读取文档信息".to_string())?;
+
+    Ok(DocumentContentMeta {
+        path: document.to_string_lossy().to_string(),
+        modified_at: read_modified_at(&document)?,
+    })
+}
+
+#[tauri::command]
+pub fn create_plate_document(
+    root_path: String,
+    parent_path: String,
+    title: String,
+) -> Result<CreatedPlateDocument, String> {
+    let root = canonical_workspace_root(&root_path)?;
+    let parent = validate_workspace_directory(&root, &parent_path)?;
+    let safe_title = normalize_document_title(&title);
+    let document_path = unique_plate_document_path(&parent, &safe_title);
+    let now = current_iso_timestamp();
+    let envelope = PlateDocumentEnvelope {
+        schema_version: 1,
+        title: safe_title,
+        created_at: now.clone(),
+        updated_at: now,
+        content: empty_plate_content(),
+    };
+
+    write_json_pretty(&document_path, &envelope).map_err(|_| "无法创建文档".to_string())?;
+
+    let file_name = document_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("untitled.plate.json")
+        .to_string();
+
+    Ok(CreatedPlateDocument {
+        node: build_document_node(&root, &document_path, file_name)
+            .map_err(|_| "无法创建文档节点".to_string())?,
+        envelope,
+    })
+}
+
+#[tauri::command]
+pub fn create_workspace_directory(
+    root_path: String,
+    parent_path: String,
+    name: String,
+) -> Result<WorkspaceNode, String> {
+    let root = canonical_workspace_root(&root_path)?;
+    let parent = validate_workspace_directory(&root, &parent_path)?;
+    let safe_name = normalize_directory_name(&name);
+    let directory_path = unique_directory_path(&parent, &safe_name);
+
+    fs::create_dir(&directory_path).map_err(|_| "无法创建目录".to_string())?;
+
+    build_directory_node(&root, &directory_path, safe_name, Vec::new())
+        .map_err(|_| "无法创建目录节点".to_string())
+}
+
+#[tauri::command]
+pub fn read_markdown_source_files(
+    source_paths: Vec<String>,
+) -> Result<Vec<MarkdownSourceFile>, String> {
+    source_paths
+        .into_iter()
+        .map(|source_path| {
+            let path = PathBuf::from(&source_path)
+                .canonicalize()
+                .map_err(|_| "Markdown 源文件不存在".to_string())?;
+
+            if !is_markdown_source_file(&path) {
+                return Err("仅支持导入 .md 或 .mdx 文件".to_string());
+            }
+
+            let content =
+                fs::read_to_string(&path).map_err(|_| "无法读取 Markdown 源文件".to_string())?;
+            let file_name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("import.md")
+                .to_string();
+
+            Ok(MarkdownSourceFile {
+                path: path.to_string_lossy().to_string(),
+                file_name,
+                content,
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn create_imported_plate_documents(
+    root_path: String,
+    target_dir: String,
+    documents: Vec<ImportedPlateDocumentInput>,
+) -> Result<ImportedPlateDocumentResult, String> {
+    let root = canonical_workspace_root(&root_path)?;
+    let target = validate_workspace_directory(&root, &target_dir)?;
+    let mut created = Vec::new();
+    let mut failed = Vec::new();
+
+    for document in documents {
+        if !document.content.is_array() {
+            failed.push(ImportFailure {
+                source_file_name: document.source_file_name,
+                message: "文档内容格式无效".to_string(),
+            });
+            continue;
+        }
+
+        let title = normalize_document_title(&document.title);
+        let path = unique_plate_document_path(&target, &title);
+        let now = current_iso_timestamp();
+        let envelope = PlateDocumentEnvelope {
+            schema_version: 1,
+            title,
+            created_at: now.clone(),
+            updated_at: now,
+            content: document.content,
+        };
+
+        match write_json_pretty(&path, &envelope) {
+            Ok(()) => {
+                let file_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("import.plate.json")
+                    .to_string();
+
+                match build_document_node(&root, &path, file_name) {
+                    Ok(node) => created.push(CreatedPlateDocument { node, envelope }),
+                    Err(_) => failed.push(ImportFailure {
+                        source_file_name: document.source_file_name,
+                        message: "无法创建导入文档节点".to_string(),
+                    }),
+                }
+            }
+            Err(_) => failed.push(ImportFailure {
+                source_file_name: document.source_file_name,
+                message: "无法写入导入文档".to_string(),
+            }),
+        }
+    }
+
+    Ok(ImportedPlateDocumentResult { created, failed })
 }
 
 pub fn build_workspace_snapshot(root: &Path) -> std::io::Result<WorkspaceSnapshot> {
@@ -175,6 +405,174 @@ fn is_plate_document_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn is_markdown_source_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| matches!(extension.to_ascii_lowercase().as_str(), "md" | "mdx"))
+        .unwrap_or(false)
+}
+
+fn validate_plate_envelope(envelope: &PlateDocumentEnvelope) -> Result<(), String> {
+    if envelope.schema_version != 1 {
+        return Err("文档版本不兼容".to_string());
+    }
+
+    if !envelope.content.is_array() {
+        return Err("文档内容格式无效".to_string());
+    }
+
+    if envelope.title.trim().is_empty() {
+        return Err("文档标题不能为空".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_existing_plate_document_path(
+    root_path: &str,
+    document_path: &str,
+) -> Result<PathBuf, String> {
+    let document = validate_plate_document_path(root_path, document_path)?;
+
+    if !document.is_file() {
+        return Err("文档路径不是文件".to_string());
+    }
+
+    Ok(document)
+}
+
+fn validate_plate_document_path(root_path: &str, document_path: &str) -> Result<PathBuf, String> {
+    let root = canonical_workspace_root(root_path)?;
+    let document = PathBuf::from(document_path);
+    let document = if document.exists() {
+        document
+            .canonicalize()
+            .map_err(|_| "文档路径不存在".to_string())?
+    } else {
+        document
+    };
+    let parent = document
+        .parent()
+        .ok_or_else(|| "文档路径无效".to_string())?
+        .canonicalize()
+        .map_err(|_| "文档目录不存在".to_string())?;
+
+    if !parent.starts_with(&root) {
+        return Err("无法访问工作区外的文档".to_string());
+    }
+
+    if !is_plate_document_file(&document) {
+        return Err("仅支持 Plate 原生文档".to_string());
+    }
+
+    Ok(document)
+}
+
+fn validate_workspace_directory(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    let target = if relative_path.trim().is_empty() {
+        root.to_path_buf()
+    } else {
+        let relative = Path::new(relative_path);
+
+        if relative.is_absolute() {
+            return Err("无法访问工作区外的目录".to_string());
+        }
+
+        root.join(relative)
+    };
+
+    let target = target
+        .canonicalize()
+        .map_err(|_| "目录路径不存在".to_string())?;
+
+    if !target.starts_with(root) {
+        return Err("无法访问工作区外的目录".to_string());
+    }
+
+    if !target.is_dir() {
+        return Err("路径不是目录".to_string());
+    }
+
+    Ok(target)
+}
+
+fn empty_plate_content() -> Value {
+    serde_json::json!([{ "type": "p", "children": [{ "text": "" }] }])
+}
+
+fn normalize_document_title(title: &str) -> String {
+    let normalized = sanitize_file_stem(title);
+
+    if normalized.is_empty() {
+        "未命名文档".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn normalize_directory_name(name: &str) -> String {
+    let normalized = sanitize_file_stem(name);
+
+    if normalized.is_empty() {
+        "未命名目录".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn sanitize_file_stem(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .map(|character| match character {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
+            _ => character,
+        })
+        .collect::<String>()
+        .trim_matches('.')
+        .trim()
+        .to_string()
+}
+
+fn unique_plate_document_path(parent: &Path, title: &str) -> PathBuf {
+    unique_path(parent, title, ".plate.json")
+}
+
+fn unique_directory_path(parent: &Path, name: &str) -> PathBuf {
+    unique_path(parent, name, "")
+}
+
+fn unique_path(parent: &Path, stem: &str, suffix: &str) -> PathBuf {
+    let first_name = format!("{stem}{suffix}");
+    let first_path = parent.join(&first_name);
+
+    if !first_path.exists() {
+        return first_path;
+    }
+
+    for index in 1.. {
+        let candidate = parent.join(format!("{stem}-{index}{suffix}"));
+
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    unreachable!("无限序列应始终找到可用路径")
+}
+
+fn read_modified_at(path: &Path) -> Result<u128, String> {
+    let metadata = fs::metadata(path).map_err(|_| "无法读取文档信息".to_string())?;
+    let modified = metadata
+        .modified()
+        .map_err(|_| "无法读取文档修改时间".to_string())?;
+    let duration = modified
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "文档修改时间无效".to_string())?;
+
+    Ok(duration.as_millis())
+}
+
 fn build_directory_node(
     root: &Path,
     path: &Path,
@@ -241,6 +639,10 @@ fn unix_timestamp_millis() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or(0)
+}
+
+fn current_iso_timestamp() -> String {
+    format!("{}Z", unix_timestamp_millis())
 }
 
 #[cfg(test)]
@@ -312,5 +714,142 @@ mod tests {
         assert!(!debug.contains("intro.md"));
         assert!(!debug.contains("draft.mdx"));
         assert!(!debug.contains("data.json"));
+    }
+
+    #[test]
+    fn reads_valid_plate_document_inside_workspace() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let doc_path = temp_dir.path().join("guide.plate.json");
+        fs::write(
+            &doc_path,
+            r#"{"schemaVersion":1,"title":"指南","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":"正文"}]}]}"#,
+        )
+        .unwrap();
+
+        let document = read_plate_document(
+            temp_dir.path().to_string_lossy().to_string(),
+            doc_path.to_string_lossy().to_string(),
+        )
+        .expect("读取原生文档失败");
+
+        assert_eq!(document.envelope.title, "指南");
+        assert!(document.envelope.content.is_array());
+    }
+
+    #[test]
+    fn rejects_invalid_plate_document_envelope() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let doc_path = temp_dir.path().join("broken.plate.json");
+        fs::write(
+            &doc_path,
+            r#"{"schemaVersion":1,"title":"坏文档","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":{}}"#,
+        )
+        .unwrap();
+
+        let error = read_plate_document(
+            temp_dir.path().to_string_lossy().to_string(),
+            doc_path.to_string_lossy().to_string(),
+        )
+        .expect_err("损坏文档不应读取成功");
+
+        assert_eq!(error, "文档内容格式无效");
+    }
+
+    #[test]
+    fn saves_valid_plate_document_inside_workspace() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let doc_path = temp_dir.path().join("guide.plate.json");
+        let envelope = sample_envelope("指南", "正文");
+
+        let meta = save_plate_document(
+            temp_dir.path().to_string_lossy().to_string(),
+            doc_path.to_string_lossy().to_string(),
+            envelope,
+        )
+        .expect("保存原生文档失败");
+
+        assert_eq!(
+            meta.path,
+            doc_path.canonicalize().unwrap().to_string_lossy()
+        );
+        assert!(fs::read_to_string(&doc_path)
+            .unwrap()
+            .contains("\"title\": \"指南\""));
+    }
+
+    #[test]
+    fn creates_unique_plate_document() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        fs::write(temp_dir.path().join("未命名文档.plate.json"), "{}").unwrap();
+
+        let created = create_plate_document(
+            temp_dir.path().to_string_lossy().to_string(),
+            "".to_string(),
+            "未命名文档".to_string(),
+        )
+        .expect("创建文档失败");
+
+        assert!(created.node.name.ends_with("-1.plate.json"));
+        assert_eq!(created.envelope.title, "未命名文档");
+    }
+
+    #[test]
+    fn creates_workspace_directory_inside_workspace() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+
+        let node = create_workspace_directory(
+            temp_dir.path().to_string_lossy().to_string(),
+            "".to_string(),
+            "docs".to_string(),
+        )
+        .expect("创建目录失败");
+
+        assert_eq!(node.kind, WorkspaceNodeKind::Directory);
+        assert_eq!(node.relative_path, "docs");
+        assert!(temp_dir.path().join("docs").is_dir());
+    }
+
+    #[test]
+    fn reads_markdown_source_files_without_modifying_sources() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let markdown_path = temp_dir.path().join("source.md");
+        fs::write(&markdown_path, "# 标题\n正文").unwrap();
+
+        let files = read_markdown_source_files(vec![markdown_path.to_string_lossy().to_string()])
+            .expect("读取 Markdown 源文件失败");
+
+        assert_eq!(files[0].file_name, "source.md");
+        assert_eq!(files[0].content, "# 标题\n正文");
+        assert_eq!(fs::read_to_string(&markdown_path).unwrap(), "# 标题\n正文");
+    }
+
+    #[test]
+    fn imported_plate_documents_write_inside_workspace_only() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let docs = vec![ImportedPlateDocumentInput {
+            title: "Spring AI".to_string(),
+            source_file_name: "Spring AI.md".to_string(),
+            content: serde_json::json!([{ "type": "p", "children": [{ "text": "正文" }] }]),
+        }];
+
+        let result = create_imported_plate_documents(
+            temp_dir.path().to_string_lossy().to_string(),
+            "".to_string(),
+            docs,
+        )
+        .expect("导入文档失败");
+
+        assert_eq!(result.created.len(), 1);
+        assert!(temp_dir.path().join("Spring AI.plate.json").is_file());
+    }
+
+    fn sample_envelope(title: &str, text: &str) -> PlateDocumentEnvelope {
+        PlateDocumentEnvelope {
+            schema_version: 1,
+            title: title.to_string(),
+            created_at: "2026-05-30T00:00:00.000Z".to_string(),
+            updated_at: "2026-05-30T00:00:00.000Z".to_string(),
+            content: serde_json::json!([{ "type": "p", "children": [{ "text": text }] }]),
+        }
     }
 }
