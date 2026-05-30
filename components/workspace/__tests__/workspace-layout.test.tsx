@@ -107,6 +107,44 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByText('总结此页面')).toBeTruthy();
   });
 
+  it('switches between ai and document toc from the right tool rail', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    expect(screen.getByTestId('right-tool-rail')).toBeTruthy();
+    expect(screen.queryByTestId('ai-panel-island')).toBeNull();
+    expect(screen.queryByTestId('document-toc-panel')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
+
+    expect(screen.getByTestId('ai-panel-island')).toBeTruthy();
+    expect(screen.queryByTestId('document-toc-panel')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '展开目录面板' }));
+
+    expect(screen.queryByTestId('ai-panel-island')).toBeNull();
+    expect(screen.getByTestId('document-toc-panel')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '折叠目录面板' }));
+
+    expect(screen.queryByTestId('ai-panel-island')).toBeNull();
+    expect(screen.queryByTestId('document-toc-panel')).toBeNull();
+  });
+
+  it('keeps the active right tool visually highlighted', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '展开目录面板' }));
+
+    expect(screen.getByTestId('toc-panel-icon-button').className).toContain(
+      'bg-[#3574f0]',
+    );
+    expect(screen.getByTestId('ai-panel-icon-button').className).not.toContain(
+      'bg-[#3574f0]',
+    );
+  });
+
   it('shows workspace guide in the top workspace entry when there is no history', async () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={null} />);

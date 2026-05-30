@@ -6,7 +6,7 @@ import { Folder, FolderOpen } from 'lucide-react';
 import { PlateEditor } from '@/components/editor/plate-editor';
 import { cn } from '@/lib/utils';
 
-import { AiSidePanel } from './ai-side-panel';
+import { RightSidePanel, RightToolRail } from './ai-side-panel';
 import { EditorPane } from './editor-pane';
 import { useWorkspace } from './use-workspace';
 import { setAppWindowTitle } from './workspace-api';
@@ -87,10 +87,14 @@ export function WorkspaceLayout({
         </EditorPane>
       </section>
 
-      <AiSidePanel
+      <RightSidePanel
         currentDocument={workspace.currentDocument}
-        isCollapsed={workspace.isAiPanelCollapsed}
-        onCollapsedChange={workspace.setAiPanelCollapsed}
+        mode={workspace.rightPanelMode}
+        tocSnapshot={null}
+      />
+      <RightToolRail
+        mode={workspace.rightPanelMode}
+        onModeChange={workspace.setRightPanelMode}
       />
     </main>
   );

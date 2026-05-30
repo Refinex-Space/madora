@@ -60,7 +60,9 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
   const [error, setError] = React.useState<WorkspaceLoadError | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isSidebarCollapsed, setSidebarCollapsed] = React.useState(false);
-  const [isAiPanelCollapsed, setAiPanelCollapsed] = React.useState(true);
+  const [rightPanelMode, setRightPanelMode] = React.useState<
+    'ai' | 'toc' | null
+  >(null);
   const [storedWorkspaceHistory, setStoredWorkspaceHistory] = React.useState<
     WorkspaceHistoryItem[]
   >(() => getWorkspaceHistory());
@@ -502,7 +504,6 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     deleteNode,
     error,
     importMarkdownDocuments,
-    isAiPanelCollapsed,
     isLoading,
     isSidebarCollapsed,
     lastSavedAt,
@@ -511,13 +512,14 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     pendingRenameNodePath,
     retryCurrentDocument,
     renameNode,
+    rightPanelMode,
     saveCurrentDocumentNow,
     saveError,
     saveState,
     searchQuery,
     searchResults: snapshot ? searchWorkspace(snapshot.nodes, searchQuery) : [],
-    setAiPanelCollapsed,
     setCurrentDocument,
+    setRightPanelMode,
     setSearchQuery,
     setSidebarCollapsed,
     clearPendingRenameNode,
