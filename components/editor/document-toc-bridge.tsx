@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import type { Heading } from '@platejs/toc';
 import { useTocElementState } from '@platejs/toc/react';
+import { NodeApi } from 'platejs';
 
 export interface DocumentTocItem {
   depth: number;
@@ -29,6 +30,8 @@ export function DocumentTocBridge({
   const state = useTocElementState();
   const onSnapshotChangeRef = React.useRef(onSnapshotChange);
   const onContentScrollRef = React.useRef(state.onContentScroll);
+  const editorRef = React.useRef(state.editor);
+  const headingListRef = React.useRef(state.headingList);
   const lastPublishedKeyRef = React.useRef<string | null>(null);
   const items = React.useMemo(
     () => normalizeDocumentTocItems(state.headingList),
@@ -40,13 +43,17 @@ export function DocumentTocBridge({
   );
   const scrollToHeading = React.useCallback(
     (id: string) => {
-      const target = document.getElementById(id);
+      const heading = headingListRef.current.find((item) => item.id === id);
+      const node = heading ? NodeApi.get(editorRef.current, heading.path) : null;
+      const target = node
+        ? editorRef.current.api.toDOMNode(node)
+        : document.getElementById(id);
 
       if (!target) {
         return;
       }
 
-      onContentScrollRef.current(target, id, 'smooth');
+      onContentScrollRef.current(target, id, 'smooth', heading?.path);
     },
     [],
   );
@@ -54,6 +61,11 @@ export function DocumentTocBridge({
   React.useEffect(() => {
     onSnapshotChangeRef.current = onSnapshotChange;
   }, [onSnapshotChange]);
+
+  React.useEffect(() => {
+    editorRef.current = state.editor;
+    headingListRef.current = state.headingList;
+  }, [state.editor, state.headingList]);
 
   React.useEffect(() => {
     onContentScrollRef.current = state.onContentScroll;

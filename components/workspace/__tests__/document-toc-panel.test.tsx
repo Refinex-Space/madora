@@ -76,6 +76,12 @@ describe('DocumentTocPanel', () => {
     expect(
       screen.getByRole('button', { name: '细节' }).getAttribute('aria-current'),
     ).toBe('location');
+    expect(screen.getByRole('button', { name: '细节' }).className).toContain(
+      'font-semibold',
+    );
+    expect(screen.getByRole('button', { name: '细节' }).className).toContain(
+      'border-l-2',
+    );
 
     await user.click(screen.getByRole('button', { name: '背景' }));
 

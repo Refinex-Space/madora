@@ -15,6 +15,10 @@ const { onContentScrollMock, useTocElementStateMock } = vi.hoisted(() => ({
   onContentScrollMock: vi.fn(),
   useTocElementStateMock: vi.fn(),
 }));
+const { nodeGetMock, toDOMNodeMock } = vi.hoisted(() => ({
+  nodeGetMock: vi.fn(),
+  toDOMNodeMock: vi.fn(),
+}));
 
 const headingList = [
   { depth: 1, id: 'h1-title', path: [0], title: '文档标题', type: 'h1' },
@@ -27,12 +31,27 @@ vi.mock('@platejs/toc/react', () => ({
   useTocElementState: () => useTocElementStateMock(),
 }));
 
+vi.mock('platejs', () => ({
+  NodeApi: {
+    get: nodeGetMock,
+  },
+}));
+
 describe('document toc bridge', () => {
   beforeEach(() => {
     onContentScrollMock.mockReset();
+    nodeGetMock.mockReset();
+    toDOMNodeMock.mockReset();
+    nodeGetMock.mockReturnValue({ type: 'h2' });
+    toDOMNodeMock.mockReturnValue(document.createElement('h2'));
     useTocElementStateMock.mockReset();
     useTocElementStateMock.mockImplementation(() => ({
       activeContentId: 'h2-a',
+      editor: {
+        api: {
+          toDOMNode: toDOMNodeMock,
+        },
+      },
       headingList,
       onContentScroll: onContentScrollMock,
     }));
@@ -115,6 +134,43 @@ describe('document toc bridge', () => {
       expect.any(HTMLElement),
       'h2-a',
       'smooth',
+      [1],
+    );
+  });
+
+  it('scrolls by Plate heading path when the DOM id is not directly queryable', async () => {
+    const user = userEvent.setup();
+
+    function Harness() {
+      const [snapshot, setSnapshot] =
+        React.useState<DocumentTocSnapshot | null>(null);
+
+      return (
+        <>
+          <DocumentTocBridge onSnapshotChange={setSnapshot} />
+          <button
+            type="button"
+            onClick={() => snapshot?.scrollToHeading('h2-a')}
+          >
+            scroll by path
+          </button>
+        </>
+      );
+    }
+
+    render(<Harness />);
+    await user.click(screen.getByRole('button', { name: 'scroll by path' }));
+
+    expect(nodeGetMock).toHaveBeenCalledWith(
+      expect.objectContaining({ api: { toDOMNode: toDOMNodeMock } }),
+      [1],
+    );
+    expect(toDOMNodeMock).toHaveBeenCalledWith({ type: 'h2' });
+    expect(onContentScrollMock).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      'h2-a',
+      'smooth',
+      [1],
     );
   });
 
@@ -124,6 +180,11 @@ describe('document toc bridge', () => {
 
     useTocElementStateMock.mockImplementation(() => ({
       activeContentId: 'h2-a',
+      editor: {
+        api: {
+          toDOMNode: toDOMNodeMock,
+        },
+      },
       headingList: headingList.map((heading) => ({ ...heading })),
       onContentScroll: onContentScrollMock,
     }));
