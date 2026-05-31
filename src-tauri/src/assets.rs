@@ -149,6 +149,45 @@ pub fn extract_asset_ids(value: &Value) -> BTreeSet<String> {
     ids
 }
 
+pub fn cleanup_unreferenced_assets(
+    root: &Path,
+    candidate_ids: BTreeSet<String>,
+) -> Result<(), String> {
+    if candidate_ids.is_empty() {
+        return Ok(());
+    }
+
+    let referenced = collect_workspace_asset_references(root)?;
+    let mut index = read_asset_index(root).map_err(|_| "无法读取资产索引".to_string())?;
+
+    for asset_id in candidate_ids {
+        if referenced.contains(&asset_id) {
+            continue;
+        }
+
+        if let Some(record) = index.assets.remove(&asset_id) {
+            let path = validate_asset_file_path(root, &record.relative_path)?;
+            fs::remove_file(path).map_err(|_| "无法删除资产文件".to_string())?;
+        }
+    }
+
+    write_asset_index(root, &index).map_err(|_| "无法写入资产索引".to_string())
+}
+
+pub fn collect_asset_ids_from_documents(paths: &[PathBuf]) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+
+    for path in paths {
+        if let Ok(raw) = fs::read_to_string(path) {
+            if let Ok(value) = serde_json::from_str::<Value>(&raw) {
+                ids.extend(extract_asset_ids(&value));
+            }
+        }
+    }
+
+    ids
+}
+
 fn collect_asset_ids(value: &Value, ids: &mut BTreeSet<String>) {
     match value {
         Value::Object(map) => {
@@ -171,6 +210,39 @@ fn collect_asset_ids(value: &Value, ids: &mut BTreeSet<String>) {
         }
         _ => {}
     }
+}
+
+fn collect_workspace_asset_references(root: &Path) -> Result<BTreeSet<String>, String> {
+    let mut paths = Vec::new();
+    collect_plate_documents(root, &mut paths).map_err(|_| "无法扫描工作区文档".to_string())?;
+
+    Ok(collect_asset_ids_from_documents(&paths))
+}
+
+fn collect_plate_documents(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+
+        if matches!(
+            file_name,
+            ".refinex" | ".git" | "node_modules" | "target" | "dist" | "build"
+        ) {
+            continue;
+        }
+
+        if path.is_dir() {
+            collect_plate_documents(&path, paths)?;
+        } else if file_name.ends_with(".plate.json") {
+            paths.push(path);
+        }
+    }
+
+    Ok(())
 }
 
 fn read_asset_index(root: &Path) -> io::Result<WorkspaceAssetIndex> {

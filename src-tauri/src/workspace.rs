@@ -1,5 +1,9 @@
+use crate::assets::{
+    cleanup_unreferenced_assets, collect_asset_ids_from_documents, extract_asset_ids,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -177,9 +181,24 @@ pub fn save_plate_document(
     envelope: PlateDocumentEnvelope,
 ) -> Result<DocumentContentMeta, String> {
     validate_plate_envelope(&envelope)?;
+    let root = canonical_workspace_root(&root_path)?;
     let document = validate_plate_document_path(&root_path, &document_path)?;
+    let old_asset_ids = fs::read_to_string(&document)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<PlateDocumentEnvelope>(&raw).ok())
+        .map(|old| extract_asset_ids(&old.content))
+        .unwrap_or_default();
+    let new_asset_ids = extract_asset_ids(&envelope.content);
+    let cleanup_candidates = old_asset_ids
+        .difference(&new_asset_ids)
+        .cloned()
+        .collect::<BTreeSet<_>>();
 
     write_json_pretty(&document, &envelope).map_err(|_| "无法保存文档内容".to_string())?;
+    if let Err(error) = cleanup_unreferenced_assets(&root, cleanup_candidates) {
+        log::warn!("本地资产清理失败：{error}");
+    }
+
     let document = document
         .canonicalize()
         .map_err(|_| "无法读取文档信息".to_string())?;
@@ -297,8 +316,19 @@ pub fn delete_workspace_node(
     root_path: String,
     node_path: String,
 ) -> Result<DeletedWorkspaceNode, String> {
-    let (_root, node, kind) = validate_workspace_node_path(&root_path, &node_path)?;
+    let (root, node, kind) = validate_workspace_node_path(&root_path, &node_path)?;
     let deleted_path = node.to_string_lossy().to_string();
+    let cleanup_candidates = match kind {
+        WorkspaceNodeKind::Directory => {
+            let mut documents = Vec::new();
+            collect_plate_document_paths(&node, &mut documents)
+                .map_err(|_| "无法扫描待删除目录".to_string())?;
+            collect_asset_ids_from_documents(&documents)
+        }
+        WorkspaceNodeKind::Document => {
+            collect_asset_ids_from_documents(std::slice::from_ref(&node))
+        }
+    };
 
     match kind {
         WorkspaceNodeKind::Directory => {
@@ -307,6 +337,10 @@ pub fn delete_workspace_node(
         WorkspaceNodeKind::Document => {
             fs::remove_file(&node).map_err(|_| "无法删除文档".to_string())?;
         }
+    }
+
+    if let Err(error) = cleanup_unreferenced_assets(&root, cleanup_candidates) {
+        log::warn!("本地资产清理失败：{error}");
     }
 
     Ok(DeletedWorkspaceNode { path: deleted_path })
@@ -801,6 +835,29 @@ fn read_plate_document_title(path: &Path) -> Option<String> {
     }
 }
 
+fn collect_plate_document_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+
+        if should_skip_entry(file_name) {
+            continue;
+        }
+
+        if path.is_dir() {
+            collect_plate_document_paths(&path, paths)?;
+        } else if is_plate_document_file(&path) {
+            paths.push(path);
+        }
+    }
+
+    Ok(())
+}
+
 fn directory_rank(node: &WorkspaceNode) -> u8 {
     match node.kind {
         WorkspaceNodeKind::Directory => 0,
@@ -822,6 +879,7 @@ fn current_iso_timestamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
 
     #[test]
     fn ensure_workspace_creates_metadata_file() {
@@ -982,6 +1040,101 @@ mod tests {
         assert!(fs::read_to_string(&doc_path)
             .unwrap()
             .contains("\"title\": \"指南\""));
+    }
+
+    #[test]
+    fn saving_document_removes_unreferenced_local_asset() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let uploaded = crate::assets::upload_workspace_asset(
+            temp_dir.path().to_string_lossy().to_string(),
+            crate::assets::UploadWorkspaceAssetInput {
+                file_name: "cover.png".to_string(),
+                media_type: "image/png".to_string(),
+                base64_data: base64::engine::general_purpose::STANDARD.encode(b"asset"),
+            },
+        )
+        .expect("上传资产失败");
+        let doc_path = temp_dir.path().join("guide.plate.json");
+        let old = PlateDocumentEnvelope {
+            schema_version: 1,
+            title: "Guide".to_string(),
+            created_at: "2026-05-31T00:00:00.000Z".to_string(),
+            updated_at: "2026-05-31T00:00:00.000Z".to_string(),
+            content: serde_json::json!([
+                {
+                    "type": "img",
+                    "url": uploaded.url,
+                    "children": [{ "text": "" }]
+                }
+            ]),
+        };
+        write_json_pretty(&doc_path, &old).expect("写入旧文档失败");
+        let asset_path = PathBuf::from(uploaded.absolute_path);
+
+        save_plate_document(
+            temp_dir.path().to_string_lossy().to_string(),
+            doc_path.to_string_lossy().to_string(),
+            PlateDocumentEnvelope {
+                content: serde_json::json!([
+                    {
+                        "type": "p",
+                        "children": [{ "text": "no asset" }]
+                    }
+                ]),
+                updated_at: "2026-05-31T00:00:01.000Z".to_string(),
+                ..old
+            },
+        )
+        .expect("保存文档失败");
+
+        assert!(!asset_path.exists());
+    }
+
+    #[test]
+    fn deleting_one_of_two_documents_keeps_shared_asset() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let uploaded = crate::assets::upload_workspace_asset(
+            temp_dir.path().to_string_lossy().to_string(),
+            crate::assets::UploadWorkspaceAssetInput {
+                file_name: "cover.png".to_string(),
+                media_type: "image/png".to_string(),
+                base64_data: base64::engine::general_purpose::STANDARD.encode(b"shared"),
+            },
+        )
+        .expect("上传资产失败");
+        let asset_path = PathBuf::from(uploaded.absolute_path.clone());
+
+        for name in ["a.plate.json", "b.plate.json"] {
+            write_json_pretty(
+                &temp_dir.path().join(name),
+                &PlateDocumentEnvelope {
+                    schema_version: 1,
+                    title: name.to_string(),
+                    created_at: "2026-05-31T00:00:00.000Z".to_string(),
+                    updated_at: "2026-05-31T00:00:00.000Z".to_string(),
+                    content: serde_json::json!([
+                        {
+                            "type": "img",
+                            "url": uploaded.url.clone(),
+                            "children": [{ "text": "" }]
+                        }
+                    ]),
+                },
+            )
+            .expect("写入文档失败");
+        }
+
+        delete_workspace_node(
+            temp_dir.path().to_string_lossy().to_string(),
+            temp_dir
+                .path()
+                .join("a.plate.json")
+                .to_string_lossy()
+                .to_string(),
+        )
+        .expect("删除文档失败");
+
+        assert!(asset_path.exists());
     }
 
     #[test]
