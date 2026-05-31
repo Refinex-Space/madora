@@ -77,6 +77,7 @@ export function DocumentTree({
   onCreateDocument,
   onDeleteNode,
   onImportMarkdown,
+  onMoveNode,
   onPendingRenameConsumed,
   onRenameNode,
   onSelectDocument,
@@ -86,8 +87,15 @@ export function DocumentTree({
   const [deleteTarget, setDeleteTarget] = React.useState<WorkspaceNode | null>(
     null,
   );
+  const [draggedNode, setDraggedNode] = React.useState<WorkspaceNode | null>(
+    null,
+  );
+  const [dropPreview, setDropPreview] = React.useState<DropPreview | null>(
+    null,
+  );
   const visibleNodes = filterWorkspaceNodes(nodes, searchQuery);
   const forceExpanded = searchQuery.trim().length > 0;
+  const dragDisabled = searchQuery.trim().length > 0 || !onMoveNode;
 
   const startEditingNode = React.useCallback((node: WorkspaceNode) => {
     setEditingNodeId(node.id);
@@ -207,6 +215,9 @@ export function DocumentTree({
           <TreeNode
             key={node.id}
             currentDocumentPath={currentDocumentPath}
+            dragDisabled={dragDisabled}
+            draggedNode={draggedNode}
+            dropPreview={dropPreview}
             editingNodeId={editingNodeId}
             expanded={expanded}
             forceExpanded={forceExpanded}
@@ -216,7 +227,14 @@ export function DocumentTree({
             onCreateDirectory={handleCreateDirectory}
             onCreateDocument={handleCreateDocument}
             onDeleteRequest={setDeleteTarget}
+            onDragEnd={() => {
+              setDraggedNode(null);
+              setDropPreview(null);
+            }}
+            onDragStart={setDraggedNode}
+            onDropPreviewChange={setDropPreview}
             onExpandedChange={setExpanded}
+            onMoveNode={onMoveNode}
             onPendingRenameConsumed={onPendingRenameConsumed}
             onRenameRequest={startEditingNode}
             onRenameSubmit={handleRenameNode}
@@ -255,6 +273,9 @@ export function DocumentTree({
 
 function TreeNode({
   currentDocumentPath,
+  dragDisabled,
+  draggedNode,
+  dropPreview,
   editingNodeId,
   expanded,
   forceExpanded,
@@ -264,7 +285,11 @@ function TreeNode({
   onCreateDirectory,
   onCreateDocument,
   onDeleteRequest,
+  onDragEnd,
+  onDragStart,
+  onDropPreviewChange,
   onExpandedChange,
+  onMoveNode,
   onPendingRenameConsumed,
   onRenameRequest,
   onRenameSubmit,
@@ -281,6 +306,9 @@ function TreeNode({
   const displayName = getNodeDisplayName(node);
   const visualLevel = isDirectory ? level : Math.max(0, level - 1);
   const rowPaddingLeft = 12 + visualLevel * 14;
+  const isDragSource = draggedNode?.absolutePath === node.absolutePath;
+  const previewPosition =
+    dropPreview?.targetPath === node.absolutePath ? dropPreview.position : null;
   const activatePendingRename = React.useCallback(() => {
     onRenameRequest(node);
     onPendingRenameConsumed?.();
@@ -308,16 +336,124 @@ function TreeNode({
     }
   }, [isDirectory, isEditing, node, onExpandedChange, onSelectDocument]);
 
+  const updateDropPreview = React.useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      if (!draggedNode || !onMoveNode) {
+        return;
+      }
+
+      const position = getDropPosition(event.currentTarget, event.clientY, node);
+
+      if (!position || !canDropOnNode(draggedNode, node, position)) {
+        onDropPreviewChange(null);
+        return;
+      }
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      scrollTreeContainer(event.currentTarget, event.clientY);
+      onDropPreviewChange({ position, targetPath: node.absolutePath });
+    },
+    [draggedNode, node, onDropPreviewChange, onMoveNode],
+  );
+
+  React.useEffect(() => {
+    if (
+      !isDirectory ||
+      isExpanded ||
+      previewPosition !== 'inside' ||
+      dropPreview?.targetPath !== node.absolutePath
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      onExpandedChange((previous) => {
+        const next = new Set(previous);
+
+        next.add(node.id);
+        return next;
+      });
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    dropPreview?.targetPath,
+    isDirectory,
+    isExpanded,
+    node.absolutePath,
+    node.id,
+    onExpandedChange,
+    previewPosition,
+  ]);
+
   return (
     <div className="space-y-0.5" data-testid={`tree-node-${node.id}`}>
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div
             className={cn(
-              'group/tree-row flex h-8 w-full items-center rounded-lg text-sm transition-colors hover:bg-muted',
+              'group/tree-row relative flex h-8 w-full items-center rounded-lg text-sm transition-colors hover:bg-muted',
               isCurrent && 'bg-accent',
+              isDragSource && 'opacity-45',
+              previewPosition === 'inside' &&
+                'bg-[#eef4ff] outline outline-1 outline-[#3574f0]/25',
             )}
+            data-testid={`tree-row-${node.id}`}
+            draggable={!dragDisabled && !isEditing}
+            onDragEnd={onDragEnd}
+            onDragEnter={updateDropPreview}
+            onDragOver={updateDropPreview}
+            onDragStart={(event) => {
+              if (
+                dragDisabled ||
+                isEditing ||
+                isTreeDragDisabledTarget(event.target)
+              ) {
+                event.preventDefault();
+                return;
+              }
+
+              event.dataTransfer.effectAllowed = 'move';
+              event.dataTransfer.setData('text/plain', node.absolutePath);
+              onDragStart(node);
+            }}
+            onDrop={(event) => {
+              if (!draggedNode || !onMoveNode) {
+                return;
+              }
+
+              const position = getDropPosition(
+                event.currentTarget,
+                event.clientY,
+                node,
+              );
+
+              if (!position || !canDropOnNode(draggedNode, node, position)) {
+                onDropPreviewChange(null);
+                return;
+              }
+
+              event.preventDefault();
+              onDropPreviewChange(null);
+              void onMoveNode({
+                nodePath: draggedNode.absolutePath,
+                position,
+                targetPath: node.absolutePath,
+              });
+            }}
           >
+            {previewPosition && previewPosition !== 'inside' ? (
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'pointer-events-none absolute right-2 h-0.5 rounded-full bg-[#3574f0]',
+                  previewPosition === 'before' ? 'top-0' : 'bottom-0',
+                )}
+                style={{ left: rowPaddingLeft + 23 }}
+              />
+            ) : null}
+
             {isEditing ? (
               <div
                 className="grid h-full min-w-0 flex-1 grid-cols-[15px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 text-left"
@@ -375,11 +511,14 @@ function TreeNode({
         </ContextMenuContent>
       </ContextMenu>
 
-      {isDirectory && isExpanded
+            {isDirectory && isExpanded
         ? node.children?.map((child) => (
             <TreeNode
               key={child.id}
               currentDocumentPath={currentDocumentPath}
+              dragDisabled={dragDisabled}
+              draggedNode={draggedNode}
+              dropPreview={dropPreview}
               editingNodeId={editingNodeId}
               expanded={expanded}
               forceExpanded={forceExpanded}
@@ -389,7 +528,11 @@ function TreeNode({
               onCreateDirectory={onCreateDirectory}
               onCreateDocument={onCreateDocument}
               onDeleteRequest={onDeleteRequest}
+              onDragEnd={onDragEnd}
+              onDragStart={onDragStart}
+              onDropPreviewChange={onDropPreviewChange}
               onExpandedChange={onExpandedChange}
+              onMoveNode={onMoveNode}
               onPendingRenameConsumed={onPendingRenameConsumed}
               onRenameRequest={onRenameRequest}
               onRenameSubmit={onRenameSubmit}
@@ -403,6 +546,9 @@ function TreeNode({
 
 interface TreeNodeProps {
   currentDocumentPath: string | null;
+  dragDisabled: boolean;
+  draggedNode: WorkspaceNode | null;
+  dropPreview: DropPreview | null;
   editingNodeId: string | null;
   expanded: Set<string>;
   forceExpanded: boolean;
@@ -414,11 +560,20 @@ interface TreeNodeProps {
     parentPath: string,
   ) => Promise<WorkspaceNode | null | void> | WorkspaceNode | null | void;
   onDeleteRequest: (node: WorkspaceNode) => void;
+  onDragEnd: () => void;
+  onDragStart: (node: WorkspaceNode) => void;
+  onDropPreviewChange: (preview: DropPreview | null) => void;
   onExpandedChange: React.Dispatch<React.SetStateAction<Set<string>>>;
+  onMoveNode?: (request: WorkspaceMoveRequest) => Promise<void> | void;
   onPendingRenameConsumed?: () => void;
   onRenameRequest: (node: WorkspaceNode) => void;
   onRenameSubmit: (node: WorkspaceNode, nextName: string) => Promise<void>;
   onSelectDocument: (node: WorkspaceNode) => void;
+}
+
+interface DropPreview {
+  targetPath: string;
+  position: WorkspaceMoveRequest['position'];
 }
 
 function DirectoryIcon({
@@ -489,6 +644,7 @@ function RenameInput({
       ref={inputRef}
       aria-label={label}
       className="h-6 min-w-0 flex-1 px-1.5 text-sm"
+      data-tree-drag-disabled="true"
       value={value}
       onBlur={() => {
         if (ignoreInitialBlurRef.current) {
@@ -527,6 +683,7 @@ function NodeActionDropdown({
         <button
           aria-label={`打开 ${node.name} 操作菜单`}
           className="mr-1 hidden size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground group-hover/tree-row:flex data-[state=open]:flex"
+          data-tree-drag-disabled="true"
           type="button"
           onClick={(event) => event.stopPropagation()}
         >
@@ -771,4 +928,77 @@ function hasDescendantByAbsolutePath(
       child.absolutePath === absolutePath ||
       hasDescendantByAbsolutePath(child, absolutePath),
   );
+}
+
+function getDropPosition(
+  row: HTMLElement,
+  clientY: number,
+  target: WorkspaceNode,
+): WorkspaceMoveRequest['position'] | null {
+  const rect = row.getBoundingClientRect();
+  const rowTop = rect.top;
+  const rowHeight = rect.height > 0 ? rect.height : 32;
+  const offset = clientY - rowTop;
+  const topZone = rowHeight * 0.28;
+  const bottomZone = rowHeight * 0.72;
+
+  if (offset <= topZone) {
+    return 'before';
+  }
+
+  if (offset >= bottomZone) {
+    return 'after';
+  }
+
+  return target.kind === 'directory' ? 'inside' : null;
+}
+
+function canDropOnNode(
+  dragged: WorkspaceNode,
+  target: WorkspaceNode,
+  position: WorkspaceMoveRequest['position'],
+) {
+  if (dragged.absolutePath === target.absolutePath) {
+    return false;
+  }
+
+  if (
+    dragged.kind === 'directory' &&
+    target.absolutePath.startsWith(`${dragged.absolutePath}/`)
+  ) {
+    return false;
+  }
+
+  if (position === 'inside' && target.kind !== 'directory') {
+    return false;
+  }
+
+  return true;
+}
+
+function isTreeDragDisabledTarget(target: EventTarget) {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(target.closest('[data-tree-drag-disabled="true"]'))
+  );
+}
+
+function scrollTreeContainer(row: HTMLElement, clientY: number) {
+  const container = row.closest('[data-workspace-tree-scroll-container="true"]');
+
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+
+  const rect = container.getBoundingClientRect();
+  const edgeSize = 36;
+
+  if (clientY - rect.top < edgeSize) {
+    container.scrollTop -= 12;
+    return;
+  }
+
+  if (rect.bottom - clientY < edgeSize) {
+    container.scrollTop += 12;
+  }
 }

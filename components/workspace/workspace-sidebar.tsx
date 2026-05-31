@@ -45,7 +45,10 @@ export function WorkspaceSidebar({ width, workspace }: WorkspaceSidebarProps) {
             onSwitchWorkspace={workspace.switchWorkspace}
           />
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-2">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto px-2"
+            data-workspace-tree-scroll-container="true"
+          >
             {workspace.snapshot ? (
               <DocumentTree
                 currentDocumentPath={

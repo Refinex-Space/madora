@@ -396,4 +396,72 @@ describe('DocumentTree', () => {
     expect(overlay?.className).not.toContain('backdrop-blur-xs');
     expect(footer?.className).not.toContain('bg-muted/50');
   });
+
+  it('disables drag sorting while search results are filtered', () => {
+    render(
+      <DocumentTree
+        currentDocumentPath={null}
+        nodes={nodes}
+        searchQuery="入门"
+        onCreateDirectory={vi.fn()}
+        onCreateDocument={vi.fn()}
+        onDeleteNode={vi.fn()}
+        onImportMarkdown={vi.fn()}
+        onMoveNode={vi.fn()}
+        onRenameNode={vi.fn()}
+        onSelectDocument={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('tree-row-guides').getAttribute('draggable')).toBe(
+      'false',
+    );
+  });
+
+  it('calls onMoveNode with inside position when a document is dropped onto a directory center', () => {
+    const onMoveNode = vi.fn();
+    const dataTransfer = createDragDataTransfer();
+
+    render(
+      <DocumentTree
+        currentDocumentPath={null}
+        nodes={nodes}
+        searchQuery=""
+        onCreateDirectory={vi.fn()}
+        onCreateDocument={vi.fn()}
+        onDeleteNode={vi.fn()}
+        onImportMarkdown={vi.fn()}
+        onMoveNode={onMoveNode}
+        onRenameNode={vi.fn()}
+        onSelectDocument={vi.fn()}
+      />,
+    );
+
+    fireEvent.dragStart(screen.getByTestId('tree-row-readme'), {
+      dataTransfer,
+    });
+    fireEvent.dragEnter(screen.getByTestId('tree-row-guides'), {
+      clientY: 16,
+      dataTransfer,
+    });
+    fireEvent.drop(screen.getByTestId('tree-row-guides'), {
+      clientY: 16,
+      dataTransfer,
+    });
+
+    expect(onMoveNode).toHaveBeenCalledWith({
+      nodePath: '/repo/README.plate.json',
+      position: 'inside',
+      targetPath: '/repo/Guides',
+    });
+  });
 });
+
+function createDragDataTransfer() {
+  return {
+    dropEffect: 'move',
+    effectAllowed: 'move',
+    getData: vi.fn(),
+    setData: vi.fn(),
+  };
+}
