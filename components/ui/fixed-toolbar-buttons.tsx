@@ -51,9 +51,9 @@ export function FixedToolbarButtons() {
   const readOnly = useEditorReadOnly();
 
   return (
-    <div className="flex w-full">
+    <div className="fixed-toolbar-buttons flex w-full min-w-0 items-center">
       {!readOnly && (
-        <>
+        <div className="fixed-toolbar-main flex min-w-0 items-center overflow-hidden">
           <ToolbarGroup>
             <UndoToolbarButton />
             <RedoToolbarButton />
@@ -65,7 +65,7 @@ export function FixedToolbarButtons() {
             </AIToolbarButton>
           </ToolbarGroup>
 
-          <ToolbarGroup>
+          <ToolbarGroup className="fixed-toolbar-collapse-1">
             <ExportToolbarButton>
               <ArrowUpToLineIcon />
             </ExportToolbarButton>
@@ -118,7 +118,7 @@ export function FixedToolbarButtons() {
             </FontColorToolbarButton>
           </ToolbarGroup>
 
-          <ToolbarGroup>
+          <ToolbarGroup className="fixed-toolbar-collapse-3">
             <AlignToolbarButton />
 
             <NumberedListToolbarButton />
@@ -127,43 +127,93 @@ export function FixedToolbarButtons() {
             <ToggleToolbarButton />
           </ToolbarGroup>
 
-          <ToolbarGroup>
+          <ToolbarGroup className="fixed-toolbar-collapse-2">
             <LinkToolbarButton />
             <TableToolbarButton />
             <EmojiToolbarButton />
           </ToolbarGroup>
 
-          <ToolbarGroup>
+          <ToolbarGroup className="fixed-toolbar-collapse-1">
             <MediaToolbarButton nodeType={KEYS.img} />
             <MediaToolbarButton nodeType={KEYS.video} />
             <MediaToolbarButton nodeType={KEYS.audio} />
             <MediaToolbarButton nodeType={KEYS.file} />
           </ToolbarGroup>
 
-          <ToolbarGroup>
+          <ToolbarGroup className="fixed-toolbar-collapse-1">
             <LineHeightToolbarButton />
             <OutdentToolbarButton />
             <IndentToolbarButton />
           </ToolbarGroup>
 
           <ToolbarGroup>
-            <MoreToolbarButton />
+            <MoreToolbarButton overflowContent={<FixedToolbarOverflowTools />} />
           </ToolbarGroup>
-        </>
+        </div>
       )}
 
-      <div className="grow" />
+      <div className="min-w-2 grow" />
 
-      <ToolbarGroup>
-        <MarkToolbarButton nodeType={KEYS.highlight} tooltip="Highlight">
-          <HighlighterIcon />
-        </MarkToolbarButton>
-        <CommentToolbarButton />
-      </ToolbarGroup>
+      <div className="fixed-toolbar-pinned flex shrink-0 items-center">
+        <ToolbarGroup>
+          <MarkToolbarButton nodeType={KEYS.highlight} tooltip="Highlight">
+            <HighlighterIcon />
+          </MarkToolbarButton>
+          <CommentToolbarButton />
+        </ToolbarGroup>
 
-      <ToolbarGroup>
-        <ModeToolbarButton />
-      </ToolbarGroup>
+        <ToolbarGroup>
+          <ModeToolbarButton />
+        </ToolbarGroup>
+      </div>
+    </div>
+  );
+}
+
+function FixedToolbarOverflowTools() {
+  return (
+    <>
+      <ToolbarOverflowRow>
+        <ExportToolbarButton>
+          <ArrowUpToLineIcon />
+        </ExportToolbarButton>
+        <ImportToolbarButton />
+      </ToolbarOverflowRow>
+
+      <ToolbarOverflowRow>
+        <LinkToolbarButton />
+        <TableToolbarButton />
+        <EmojiToolbarButton />
+      </ToolbarOverflowRow>
+
+      <ToolbarOverflowRow>
+        <MediaToolbarButton nodeType={KEYS.img} />
+        <MediaToolbarButton nodeType={KEYS.video} />
+        <MediaToolbarButton nodeType={KEYS.audio} />
+        <MediaToolbarButton nodeType={KEYS.file} />
+      </ToolbarOverflowRow>
+
+      <ToolbarOverflowRow>
+        <LineHeightToolbarButton />
+        <OutdentToolbarButton />
+        <IndentToolbarButton />
+      </ToolbarOverflowRow>
+
+      <ToolbarOverflowRow>
+        <AlignToolbarButton />
+        <NumberedListToolbarButton />
+        <BulletedListToolbarButton />
+        <TodoListToolbarButton />
+        <ToggleToolbarButton />
+      </ToolbarOverflowRow>
+    </>
+  );
+}
+
+function ToolbarOverflowRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5">
+      {children}
     </div>
   );
 }

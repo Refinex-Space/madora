@@ -18,12 +18,21 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
 import { ToolbarButton } from './toolbar';
 
-export function MoreToolbarButton(props: DropdownMenuProps) {
+interface MoreToolbarButtonProps extends DropdownMenuProps {
+  overflowContent?: React.ReactNode;
+}
+
+export function MoreToolbarButton({
+  overflowContent,
+  ...props
+}: MoreToolbarButtonProps) {
   const editor = useEditorRef();
   const [open, setOpen] = React.useState(false);
 
@@ -36,7 +45,7 @@ export function MoreToolbarButton(props: DropdownMenuProps) {
       </DropdownMenuTrigger>
 
       <DropdownMenuContent
-        className="ignore-click-outside/toolbar flex max-h-[500px] min-w-[180px] flex-col overflow-y-auto"
+        className="ignore-click-outside/toolbar flex max-h-[500px] min-w-[220px] flex-col overflow-y-auto"
         align="start"
       >
         <DropdownMenuGroup>
@@ -76,6 +85,16 @@ export function MoreToolbarButton(props: DropdownMenuProps) {
             {/* (⌘+.) */}
           </DropdownMenuItem>
         </DropdownMenuGroup>
+
+        {overflowContent ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>更多工具</DropdownMenuLabel>
+            <div className="flex flex-col gap-1 px-1 pb-1">
+              {overflowContent}
+            </div>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -49,7 +49,11 @@ export function PlateEditor({
         }
       }}
     >
-      <EditorContainer>
+      <EditorContainer
+        className={
+          variant === 'workspace' ? 'workspace-editor-shell' : undefined
+        }
+      >
         <Editor
           variant={variant === 'workspace' ? 'default' : 'demo'}
           onKeyDown={(event) => {

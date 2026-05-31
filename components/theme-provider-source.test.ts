@@ -6,6 +6,10 @@ import { describe, expect, it } from 'vitest';
 const layoutPath = join(process.cwd(), 'app/layout.tsx');
 const providerPath = join(process.cwd(), 'components/theme-provider.tsx');
 const tauriConfigPath = join(process.cwd(), 'src-tauri/tauri.conf.json');
+const tauriCapabilityPath = join(
+  process.cwd(),
+  'src-tauri/capabilities/default.json',
+);
 const workspaceLayoutPath = join(
   process.cwd(),
   'components/workspace/workspace-layout.tsx',
@@ -15,6 +19,9 @@ describe('theme provider source contract', () => {
   it('configures next-themes to drive Tailwind dark classes without changing the default light theme', () => {
     const layoutSource = readFileSync(layoutPath, 'utf8');
     const providerSource = readFileSync(providerPath, 'utf8');
+    const tauriCapability = JSON.parse(
+      readFileSync(tauriCapabilityPath, 'utf8'),
+    );
     const tauriConfig = JSON.parse(readFileSync(tauriConfigPath, 'utf8'));
     const workspaceLayoutSource = readFileSync(workspaceLayoutPath, 'utf8');
 
@@ -40,6 +47,9 @@ describe('theme provider source contract', () => {
     expect(layoutSource).toContain('<ThemeProvider>');
     expect(tauriConfig.app.windows[0].titleBarStyle).toBe('Overlay');
     expect(tauriConfig.app.windows[0].hiddenTitle).toBe(true);
+    expect(tauriCapability.permissions).toContain(
+      'core:window:allow-start-dragging',
+    );
     expect(workspaceLayoutSource).toContain('data-tauri-drag-region="deep"');
     expect(workspaceLayoutSource).toContain(
       'workspace-titlebar-drag-region',

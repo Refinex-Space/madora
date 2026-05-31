@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -74,13 +77,16 @@ vi.mock('@/components/editor/document-toc-bridge', () => ({
 
 vi.mock('@/components/ui/editor', () => ({
   Editor: ({
+    className,
     onKeyDown,
     variant,
   }: {
+    className?: string;
     onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
     variant?: string;
   }) => (
     <div
+      className={className}
       data-testid="editor-surface"
       data-variant={variant}
       role="textbox"
@@ -88,9 +94,13 @@ vi.mock('@/components/ui/editor', () => ({
       onKeyDown={onKeyDown}
     />
   ),
-  EditorContainer: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
+  EditorContainer: ({
+    children,
+    className,
+  }: {
+    children: React.ReactNode;
+    className?: string;
+  }) => <div className={className}>{children}</div>,
 }));
 
 describe('PlateEditor', () => {
@@ -175,6 +185,52 @@ describe('PlateEditor', () => {
 
     expect(screen.getByTestId('document-toc-bridge')).toBeTruthy();
     expect(documentTocBridgeMock).toHaveBeenCalledWith(onTocSnapshotChange);
+  });
+
+  it('keeps workspace scrollbar styling on the editor container', () => {
+    const { rerender } = render(
+      <PlateEditor
+        documentKey="/repo/guide.plate.json:1"
+        value={[{ children: [{ text: '标题' }], type: 'h1' }]}
+        variant="workspace"
+      />,
+    );
+
+    expect(screen.getByTestId('editor-surface').parentElement?.className).toBe(
+      'workspace-editor-shell',
+    );
+    expect(screen.getByTestId('editor-surface').className).toBe('');
+
+    rerender(<PlateEditor variant="demo" />);
+
+    expect(
+      screen.getByTestId('editor-surface').parentElement?.className,
+    ).toBe('');
+    expect(screen.getByTestId('editor-surface').className).toBe('');
+  });
+
+  it('defines a thin editor scrollbar with toolbar top offset', () => {
+    const globalsSource = readFileSync(
+      join(process.cwd(), 'app/globals.css'),
+      'utf8',
+    );
+    const fixedToolbarSource = readFileSync(
+      join(process.cwd(), 'components/ui/fixed-toolbar.tsx'),
+      'utf8',
+    );
+
+    expect(globalsSource).toContain('.workspace-editor-shell');
+    expect(globalsSource).not.toContain('overflow: hidden !important');
+    expect(globalsSource).not.toContain(
+      '.workspace-editor-shell [data-slate-editor]',
+    );
+    expect(globalsSource).toContain('scrollbar-width: thin');
+    expect(globalsSource).toContain('width: 8px');
+    expect(globalsSource).toContain('margin-block: 42px 8px');
+    expect(globalsSource).toContain('border: 2px solid transparent');
+    expect(fixedToolbarSource).toContain('fixed-editor-toolbar');
+    expect(fixedToolbarSource).toContain('w-full shrink-0');
+    expect(fixedToolbarSource).not.toContain('p-1 pr-5');
   });
 
   it('does not mount document toc bridge for demo editor', () => {

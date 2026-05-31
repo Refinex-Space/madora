@@ -168,7 +168,7 @@ export function TurnIntoToolbarButton(props: DropdownMenuProps) {
       </DropdownMenuTrigger>
 
       <DropdownMenuContent
-        className="ignore-click-outside/toolbar min-w-0"
+        className="ignore-click-outside/toolbar w-[220px] min-w-[220px]"
         onCloseAutoFocus={(e) => {
           e.preventDefault();
           editor.tf.focus();
