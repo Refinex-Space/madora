@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 
+import { ArrowUp } from 'lucide-react';
 import { normalizeStaticValue, type Value } from 'platejs';
 import { Plate, usePlateEditor } from 'platejs/react';
 
@@ -37,6 +38,8 @@ export function PlateEditor({
   variant = 'demo',
   workspaceRootPath,
 }: PlateEditorProps) {
+  const editorScrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const [showBackToTop, setShowBackToTop] = React.useState(false);
   const editor = usePlateEditor(
     {
       plugins: EditorKit,
@@ -44,11 +47,37 @@ export function PlateEditor({
     },
     [documentKey, variant],
   );
+  const isWorkspaceEditor = variant === 'workspace';
+
+  React.useEffect(() => {
+    setShowBackToTop(false);
+  }, [documentKey, variant]);
+
+  const handleWorkspaceEditorScroll = React.useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      setShowBackToTop(event.currentTarget.scrollTop > 240);
+    },
+    [],
+  );
+
+  const handleBackToTop = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      editorScrollContainerRef.current?.scrollTo({
+        behavior: 'smooth',
+        top: 0,
+      });
+      setShowBackToTop(false);
+    },
+    [],
+  );
 
   return (
     <WorkspaceAssetProvider
       mode={variant}
-      rootPath={variant === 'workspace' ? (workspaceRootPath ?? null) : null}
+      rootPath={isWorkspaceEditor ? (workspaceRootPath ?? null) : null}
     >
       <Plate
         editor={editor}
@@ -60,7 +89,9 @@ export function PlateEditor({
       >
         <div
           className={
-            variant === 'workspace' ? 'flex h-full min-h-0 flex-col' : undefined
+            isWorkspaceEditor
+              ? 'relative flex h-full min-h-0 flex-col'
+              : undefined
           }
           data-testid="plate-editor-root"
         >
@@ -69,18 +100,22 @@ export function PlateEditor({
           </FixedToolbar>
 
           <EditorContainer
-            variant={variant === 'workspace' ? 'workspace' : undefined}
+            ref={editorScrollContainerRef}
+            variant={isWorkspaceEditor ? 'workspace' : undefined}
             className={
-              variant === 'workspace'
+              isWorkspaceEditor
                 ? 'workspace-editor-shell workspace-editor-scrollarea'
                 : undefined
             }
+            onScroll={
+              isWorkspaceEditor ? handleWorkspaceEditorScroll : undefined
+            }
           >
             <Editor
-              variant={variant === 'workspace' ? 'default' : 'demo'}
+              variant={isWorkspaceEditor ? 'default' : 'demo'}
               onKeyDown={(event) => {
                 if (
-                  variant === 'workspace' &&
+                  isWorkspaceEditor &&
                   (event.metaKey || event.ctrlKey) &&
                   event.key.toLowerCase() === 's'
                 ) {
@@ -91,7 +126,18 @@ export function PlateEditor({
             />
           </EditorContainer>
 
-          {variant === 'workspace' && onTocSnapshotChange ? (
+          {isWorkspaceEditor && showBackToTop ? (
+            <button
+              aria-label="回到顶部"
+              className="absolute right-4 bottom-4 z-40 flex size-8 items-center justify-center rounded-md border bg-background/95 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
+              type="button"
+              onClick={handleBackToTop}
+            >
+              <ArrowUp size={15} />
+            </button>
+          ) : null}
+
+          {isWorkspaceEditor && onTocSnapshotChange ? (
             <DocumentTocBridge onSnapshotChange={onTocSnapshotChange} />
           ) : null}
 

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import * as React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -104,19 +105,24 @@ vi.mock('@/components/ui/editor', () => ({
       onKeyDown={onKeyDown}
     />
   ),
-  EditorContainer: ({
-    children,
-    className,
-    variant,
-  }: {
-    children: React.ReactNode;
-    className?: string;
-    variant?: string;
-  }) => (
-    <div className={className} data-variant={variant}>
+  EditorContainer: React.forwardRef<
+    HTMLDivElement,
+    {
+      children: React.ReactNode;
+      className?: string;
+      onScroll?: React.UIEventHandler<HTMLDivElement>;
+      variant?: string;
+    }
+  >(({ children, className, onScroll, variant }, ref) => (
+    <div
+      ref={ref}
+      className={className}
+      data-variant={variant}
+      onScroll={onScroll}
+    >
       {children}
     </div>
-  ),
+  )),
 }));
 
 describe('PlateEditor', () => {
@@ -256,6 +262,43 @@ describe('PlateEditor', () => {
     );
 
     expect(screen.getByTestId('plate-editor-root')).toBeTruthy();
+  });
+
+  it('scrolls the workspace editor back to top from the bottom-right action', () => {
+    render(
+      <PlateEditor
+        documentKey="/repo/guide.plate.json:1"
+        value={[{ children: [{ text: '正文' }], type: 'p' }]}
+        variant="workspace"
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: '回到顶部' })).toBeNull();
+
+    const scrollContainer = screen.getByTestId('editor-surface')
+      .parentElement as HTMLDivElement;
+    const scrollToMock = vi.fn();
+
+    Object.defineProperty(scrollContainer, 'scrollTop', {
+      configurable: true,
+      value: 260,
+      writable: true,
+    });
+    scrollContainer.scrollTo = scrollToMock;
+
+    fireEvent.scroll(scrollContainer);
+    fireEvent.click(screen.getByRole('button', { name: '回到顶部' }));
+
+    expect(scrollToMock).toHaveBeenCalledWith({
+      behavior: 'smooth',
+      top: 0,
+    });
+  });
+
+  it('does not render back to top action for the demo editor', () => {
+    render(<PlateEditor variant="demo" />);
+
+    expect(screen.queryByRole('button', { name: '回到顶部' })).toBeNull();
   });
 
   it('keeps the workspace toolbar outside the scrolling editor surface', () => {
