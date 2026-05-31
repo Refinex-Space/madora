@@ -3,7 +3,7 @@ use crate::assets::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -43,6 +43,31 @@ pub struct WorkspaceMetadata {
     pub recent_document_path: Option<String>,
     pub expanded_paths: Vec<String>,
     pub sort_order: serde_json::Map<String, Value>,
+}
+
+const SORT_ORDER_STEP: i64 = 1024;
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceSortOrder {
+    version: u32,
+    nodes: BTreeMap<String, WorkspaceSortRecord>,
+}
+
+impl Default for WorkspaceSortOrder {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            nodes: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct WorkspaceSortRecord {
+    parent_path: String,
+    rank: i64,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -281,11 +306,14 @@ pub fn rename_workspace_node(
     match kind {
         WorkspaceNodeKind::Directory => {
             fs::rename(&node, &target).map_err(|_| "无法重命名目录".to_string())?;
+            let metadata =
+                ensure_workspace_metadata(&root).map_err(|_| "无法读取工作区元数据".to_string())?;
+            let sort_order = read_sort_order(&metadata);
             build_directory_node(
                 &root,
                 &target,
                 safe_name,
-                read_children(&root, &target).unwrap_or_default(),
+                read_children(&root, &target, &sort_order).unwrap_or_default(),
             )
             .map_err(|_| "无法读取重命名后的目录".to_string())
         }
@@ -437,6 +465,8 @@ pub fn create_imported_plate_documents(
 
 pub fn build_workspace_snapshot(root: &Path) -> std::io::Result<WorkspaceSnapshot> {
     let root = root.canonicalize()?;
+    let metadata = ensure_workspace_metadata(&root)?;
+    let sort_order = read_sort_order(&metadata);
     let root_name = root
         .file_name()
         .and_then(|name| name.to_str())
@@ -446,11 +476,15 @@ pub fn build_workspace_snapshot(root: &Path) -> std::io::Result<WorkspaceSnapsho
     Ok(WorkspaceSnapshot {
         root_path: root.to_string_lossy().to_string(),
         root_name,
-        nodes: read_children(&root, &root)?,
+        nodes: read_children(&root, &root, &sort_order)?,
     })
 }
 
-fn read_children(root: &Path, dir: &Path) -> std::io::Result<Vec<WorkspaceNode>> {
+fn read_children(
+    root: &Path,
+    dir: &Path,
+    sort_order: &WorkspaceSortOrder,
+) -> std::io::Result<Vec<WorkspaceNode>> {
     let mut nodes = Vec::new();
 
     for entry in fs::read_dir(dir)? {
@@ -465,7 +499,7 @@ fn read_children(root: &Path, dir: &Path) -> std::io::Result<Vec<WorkspaceNode>>
         let sort_timestamp = read_sort_timestamp(&path)?;
 
         if path.is_dir() {
-            let children = read_children(root, &path)?;
+            let children = read_children(root, &path, sort_order)?;
             nodes.push((
                 build_directory_node(root, &path, file_name, children)?,
                 sort_timestamp,
@@ -475,13 +509,156 @@ fn read_children(root: &Path, dir: &Path) -> std::io::Result<Vec<WorkspaceNode>>
         }
     }
 
+    let parent_path = to_relative_path(root, dir);
     nodes.sort_by(|(left, left_timestamp), (right, right_timestamp)| {
-        left_timestamp
-            .cmp(right_timestamp)
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+        compare_workspace_nodes(
+            &parent_path,
+            left,
+            *left_timestamp,
+            right,
+            *right_timestamp,
+            sort_order,
+        )
     });
 
     Ok(nodes.into_iter().map(|(node, _)| node).collect())
+}
+
+fn compare_workspace_nodes(
+    parent_path: &str,
+    left: &WorkspaceNode,
+    left_timestamp: u128,
+    right: &WorkspaceNode,
+    right_timestamp: u128,
+    sort_order: &WorkspaceSortOrder,
+) -> std::cmp::Ordering {
+    let left_rank = sort_order
+        .nodes
+        .get(&left.relative_path)
+        .filter(|record| record.parent_path == parent_path)
+        .map(|record| record.rank);
+    let right_rank = sort_order
+        .nodes
+        .get(&right.relative_path)
+        .filter(|record| record.parent_path == parent_path)
+        .map(|record| record.rank);
+
+    match (left_rank, right_rank) {
+        (Some(left_rank), Some(right_rank)) => left_rank
+            .cmp(&right_rank)
+            .then_with(|| left_timestamp.cmp(&right_timestamp))
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase())),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => left_timestamp
+            .cmp(&right_timestamp)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase())),
+    }
+}
+
+fn assign_rank_with_rebalance(
+    sort_order: &mut WorkspaceSortOrder,
+    moved_path: &str,
+    parent_path: &str,
+    previous_path: Option<&str>,
+    next_path: Option<&str>,
+) -> i64 {
+    let previous_rank = previous_path.and_then(|path| {
+        sort_order
+            .nodes
+            .get(path)
+            .filter(|record| record.parent_path == parent_path)
+            .map(|record| record.rank)
+    });
+    let next_rank = next_path.and_then(|path| {
+        sort_order
+            .nodes
+            .get(path)
+            .filter(|record| record.parent_path == parent_path)
+            .map(|record| record.rank)
+    });
+
+    let candidate = match (previous_rank, next_rank) {
+        (Some(previous), Some(next)) if next - previous > 1 => {
+            Some(previous + ((next - previous) / 2))
+        }
+        (Some(previous), None) => Some(previous + SORT_ORDER_STEP),
+        (None, Some(next)) if next > 1 => Some(next / 2),
+        (None, None) => Some(SORT_ORDER_STEP),
+        _ => None,
+    };
+
+    if let Some(rank) = candidate {
+        sort_order.nodes.insert(
+            moved_path.to_string(),
+            WorkspaceSortRecord {
+                parent_path: parent_path.to_string(),
+                rank,
+            },
+        );
+        return rank;
+    }
+
+    rebalance_parent_ranks(
+        sort_order,
+        moved_path,
+        parent_path,
+        previous_path,
+        next_path,
+    )
+}
+
+fn rebalance_parent_ranks(
+    sort_order: &mut WorkspaceSortOrder,
+    moved_path: &str,
+    parent_path: &str,
+    previous_path: Option<&str>,
+    next_path: Option<&str>,
+) -> i64 {
+    let mut ordered_paths = sort_order
+        .nodes
+        .iter()
+        .filter(|(path, record)| record.parent_path == parent_path && path.as_str() != moved_path)
+        .map(|(path, record)| (path.clone(), record.rank))
+        .collect::<Vec<_>>();
+
+    ordered_paths.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
+
+    let insert_index = if let Some(previous_path) = previous_path {
+        ordered_paths
+            .iter()
+            .position(|(path, _)| path == previous_path)
+            .map(|index| index + 1)
+            .unwrap_or(ordered_paths.len())
+    } else if let Some(next_path) = next_path {
+        ordered_paths
+            .iter()
+            .position(|(path, _)| path == next_path)
+            .unwrap_or(0)
+    } else {
+        ordered_paths.len()
+    };
+
+    ordered_paths.insert(insert_index, (moved_path.to_string(), 0));
+
+    let mut moved_rank = SORT_ORDER_STEP;
+    for (index, (path, _)) in ordered_paths.iter().enumerate() {
+        let rank = ((index as i64) + 1) * SORT_ORDER_STEP;
+
+        if path == moved_path {
+            moved_rank = rank;
+        }
+
+        sort_order.nodes.insert(
+            path.clone(),
+            WorkspaceSortRecord {
+                parent_path: parent_path.to_string(),
+                rank,
+            },
+        );
+    }
+
+    moved_rank
 }
 
 fn default_workspace_metadata() -> WorkspaceMetadata {
@@ -491,6 +668,25 @@ fn default_workspace_metadata() -> WorkspaceMetadata {
         expanded_paths: Vec::new(),
         sort_order: serde_json::Map::new(),
     }
+}
+
+fn read_sort_order(metadata: &WorkspaceMetadata) -> WorkspaceSortOrder {
+    serde_json::from_value(Value::Object(metadata.sort_order.clone())).unwrap_or_default()
+}
+
+fn write_sort_order(
+    metadata: &mut WorkspaceMetadata,
+    sort_order: &WorkspaceSortOrder,
+) -> io::Result<()> {
+    let value = serde_json::to_value(sort_order)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+
+    metadata.sort_order = match value {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+
+    Ok(())
 }
 
 fn ensure_workspace_metadata(root: &Path) -> io::Result<WorkspaceMetadata> {
@@ -1304,6 +1500,88 @@ mod tests {
         .expect("删除目录失败");
 
         assert!(!docs_path.exists());
+    }
+
+    #[test]
+    fn load_snapshot_uses_manual_sort_order_before_creation_time() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        fs::write(
+            temp_dir.path().join("A.plate.json"),
+            r#"{"schemaVersion":1,"title":"A","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":""}]}]}"#,
+        )
+        .expect("写入 A 文档失败");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(
+            temp_dir.path().join("B.plate.json"),
+            r#"{"schemaVersion":1,"title":"B","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":""}]}]}"#,
+        )
+        .expect("写入 B 文档失败");
+        fs::create_dir_all(temp_dir.path().join(".refinex")).expect("创建元数据目录失败");
+        fs::write(
+            temp_dir.path().join(".refinex/workspace.json"),
+            r#"{
+  "schemaVersion": 1,
+  "recentDocumentPath": null,
+  "expandedPaths": [],
+  "sortOrder": {
+    "version": 1,
+    "nodes": {
+      "A.plate.json": { "parentPath": "", "rank": 2048 },
+      "B.plate.json": { "parentPath": "", "rank": 1024 }
+    }
+  }
+}"#,
+        )
+        .expect("写入排序元数据失败");
+
+        let snapshot = build_workspace_snapshot(temp_dir.path()).expect("读取工作区失败");
+        let paths = snapshot
+            .nodes
+            .iter()
+            .map(|node| node.relative_path.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(paths, vec!["B.plate.json", "A.plate.json"]);
+    }
+
+    #[test]
+    fn sparse_rank_rebalances_only_target_parent_when_gap_is_exhausted() {
+        let mut sort_order = WorkspaceSortOrder::default();
+        sort_order.nodes.insert(
+            "docs/a.plate.json".to_string(),
+            WorkspaceSortRecord {
+                parent_path: "docs".to_string(),
+                rank: 1024,
+            },
+        );
+        sort_order.nodes.insert(
+            "docs/b.plate.json".to_string(),
+            WorkspaceSortRecord {
+                parent_path: "docs".to_string(),
+                rank: 1025,
+            },
+        );
+        sort_order.nodes.insert(
+            "other/c.plate.json".to_string(),
+            WorkspaceSortRecord {
+                parent_path: "other".to_string(),
+                rank: 1024,
+            },
+        );
+
+        let rank = assign_rank_with_rebalance(
+            &mut sort_order,
+            "docs/moved.plate.json",
+            "docs",
+            Some("docs/a.plate.json"),
+            Some("docs/b.plate.json"),
+        );
+
+        assert_eq!(rank, 2048);
+        assert_eq!(sort_order.nodes["docs/a.plate.json"].rank, 1024);
+        assert_eq!(sort_order.nodes["docs/moved.plate.json"].rank, 2048);
+        assert_eq!(sort_order.nodes["docs/b.plate.json"].rank, 3072);
+        assert_eq!(sort_order.nodes["other/c.plate.json"].rank, 1024);
     }
 
     fn sample_envelope(title: &str, text: &str) -> PlateDocumentEnvelope {
