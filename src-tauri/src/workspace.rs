@@ -375,6 +375,87 @@ pub fn delete_workspace_node(
 }
 
 #[tauri::command]
+pub fn move_workspace_node(
+    root_path: String,
+    node_path: String,
+    target_parent_path: String,
+    before_path: Option<String>,
+    after_path: Option<String>,
+) -> Result<WorkspaceSnapshot, String> {
+    let root = canonical_workspace_root(&root_path)?;
+    let (source, kind) = resolve_workspace_node_for_move(&root, &node_path)?;
+    let target_parent = resolve_workspace_directory_for_move(&root, &target_parent_path)?;
+
+    if kind == WorkspaceNodeKind::Directory && target_parent.starts_with(&source) {
+        return Err("不能将目录移动到自身或其子目录内".to_string());
+    }
+
+    let before = resolve_optional_workspace_node_for_move(&root, before_path.as_deref())?;
+    let after = resolve_optional_workspace_node_for_move(&root, after_path.as_deref())?;
+    validate_move_sibling_parent(&target_parent, before.as_deref())?;
+    validate_move_sibling_parent(&target_parent, after.as_deref())?;
+
+    let file_name = source
+        .file_name()
+        .ok_or_else(|| "无法读取节点名称".to_string())?
+        .to_os_string();
+    let destination = target_parent.join(file_name);
+
+    if destination.exists() {
+        let existing = destination
+            .canonicalize()
+            .map_err(|_| "无法读取目标位置".to_string())?;
+
+        if existing != source {
+            return Err("目标位置已存在同名节点".to_string());
+        }
+    }
+
+    let old_relative_path = to_relative_path(&root, &source);
+
+    if destination != source {
+        fs::rename(&source, &destination).map_err(|error| format!("移动节点失败：{error}"))?;
+    }
+
+    let destination = destination
+        .canonicalize()
+        .map_err(|_| "无法读取移动后的节点".to_string())?;
+    let new_relative_path = to_relative_path(&root, &destination);
+    let target_parent_relative_path = to_relative_path(&root, &target_parent);
+
+    let mut metadata = ensure_workspace_metadata(&root)
+        .map_err(|error| format!("读取工作区元数据失败：{error}"))?;
+    let mut sort_order = read_sort_order(&metadata);
+    rewrite_sort_order_path_prefix(&mut sort_order, &old_relative_path, &new_relative_path);
+    ensure_parent_sort_records(&root, &target_parent, &mut sort_order)
+        .map_err(|error| format!("初始化排序元数据失败：{error}"))?;
+
+    let previous_relative_path = match after.as_ref() {
+        Some(path) => Some(to_relative_path(&root, path)),
+        None if before.is_none() => {
+            find_last_sibling_relative_path(&root, &target_parent, &new_relative_path, &sort_order)
+                .map_err(|error| format!("读取目标排序失败：{error}"))?
+        }
+        None => None,
+    };
+    let next_relative_path = before.as_ref().map(|path| to_relative_path(&root, path));
+
+    assign_rank_with_rebalance(
+        &mut sort_order,
+        &new_relative_path,
+        &target_parent_relative_path,
+        previous_relative_path.as_deref(),
+        next_relative_path.as_deref(),
+    );
+    write_sort_order(&mut metadata, &sort_order)
+        .map_err(|error| format!("更新排序元数据失败：{error}"))?;
+    write_workspace_metadata(&root, &metadata)
+        .map_err(|error| format!("保存排序元数据失败：{error}"))?;
+
+    build_workspace_snapshot(&root).map_err(|error| format!("读取工作区失败：{error}"))
+}
+
+#[tauri::command]
 pub fn read_markdown_source_files(
     source_paths: Vec<String>,
 ) -> Result<Vec<MarkdownSourceFile>, String> {
@@ -661,6 +742,168 @@ fn rebalance_parent_ranks(
     moved_rank
 }
 
+#[derive(Debug)]
+struct SortableChildEntry {
+    relative_path: String,
+    name: String,
+    sort_timestamp: u128,
+}
+
+fn ensure_parent_sort_records(
+    root: &Path,
+    parent: &Path,
+    sort_order: &mut WorkspaceSortOrder,
+) -> std::io::Result<()> {
+    let parent_path = to_relative_path(root, parent);
+    let mut entries = read_sortable_child_entries(root, parent)?;
+
+    entries.sort_by(|left, right| {
+        compare_sortable_child_entries(&parent_path, left, right, sort_order)
+    });
+
+    let needs_rebalance = entries.iter().any(|entry| {
+        sort_order
+            .nodes
+            .get(&entry.relative_path)
+            .filter(|record| record.parent_path == parent_path)
+            .is_none()
+    });
+
+    if !needs_rebalance {
+        return Ok(());
+    }
+
+    for (index, entry) in entries.iter().enumerate() {
+        sort_order.nodes.insert(
+            entry.relative_path.clone(),
+            WorkspaceSortRecord {
+                parent_path: parent_path.clone(),
+                rank: ((index as i64) + 1) * SORT_ORDER_STEP,
+            },
+        );
+    }
+
+    Ok(())
+}
+
+fn find_last_sibling_relative_path(
+    root: &Path,
+    parent: &Path,
+    moved_path: &str,
+    sort_order: &WorkspaceSortOrder,
+) -> std::io::Result<Option<String>> {
+    let parent_path = to_relative_path(root, parent);
+    let mut entries = read_sortable_child_entries(root, parent)?;
+
+    entries.sort_by(|left, right| {
+        compare_sortable_child_entries(&parent_path, left, right, sort_order)
+    });
+
+    Ok(entries
+        .into_iter()
+        .filter(|entry| entry.relative_path != moved_path)
+        .next_back()
+        .map(|entry| entry.relative_path))
+}
+
+fn read_sortable_child_entries(
+    root: &Path,
+    parent: &Path,
+) -> std::io::Result<Vec<SortableChildEntry>> {
+    let mut entries = Vec::new();
+
+    for entry in fs::read_dir(parent)? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+
+        if should_skip_entry(&file_name) {
+            continue;
+        }
+
+        if path.is_dir() || is_plate_document_file(&path) {
+            entries.push(SortableChildEntry {
+                relative_path: to_relative_path(root, &path),
+                name: file_name,
+                sort_timestamp: read_sort_timestamp(&path)?,
+            });
+        }
+    }
+
+    Ok(entries)
+}
+
+fn compare_sortable_child_entries(
+    parent_path: &str,
+    left: &SortableChildEntry,
+    right: &SortableChildEntry,
+    sort_order: &WorkspaceSortOrder,
+) -> std::cmp::Ordering {
+    let left_rank = sort_order
+        .nodes
+        .get(&left.relative_path)
+        .filter(|record| record.parent_path == parent_path)
+        .map(|record| record.rank);
+    let right_rank = sort_order
+        .nodes
+        .get(&right.relative_path)
+        .filter(|record| record.parent_path == parent_path)
+        .map(|record| record.rank);
+
+    match (left_rank, right_rank) {
+        (Some(left_rank), Some(right_rank)) => left_rank
+            .cmp(&right_rank)
+            .then_with(|| left.sort_timestamp.cmp(&right.sort_timestamp))
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase())),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => left
+            .sort_timestamp
+            .cmp(&right.sort_timestamp)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase())),
+    }
+}
+
+fn rewrite_sort_order_path_prefix(
+    sort_order: &mut WorkspaceSortOrder,
+    old_prefix: &str,
+    new_prefix: &str,
+) {
+    let affected = sort_order
+        .nodes
+        .iter()
+        .filter_map(|(path, record)| {
+            if path == old_prefix || path.starts_with(&format!("{old_prefix}/")) {
+                Some((path.clone(), record.clone()))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    for (path, _) in &affected {
+        sort_order.nodes.remove(path);
+    }
+
+    for (path, mut record) in affected {
+        let next_path = rewrite_relative_prefix(&path, old_prefix, new_prefix);
+        record.parent_path = rewrite_relative_prefix(&record.parent_path, old_prefix, new_prefix);
+        sort_order.nodes.insert(next_path, record);
+    }
+}
+
+fn rewrite_relative_prefix(value: &str, old_prefix: &str, new_prefix: &str) -> String {
+    if value == old_prefix {
+        return new_prefix.to_string();
+    }
+
+    if let Some(suffix) = value.strip_prefix(&format!("{old_prefix}/")) {
+        return format!("{new_prefix}/{suffix}");
+    }
+
+    value.to_string()
+}
+
 fn default_workspace_metadata() -> WorkspaceMetadata {
     WorkspaceMetadata {
         schema_version: 1,
@@ -720,6 +963,10 @@ fn write_json_pretty<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
     let json = serde_json::to_string_pretty(value)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     fs::write(path, format!("{json}\n"))
+}
+
+fn write_workspace_metadata(root: &Path, metadata: &WorkspaceMetadata) -> io::Result<()> {
+    write_json_pretty(&root.join(".refinex/workspace.json"), metadata)
 }
 
 fn canonical_workspace_root(root_path: &str) -> Result<PathBuf, String> {
@@ -880,6 +1127,84 @@ fn validate_workspace_node_path(
     }
 
     Err("仅支持工作区目录或 Plate 原生文档".to_string())
+}
+
+fn resolve_workspace_path_for_move(root: &Path, path: &str) -> Result<PathBuf, String> {
+    let candidate = if Path::new(path).is_absolute() {
+        PathBuf::from(path)
+    } else if path.trim().is_empty() {
+        root.to_path_buf()
+    } else {
+        root.join(path)
+    };
+    let canonical = candidate
+        .canonicalize()
+        .map_err(|_| "目标节点不存在".to_string())?;
+
+    if !canonical.starts_with(root) {
+        return Err("路径必须位于工作区内".to_string());
+    }
+
+    if canonical.starts_with(root.join(".refinex")) {
+        return Err("不能操作工作区元数据".to_string());
+    }
+
+    Ok(canonical)
+}
+
+fn resolve_workspace_node_for_move(
+    root: &Path,
+    node_path: &str,
+) -> Result<(PathBuf, WorkspaceNodeKind), String> {
+    let node = resolve_workspace_path_for_move(root, node_path)?;
+
+    if node == root {
+        return Err("不能操作工作区根目录".to_string());
+    }
+
+    if node.is_dir() {
+        return Ok((node, WorkspaceNodeKind::Directory));
+    }
+
+    if node.is_file() && is_plate_document_file(&node) {
+        return Ok((node, WorkspaceNodeKind::Document));
+    }
+
+    Err("仅支持工作区目录或 Plate 原生文档".to_string())
+}
+
+fn resolve_workspace_directory_for_move(
+    root: &Path,
+    directory_path: &str,
+) -> Result<PathBuf, String> {
+    let directory = resolve_workspace_path_for_move(root, directory_path)?;
+
+    if !directory.is_dir() {
+        return Err("目标父级不是目录".to_string());
+    }
+
+    Ok(directory)
+}
+
+fn resolve_optional_workspace_node_for_move(
+    root: &Path,
+    path: Option<&str>,
+) -> Result<Option<PathBuf>, String> {
+    path.map(|value| resolve_workspace_node_for_move(root, value).map(|(node, _)| node))
+        .transpose()
+}
+
+fn validate_move_sibling_parent(
+    target_parent: &Path,
+    sibling: Option<&Path>,
+) -> Result<(), String> {
+    if let Some(sibling) = sibling {
+        if sibling.parent() != Some(target_parent) {
+            return Err("排序相邻节点必须位于目标父级内".to_string());
+        }
+    }
+
+    Ok(())
 }
 
 fn empty_plate_content() -> Value {
@@ -1582,6 +1907,151 @@ mod tests {
         assert_eq!(sort_order.nodes["docs/moved.plate.json"].rank, 2048);
         assert_eq!(sort_order.nodes["docs/b.plate.json"].rank, 3072);
         assert_eq!(sort_order.nodes["other/c.plate.json"].rank, 1024);
+    }
+
+    #[test]
+    fn moves_document_into_directory_and_returns_sorted_snapshot() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        fs::create_dir(temp_dir.path().join("docs")).expect("创建目录失败");
+        fs::write(
+            temp_dir.path().join("guide.plate.json"),
+            r#"{"schemaVersion":1,"title":"指南","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":""}]}]}"#,
+        )
+        .expect("写入文档失败");
+
+        let snapshot = move_workspace_node(
+            temp_dir.path().to_string_lossy().to_string(),
+            temp_dir
+                .path()
+                .join("guide.plate.json")
+                .to_string_lossy()
+                .to_string(),
+            temp_dir.path().join("docs").to_string_lossy().to_string(),
+            None,
+            None,
+        )
+        .expect("移动文档失败");
+
+        assert!(temp_dir.path().join("docs/guide.plate.json").is_file());
+        assert!(!temp_dir.path().join("guide.plate.json").exists());
+        assert_eq!(
+            snapshot.nodes[0].children.as_ref().unwrap()[0].relative_path,
+            "docs/guide.plate.json"
+        );
+    }
+
+    #[test]
+    fn moves_directory_with_children_and_rejects_descendant_target() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        fs::create_dir_all(temp_dir.path().join("docs/child")).expect("创建子目录失败");
+        fs::create_dir(temp_dir.path().join("target")).expect("创建目标目录失败");
+        fs::write(
+            temp_dir.path().join("docs/child/a.plate.json"),
+            r#"{"schemaVersion":1,"title":"A","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":""}]}]}"#,
+        )
+        .expect("写入文档失败");
+
+        let error = move_workspace_node(
+            temp_dir.path().to_string_lossy().to_string(),
+            temp_dir.path().join("docs").to_string_lossy().to_string(),
+            temp_dir
+                .path()
+                .join("docs/child")
+                .to_string_lossy()
+                .to_string(),
+            None,
+            None,
+        )
+        .expect_err("目录不应移动到自己的后代目录");
+
+        assert_eq!(error, "不能将目录移动到自身或其子目录内");
+
+        move_workspace_node(
+            temp_dir.path().to_string_lossy().to_string(),
+            temp_dir.path().join("docs").to_string_lossy().to_string(),
+            temp_dir.path().join("target").to_string_lossy().to_string(),
+            None,
+            None,
+        )
+        .expect("移动目录失败");
+
+        assert!(temp_dir
+            .path()
+            .join("target/docs/child/a.plate.json")
+            .is_file());
+    }
+
+    #[test]
+    fn rejects_move_when_target_name_exists() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        fs::create_dir(temp_dir.path().join("target")).expect("创建目标目录失败");
+        fs::write(
+            temp_dir.path().join("guide.plate.json"),
+            r#"{"schemaVersion":1,"title":"指南","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":""}]}]}"#,
+        )
+        .expect("写入文档失败");
+        fs::write(
+            temp_dir.path().join("target/guide.plate.json"),
+            r#"{"schemaVersion":1,"title":"已有","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":""}]}]}"#,
+        )
+        .expect("写入已有文档失败");
+
+        let error = move_workspace_node(
+            temp_dir.path().to_string_lossy().to_string(),
+            temp_dir
+                .path()
+                .join("guide.plate.json")
+                .to_string_lossy()
+                .to_string(),
+            temp_dir.path().join("target").to_string_lossy().to_string(),
+            None,
+            None,
+        )
+        .expect_err("同名文件不应被覆盖");
+
+        assert_eq!(error, "目标位置已存在同名节点");
+    }
+
+    #[test]
+    fn reorders_document_before_sibling_in_same_parent() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+
+        for name in ["a", "b", "c"] {
+            fs::write(
+                temp_dir.path().join(format!("{name}.plate.json")),
+                format!(
+                    r#"{{"schemaVersion":1,"title":"{name}","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{{"type":"p","children":[{{"text":""}}]}}]}}"#
+                ),
+            )
+            .expect("写入文档失败");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        let snapshot = move_workspace_node(
+            temp_dir.path().to_string_lossy().to_string(),
+            temp_dir
+                .path()
+                .join("c.plate.json")
+                .to_string_lossy()
+                .to_string(),
+            temp_dir.path().to_string_lossy().to_string(),
+            Some(
+                temp_dir
+                    .path()
+                    .join("a.plate.json")
+                    .to_string_lossy()
+                    .to_string(),
+            ),
+            None,
+        )
+        .expect("同层排序失败");
+        let paths = snapshot
+            .nodes
+            .iter()
+            .map(|node| node.relative_path.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(paths, vec!["c.plate.json", "a.plate.json", "b.plate.json"]);
     }
 
     fn sample_envelope(title: &str, text: &str) -> PlateDocumentEnvelope {

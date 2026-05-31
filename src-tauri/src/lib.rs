@@ -24,6 +24,7 @@ pub fn run() {
             workspace::create_workspace_directory,
             workspace::rename_workspace_node,
             workspace::delete_workspace_node,
+            workspace::move_workspace_node,
             workspace::read_markdown_source_files,
             workspace::create_imported_plate_documents,
         ])
