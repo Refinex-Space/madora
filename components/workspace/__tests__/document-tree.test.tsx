@@ -455,13 +455,48 @@ describe('DocumentTree', () => {
       targetPath: '/repo/Guides',
     });
   });
+
+  it('uses drag payload when drop happens before dragged state renders', () => {
+    const onMoveNode = vi.fn();
+    const dataTransfer = createDragDataTransfer('/repo/README.plate.json');
+
+    render(
+      <DocumentTree
+        currentDocumentPath={null}
+        nodes={nodes}
+        searchQuery=""
+        onCreateDirectory={vi.fn()}
+        onCreateDocument={vi.fn()}
+        onDeleteNode={vi.fn()}
+        onImportMarkdown={vi.fn()}
+        onMoveNode={onMoveNode}
+        onRenameNode={vi.fn()}
+        onSelectDocument={vi.fn()}
+      />,
+    );
+
+    fireEvent.dragOver(screen.getByTestId('tree-row-guides'), {
+      clientY: 16,
+      dataTransfer,
+    });
+    fireEvent.drop(screen.getByTestId('tree-row-guides'), {
+      clientY: 16,
+      dataTransfer,
+    });
+
+    expect(onMoveNode).toHaveBeenCalledWith({
+      nodePath: '/repo/README.plate.json',
+      position: 'inside',
+      targetPath: '/repo/Guides',
+    });
+  });
 });
 
-function createDragDataTransfer() {
+function createDragDataTransfer(payload = '') {
   return {
     dropEffect: 'move',
     effectAllowed: 'move',
-    getData: vi.fn(),
+    getData: vi.fn(() => payload),
     setData: vi.fn(),
   };
 }

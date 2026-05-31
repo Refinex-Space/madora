@@ -93,6 +93,7 @@ export function DocumentTree({
   const [dropPreview, setDropPreview] = React.useState<DropPreview | null>(
     null,
   );
+  const draggedNodeRef = React.useRef<WorkspaceNode | null>(null);
   const visibleNodes = filterWorkspaceNodes(nodes, searchQuery);
   const forceExpanded = searchQuery.trim().length > 0;
   const dragDisabled = searchQuery.trim().length > 0 || !onMoveNode;
@@ -154,6 +155,27 @@ export function DocumentTree({
       await onRenameNode(node, normalized);
     },
     [onRenameNode],
+  );
+  const handleDragStart = React.useCallback((node: WorkspaceNode) => {
+    draggedNodeRef.current = node;
+    setDraggedNode(node);
+  }, []);
+  const handleDragEnd = React.useCallback(() => {
+    draggedNodeRef.current = null;
+    setDraggedNode(null);
+    setDropPreview(null);
+  }, []);
+  const resolveDraggedNode = React.useCallback(
+    (event: React.DragEvent<HTMLElement>) => {
+      if (draggedNodeRef.current) {
+        return draggedNodeRef.current;
+      }
+
+      const draggedPath = event.dataTransfer.getData('text/plain');
+
+      return findNodeByAbsolutePath(nodes, draggedPath);
+    },
+    [nodes],
   );
 
   let treeContent: React.ReactNode;
@@ -227,17 +249,15 @@ export function DocumentTree({
             onCreateDirectory={handleCreateDirectory}
             onCreateDocument={handleCreateDocument}
             onDeleteRequest={setDeleteTarget}
-            onDragEnd={() => {
-              setDraggedNode(null);
-              setDropPreview(null);
-            }}
-            onDragStart={setDraggedNode}
             onDropPreviewChange={setDropPreview}
             onExpandedChange={setExpanded}
             onMoveNode={onMoveNode}
             onPendingRenameConsumed={onPendingRenameConsumed}
             onRenameRequest={startEditingNode}
             onRenameSubmit={handleRenameNode}
+            onResolveDraggedNode={resolveDraggedNode}
+            onTreeDragEnd={handleDragEnd}
+            onTreeDragStart={handleDragStart}
             onSelectDocument={onSelectDocument}
           />
         ))}
@@ -285,14 +305,15 @@ function TreeNode({
   onCreateDirectory,
   onCreateDocument,
   onDeleteRequest,
-  onDragEnd,
-  onDragStart,
   onDropPreviewChange,
   onExpandedChange,
   onMoveNode,
   onPendingRenameConsumed,
   onRenameRequest,
   onRenameSubmit,
+  onResolveDraggedNode,
+  onTreeDragEnd,
+  onTreeDragStart,
   onSelectDocument,
 }: TreeNodeProps) {
   const isDirectory = node.kind === 'directory';
@@ -338,13 +359,15 @@ function TreeNode({
 
   const updateDropPreview = React.useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
-      if (!draggedNode || !onMoveNode) {
+      const activeDraggedNode = onResolveDraggedNode(event);
+
+      if (!activeDraggedNode || !onMoveNode) {
         return;
       }
 
       const position = getDropPosition(event.currentTarget, event.clientY, node);
 
-      if (!position || !canDropOnNode(draggedNode, node, position)) {
+      if (!position || !canDropOnNode(activeDraggedNode, node, position)) {
         onDropPreviewChange(null);
         return;
       }
@@ -354,7 +377,7 @@ function TreeNode({
       scrollTreeContainer(event.currentTarget, event.clientY);
       onDropPreviewChange({ position, targetPath: node.absolutePath });
     },
-    [draggedNode, node, onDropPreviewChange, onMoveNode],
+    [node, onDropPreviewChange, onMoveNode, onResolveDraggedNode],
   );
 
   React.useEffect(() => {
@@ -401,7 +424,7 @@ function TreeNode({
             )}
             data-testid={`tree-row-${node.id}`}
             draggable={!dragDisabled && !isEditing}
-            onDragEnd={onDragEnd}
+            onDragEnd={onTreeDragEnd}
             onDragEnter={updateDropPreview}
             onDragOver={updateDropPreview}
             onDragStart={(event) => {
@@ -416,10 +439,12 @@ function TreeNode({
 
               event.dataTransfer.effectAllowed = 'move';
               event.dataTransfer.setData('text/plain', node.absolutePath);
-              onDragStart(node);
+              onTreeDragStart(node);
             }}
             onDrop={(event) => {
-              if (!draggedNode || !onMoveNode) {
+              const activeDraggedNode = onResolveDraggedNode(event);
+
+              if (!activeDraggedNode || !onMoveNode) {
                 return;
               }
 
@@ -429,7 +454,7 @@ function TreeNode({
                 node,
               );
 
-              if (!position || !canDropOnNode(draggedNode, node, position)) {
+              if (!position || !canDropOnNode(activeDraggedNode, node, position)) {
                 onDropPreviewChange(null);
                 return;
               }
@@ -437,7 +462,7 @@ function TreeNode({
               event.preventDefault();
               onDropPreviewChange(null);
               void onMoveNode({
-                nodePath: draggedNode.absolutePath,
+                nodePath: activeDraggedNode.absolutePath,
                 position,
                 targetPath: node.absolutePath,
               });
@@ -528,14 +553,15 @@ function TreeNode({
               onCreateDirectory={onCreateDirectory}
               onCreateDocument={onCreateDocument}
               onDeleteRequest={onDeleteRequest}
-              onDragEnd={onDragEnd}
-              onDragStart={onDragStart}
               onDropPreviewChange={onDropPreviewChange}
               onExpandedChange={onExpandedChange}
               onMoveNode={onMoveNode}
               onPendingRenameConsumed={onPendingRenameConsumed}
               onRenameRequest={onRenameRequest}
               onRenameSubmit={onRenameSubmit}
+              onResolveDraggedNode={onResolveDraggedNode}
+              onTreeDragEnd={onTreeDragEnd}
+              onTreeDragStart={onTreeDragStart}
               onSelectDocument={onSelectDocument}
             />
           ))
@@ -560,14 +586,17 @@ interface TreeNodeProps {
     parentPath: string,
   ) => Promise<WorkspaceNode | null | void> | WorkspaceNode | null | void;
   onDeleteRequest: (node: WorkspaceNode) => void;
-  onDragEnd: () => void;
-  onDragStart: (node: WorkspaceNode) => void;
   onDropPreviewChange: (preview: DropPreview | null) => void;
   onExpandedChange: React.Dispatch<React.SetStateAction<Set<string>>>;
   onMoveNode?: (request: WorkspaceMoveRequest) => Promise<void> | void;
   onPendingRenameConsumed?: () => void;
   onRenameRequest: (node: WorkspaceNode) => void;
   onRenameSubmit: (node: WorkspaceNode, nextName: string) => Promise<void>;
+  onResolveDraggedNode: (
+    event: React.DragEvent<HTMLElement>,
+  ) => WorkspaceNode | null;
+  onTreeDragEnd: () => void;
+  onTreeDragStart: (node: WorkspaceNode) => void;
   onSelectDocument: (node: WorkspaceNode) => void;
 }
 
@@ -928,6 +957,31 @@ function hasDescendantByAbsolutePath(
       child.absolutePath === absolutePath ||
       hasDescendantByAbsolutePath(child, absolutePath),
   );
+}
+
+function findNodeByAbsolutePath(
+  nodes: WorkspaceNode[],
+  absolutePath: string,
+): WorkspaceNode | null {
+  if (!absolutePath) {
+    return null;
+  }
+
+  for (const node of nodes) {
+    if (node.absolutePath === absolutePath) {
+      return node;
+    }
+
+    const child = node.children
+      ? findNodeByAbsolutePath(node.children, absolutePath)
+      : null;
+
+    if (child) {
+      return child;
+    }
+  }
+
+  return null;
 }
 
 function getDropPosition(
