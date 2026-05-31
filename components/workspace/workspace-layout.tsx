@@ -12,6 +12,7 @@ import { RightSidePanel, RightToolRail } from './ai-side-panel';
 import { EditorPane } from './editor-pane';
 import { useWorkspace } from './use-workspace';
 import { setAppWindowTitle } from './workspace-api';
+import { WorkspaceResizeHandle } from './workspace-resize-handle';
 import { WorkspaceSidebar } from './workspace-sidebar';
 import type { DocumentSaveState, WorkspaceSnapshot } from './workspace-types';
 
@@ -161,6 +162,17 @@ export function WorkspaceLayout({
 
         <WorkspaceSidebar width={leftSidebarWidth} workspace={workspace} />
 
+        {workspace.isSidebarCollapsed ? null : (
+          <WorkspaceResizeHandle
+            aria-label="调整左侧目录宽度"
+            direction="left"
+            max={LEFT_PANEL_WIDTH.max}
+            min={LEFT_PANEL_WIDTH.min}
+            value={leftSidebarWidth}
+            onResize={handleLeftSidebarResize}
+          />
+        )}
+
         <section
           className="min-w-0 flex-1 overflow-hidden rounded-lg border bg-background shadow-sm"
           data-testid="workspace-editor-block"
@@ -192,6 +204,17 @@ export function WorkspaceLayout({
             ) : null}
           </EditorPane>
         </section>
+
+        {workspace.rightPanelMode ? (
+          <WorkspaceResizeHandle
+            aria-label="调整右侧面板宽度"
+            direction="right"
+            max={RIGHT_PANEL_WIDTH.max}
+            min={RIGHT_PANEL_WIDTH.min}
+            value={rightPanelWidth}
+            onResize={handleRightPanelResize}
+          />
+        ) : null}
 
         <RightSidePanel
           currentDocument={workspace.currentDocument}

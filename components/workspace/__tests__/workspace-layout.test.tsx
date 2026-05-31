@@ -668,6 +668,101 @@ describe('WorkspaceLayout', () => {
     expect(screen.queryByTestId('editor-document-path')).toBeNull();
   });
 
+  it('resizes the left sidebar by dragging within configured bounds', () => {
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    const handle = screen.getByRole('separator', {
+      name: '调整左侧目录宽度',
+    });
+
+    fireEvent.pointerDown(handle, { clientX: 280, pointerId: 1 });
+    fireEvent.pointerMove(document, { clientX: 520, pointerId: 1 });
+    fireEvent.pointerUp(document, { pointerId: 1 });
+
+    expect(screen.getByTestId('workspace-sidebar').style.width).toBe('420px');
+    expect(
+      window.localStorage.getItem(
+        'refinex-wiki:workspace:left-sidebar-width',
+      ),
+    ).toBe('420');
+  });
+
+  it('resizes the right panel by dragging within configured bounds', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
+
+    const handle = screen.getByRole('separator', {
+      name: '调整右侧面板宽度',
+    });
+
+    fireEvent.pointerDown(handle, { clientX: 900, pointerId: 1 });
+    fireEvent.pointerMove(document, { clientX: 600, pointerId: 1 });
+    fireEvent.pointerUp(document, { pointerId: 1 });
+
+    expect(screen.getByTestId('ai-panel-island').style.width).toBe('520px');
+    expect(
+      window.localStorage.getItem('refinex-wiki:workspace:right-panel-width'),
+    ).toBe('520');
+  });
+
+  it('supports keyboard resizing from the separator handles', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    const handle = screen.getByRole('separator', {
+      name: '调整左侧目录宽度',
+    });
+
+    handle.focus();
+    await user.keyboard('{ArrowRight}{ArrowRight}{Home}{End}');
+
+    expect(screen.getByTestId('workspace-sidebar').style.width).toBe('420px');
+  });
+
+  it('only shows resize handles when the related panel is visible', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    expect(
+      screen.getByRole('separator', { name: '调整左侧目录宽度' }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole('separator', { name: '调整右侧面板宽度' }),
+    ).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '折叠目录' }));
+
+    expect(
+      screen.queryByRole('separator', { name: '调整左侧目录宽度' }),
+    ).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
+
+    expect(
+      screen.getByRole('separator', { name: '调整右侧面板宽度' }),
+    ).toBeTruthy();
+  });
+
+  it('keeps the resized left sidebar width after collapse and expand', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    const handle = screen.getByRole('separator', {
+      name: '调整左侧目录宽度',
+    });
+
+    fireEvent.pointerDown(handle, { clientX: 280, pointerId: 1 });
+    fireEvent.pointerMove(document, { clientX: 360, pointerId: 1 });
+    fireEvent.pointerUp(document, { pointerId: 1 });
+
+    await user.click(screen.getByRole('button', { name: '折叠目录' }));
+    await user.click(screen.getByRole('button', { name: '展开目录' }));
+
+    expect(screen.getByTestId('workspace-sidebar').style.width).toBe('360px');
+  });
+
   it('uses default widths for the resizable workspace panels', async () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
