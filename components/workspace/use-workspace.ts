@@ -11,6 +11,7 @@ import {
   getRecentWorkspacePath,
   getWorkspaceHistory,
   loadWorkspaceTree,
+  moveWorkspaceNode,
   recordWorkspaceHistory,
   removeWorkspaceHistory,
   readMarkdownSourceFiles,
@@ -30,6 +31,7 @@ import type {
   PlateDocumentEnvelope,
   WorkspaceLoadError,
   WorkspaceHistoryItem,
+  WorkspaceMoveRequest,
   WorkspaceNode,
   WorkspaceSnapshot,
 } from './workspace-types';
@@ -370,6 +372,48 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     ],
   );
 
+  const moveNode = React.useCallback(
+    async (request: WorkspaceMoveRequest) => {
+      if (!snapshot) {
+        return;
+      }
+
+      if (saveState === 'dirty' || saveState === 'saving') {
+        await saveCurrentDocumentNow(draftEnvelope);
+      }
+
+      const movedSnapshot = await moveWorkspaceNode(snapshot.rootPath, request);
+      setSnapshot(movedSnapshot);
+
+      if (!currentDocument) {
+        return;
+      }
+
+      const movedDocumentPath = getMovedDocumentPath(currentDocument, request);
+      const movedDocument = findNodeByAbsolutePath(
+        movedSnapshot.nodes,
+        movedDocumentPath,
+      );
+
+      if (movedDocument?.kind === 'document') {
+        setCurrentDocument(movedDocument);
+        return;
+      }
+
+      if (!findNodeByAbsolutePath(movedSnapshot.nodes, currentDocument.absolutePath)) {
+        resetDocumentState();
+      }
+    },
+    [
+      currentDocument,
+      draftEnvelope,
+      resetDocumentState,
+      saveCurrentDocumentNow,
+      saveState,
+      snapshot,
+    ],
+  );
+
   const importMarkdownDocuments = React.useCallback(
     async (targetDir = '') => {
       if (!snapshot) {
@@ -507,6 +551,7 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     isLoading,
     isSidebarCollapsed,
     lastSavedAt,
+    moveNode,
     openDocument,
     openWorkspace,
     pendingRenameNodePath,
@@ -556,4 +601,72 @@ function withUpdatedContent(
     content,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function findNodeByAbsolutePath(
+  nodes: WorkspaceNode[],
+  absolutePath: string,
+): WorkspaceNode | null {
+  for (const node of nodes) {
+    if (node.absolutePath === absolutePath) {
+      return node;
+    }
+
+    const child = node.children
+      ? findNodeByAbsolutePath(node.children, absolutePath)
+      : null;
+
+    if (child) {
+      return child;
+    }
+  }
+
+  return null;
+}
+
+function getMovedDocumentPath(
+  currentDocument: WorkspaceNode,
+  request: WorkspaceMoveRequest,
+) {
+  if (
+    currentDocument.absolutePath !== request.nodePath &&
+    !currentDocument.absolutePath.startsWith(`${request.nodePath}/`)
+  ) {
+    return currentDocument.absolutePath;
+  }
+
+  const targetParentPath =
+    request.position === 'inside'
+      ? request.targetPath
+      : getParentPath(request.targetPath);
+  const movedNodeName = getBaseName(request.nodePath);
+  const descendantSuffix = currentDocument.absolutePath.slice(
+    request.nodePath.length,
+  );
+
+  return joinPath(targetParentPath, `${movedNodeName}${descendantSuffix}`);
+}
+
+function getParentPath(path: string) {
+  const normalizedPath = path.replace(/\\/g, '/');
+  const lastSlashIndex = normalizedPath.lastIndexOf('/');
+
+  return lastSlashIndex >= 0 ? normalizedPath.slice(0, lastSlashIndex) : '';
+}
+
+function getBaseName(path: string) {
+  const normalizedPath = path.replace(/\\/g, '/');
+  const lastSlashIndex = normalizedPath.lastIndexOf('/');
+
+  return lastSlashIndex >= 0
+    ? normalizedPath.slice(lastSlashIndex + 1)
+    : normalizedPath;
+}
+
+function joinPath(parentPath: string, childPath: string) {
+  if (!parentPath) {
+    return childPath;
+  }
+
+  return `${parentPath.replace(/\/$/, '')}/${childPath.replace(/^\//, '')}`;
 }

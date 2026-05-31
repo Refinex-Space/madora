@@ -58,6 +58,7 @@ export function WorkspaceSidebar({ width, workspace }: WorkspaceSidebarProps) {
                 onCreateDocument={workspace.createDocument}
                 onDeleteNode={workspace.deleteNode}
                 onImportMarkdown={workspace.importMarkdownDocuments}
+                onMoveNode={workspace.moveNode}
                 onPendingRenameConsumed={workspace.clearPendingRenameNode}
                 onRenameNode={workspace.renameNode}
                 onSelectDocument={workspace.openDocument}

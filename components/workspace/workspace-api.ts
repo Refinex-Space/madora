@@ -11,6 +11,7 @@ import type {
   ResolvedWorkspaceAsset,
   UploadedWorkspaceAsset,
   UploadWorkspaceAssetInput,
+  WorkspaceMoveRequest,
   WorkspaceHistoryItem,
   WorkspaceMetadata,
   WorkspaceNode,
@@ -236,6 +237,24 @@ export async function deleteWorkspaceNode(rootPath: string, nodePath: string) {
   });
 }
 
+export async function moveWorkspaceNode(
+  rootPath: string,
+  request: WorkspaceMoveRequest,
+) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<WorkspaceSnapshot>('move_workspace_node', {
+    rootPath,
+    nodePath: request.nodePath,
+    targetParentPath:
+      request.position === 'inside'
+        ? request.targetPath
+        : getParentPath(request.targetPath),
+    beforePath: request.position === 'before' ? request.targetPath : null,
+    afterPath: request.position === 'after' ? request.targetPath : null,
+  });
+}
+
 export async function readMarkdownSourceFiles(sourcePaths: string[]) {
   const { invoke } = await import('@tauri-apps/api/core');
 
@@ -323,4 +342,11 @@ export async function setAppWindowTitle(title: string) {
   const { getCurrentWindow } = await import('@tauri-apps/api/window');
 
   await getCurrentWindow().setTitle(title);
+}
+
+function getParentPath(path: string) {
+  const normalizedPath = path.replace(/\\/g, '/');
+  const lastSlashIndex = normalizedPath.lastIndexOf('/');
+
+  return lastSlashIndex >= 0 ? normalizedPath.slice(0, lastSlashIndex) : '';
 }

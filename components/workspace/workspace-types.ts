@@ -104,6 +104,14 @@ export interface DeletedWorkspaceNode {
   path: string;
 }
 
+export type WorkspaceMovePosition = 'before' | 'after' | 'inside';
+
+export interface WorkspaceMoveRequest {
+  nodePath: string;
+  targetPath: string;
+  position: WorkspaceMovePosition;
+}
+
 export interface CreatedPlateDocument {
   node: WorkspaceNode;
   envelope: PlateDocumentEnvelope;

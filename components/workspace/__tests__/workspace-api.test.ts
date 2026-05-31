@@ -10,6 +10,7 @@ import {
   ensureWorkspace,
   getRecentWorkspacePath,
   getWorkspaceHistory,
+  moveWorkspaceNode,
   readMarkdownSourceFiles,
   readPlateDocument,
   readAppSettings,
@@ -150,6 +151,11 @@ describe('workspace-api native Plate commands', () => {
       })
       .mockResolvedValueOnce({ path: '/repo/guide-renamed.plate.json' })
       .mockResolvedValueOnce({
+        rootPath: '/repo',
+        rootName: 'repo',
+        nodes: [],
+      })
+      .mockResolvedValueOnce({
         schemaVersion: 1,
         storage: { defaultProvider: 'local' },
         appearance: { pageWidthMode: 'standard' },
@@ -187,6 +193,11 @@ describe('workspace-api native Plate commands', () => {
     ]);
     await renameWorkspaceNode('/repo', '/repo/guide.plate.json', '新指南');
     await deleteWorkspaceNode('/repo', '/repo/guide.plate.json');
+    await moveWorkspaceNode('/repo', {
+      nodePath: '/repo/guide.plate.json',
+      targetPath: '/repo/docs',
+      position: 'inside',
+    });
     await readAppSettings();
     await saveAppSettings({
       schemaVersion: 1,
@@ -249,15 +260,22 @@ describe('workspace-api native Plate commands', () => {
       rootPath: '/repo',
       nodePath: '/repo/guide.plate.json',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(11, 'read_app_settings');
-    expect(invokeMock).toHaveBeenNthCalledWith(12, 'save_app_settings', {
+    expect(invokeMock).toHaveBeenNthCalledWith(11, 'move_workspace_node', {
+      rootPath: '/repo',
+      nodePath: '/repo/guide.plate.json',
+      targetParentPath: '/repo/docs',
+      beforePath: null,
+      afterPath: null,
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(12, 'read_app_settings');
+    expect(invokeMock).toHaveBeenNthCalledWith(13, 'save_app_settings', {
       settings: {
         schemaVersion: 1,
         storage: { defaultProvider: 'local' },
         appearance: { pageWidthMode: 'standard' },
       },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(13, 'upload_workspace_asset', {
+    expect(invokeMock).toHaveBeenNthCalledWith(14, 'upload_workspace_asset', {
       rootPath: '/repo',
       input: {
         base64Data: 'ZmlsZQ==',
@@ -265,7 +283,7 @@ describe('workspace-api native Plate commands', () => {
         mediaType: 'image/png',
       },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(14, 'resolve_workspace_asset', {
+    expect(invokeMock).toHaveBeenNthCalledWith(15, 'resolve_workspace_asset', {
       rootPath: '/repo',
       assetId: 'asset-a',
     });

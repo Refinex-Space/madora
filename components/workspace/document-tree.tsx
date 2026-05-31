@@ -44,7 +44,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 import { filterWorkspaceNodes } from './workspace-tree';
-import type { WorkspaceNode } from './workspace-types';
+import type { WorkspaceMoveRequest, WorkspaceNode } from './workspace-types';
 
 interface DocumentTreeProps {
   nodes: WorkspaceNode[];
@@ -59,6 +59,7 @@ interface DocumentTreeProps {
   ) => Promise<WorkspaceNode | null | void> | WorkspaceNode | null | void;
   onDeleteNode: (node: WorkspaceNode) => Promise<void> | void;
   onImportMarkdown: (targetDir: string) => void;
+  onMoveNode?: (request: WorkspaceMoveRequest) => Promise<void> | void;
   onPendingRenameConsumed?: () => void;
   onRenameNode: (
     node: WorkspaceNode,
