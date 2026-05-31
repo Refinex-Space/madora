@@ -142,6 +142,7 @@ export function WorkspaceLayout({
         />
         <RightToolRail
           mode={workspace.rightPanelMode}
+          workspaceRootPath={workspace.snapshot?.rootPath ?? null}
           onModeChange={workspace.setRightPanelMode}
         />
       </div>

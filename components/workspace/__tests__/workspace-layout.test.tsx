@@ -7,7 +7,9 @@ import {
   createWorkspaceDirectory,
   createWorkspaceRoot,
   loadWorkspaceTree,
+  readAppSettings,
   readPlateDocument,
+  saveAppSettings,
   selectWorkspaceParentDirectory,
 } from '../workspace-api';
 import { WorkspaceLayout } from '../workspace-layout';
@@ -60,6 +62,8 @@ vi.mock('../workspace-api', async (importOriginal) => {
     createWorkspaceRoot: vi.fn(),
     loadWorkspaceTree: vi.fn(),
     readPlateDocument: vi.fn(),
+    readAppSettings: vi.fn(),
+    saveAppSettings: vi.fn(),
     selectWorkspaceParentDirectory: vi.fn(),
     setAppWindowTitle: vi.fn(),
   };
@@ -69,7 +73,9 @@ const createPlateDocumentMock = vi.mocked(createPlateDocument);
 const createWorkspaceDirectoryMock = vi.mocked(createWorkspaceDirectory);
 const createWorkspaceRootMock = vi.mocked(createWorkspaceRoot);
 const loadWorkspaceTreeMock = vi.mocked(loadWorkspaceTree);
+const readAppSettingsMock = vi.mocked(readAppSettings);
 const readPlateDocumentMock = vi.mocked(readPlateDocument);
+const saveAppSettingsMock = vi.mocked(saveAppSettings);
 const selectWorkspaceParentDirectoryMock = vi.mocked(
   selectWorkspaceParentDirectory,
 );
@@ -92,12 +98,24 @@ const snapshot: WorkspaceSnapshot = {
 describe('WorkspaceLayout', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    delete (window as unknown as { __TAURI_INTERNALS__?: unknown })
+      .__TAURI_INTERNALS__;
     createPlateDocumentMock.mockReset();
     createWorkspaceDirectoryMock.mockReset();
     createWorkspaceRootMock.mockReset();
     loadWorkspaceTreeMock.mockReset();
+    readAppSettingsMock.mockReset();
     readPlateDocumentMock.mockReset();
+    saveAppSettingsMock.mockReset();
     selectWorkspaceParentDirectoryMock.mockReset();
+    readAppSettingsMock.mockResolvedValue({
+      schemaVersion: 1,
+      storage: { defaultProvider: 'local' },
+    });
+    saveAppSettingsMock.mockResolvedValue({
+      schemaVersion: 1,
+      storage: { defaultProvider: 'local' },
+    });
   });
 
   it('shows empty workspace action before selecting folder', () => {
@@ -199,6 +217,33 @@ describe('WorkspaceLayout', () => {
     expect(await screen.findByText('亮色')).toBeTruthy();
     expect(screen.getByText('暗色')).toBeTruthy();
     expect(screen.getByText('跟随系统')).toBeTruthy();
+  });
+
+  it('opens storage settings from the settings menu', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    });
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开设置菜单' }));
+    await user.click(screen.getByText('设置...'));
+
+    expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '存储' })).toBeTruthy();
+    expect(screen.getByText('本地存储配置')).toBeTruthy();
+    expect(screen.getByDisplayValue('/repo/.refinex/assets')).toBeTruthy();
+    expect(
+      screen.getByDisplayValue('refinex-asset://{assetId}'),
+    ).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '应用' }));
+
+    expect(saveAppSettingsMock).toHaveBeenCalledWith({
+      schemaVersion: 1,
+      storage: { defaultProvider: 'local' },
+    });
   });
 
   it('renders toc snapshot from the active Plate editor in the right toc panel', async () => {

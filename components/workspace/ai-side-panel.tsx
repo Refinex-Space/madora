@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { Bot, ListTree, Palette, Settings, Sparkles } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
@@ -8,8 +9,10 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -18,6 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 
 import { DocumentTocPanel } from './document-toc-panel';
+import { WorkspaceSettingsDialog } from './workspace-settings-dialog';
 import type { WorkspaceNode } from './workspace-types';
 
 export type RightPanelMode = 'ai' | 'toc' | null;
@@ -30,6 +34,7 @@ interface RightSidePanelProps {
 
 interface RightToolRailProps {
   mode: RightPanelMode;
+  workspaceRootPath: string | null;
   onModeChange: (mode: RightPanelMode) => void;
 }
 
@@ -59,10 +64,15 @@ export function RightSidePanel({
   );
 }
 
-export function RightToolRail({ mode, onModeChange }: RightToolRailProps) {
+export function RightToolRail({
+  mode,
+  workspaceRootPath,
+  onModeChange,
+}: RightToolRailProps) {
   const nextMode = (targetMode: Exclude<RightPanelMode, null>) =>
     mode === targetMode ? null : targetMode;
   const { setTheme, theme } = useTheme();
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   return (
     <nav
@@ -109,6 +119,11 @@ export function RightToolRail({ mode, onModeChange }: RightToolRailProps) {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-40" side="left">
+          <DropdownMenuItem onSelect={() => setSettingsOpen(true)}>
+            <Settings size={15} />
+            <span>设置...</span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <Palette size={15} />
@@ -133,6 +148,11 @@ export function RightToolRail({ mode, onModeChange }: RightToolRailProps) {
           </DropdownMenuSub>
         </DropdownMenuContent>
       </DropdownMenu>
+      <WorkspaceSettingsDialog
+        open={settingsOpen}
+        workspaceRootPath={workspaceRootPath}
+        onOpenChange={setSettingsOpen}
+      />
     </nav>
   );
 }
