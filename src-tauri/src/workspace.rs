@@ -462,21 +462,26 @@ fn read_children(root: &Path, dir: &Path) -> std::io::Result<Vec<WorkspaceNode>>
             continue;
         }
 
+        let sort_timestamp = read_sort_timestamp(&path)?;
+
         if path.is_dir() {
             let children = read_children(root, &path)?;
-            nodes.push(build_directory_node(root, &path, file_name, children)?);
+            nodes.push((
+                build_directory_node(root, &path, file_name, children)?,
+                sort_timestamp,
+            ));
         } else if is_plate_document_file(&path) {
-            nodes.push(build_document_node(root, &path, file_name)?);
+            nodes.push((build_document_node(root, &path, file_name)?, sort_timestamp));
         }
     }
 
-    nodes.sort_by(|left, right| {
-        directory_rank(left)
-            .cmp(&directory_rank(right))
+    nodes.sort_by(|(left, left_timestamp), (right, right_timestamp)| {
+        left_timestamp
+            .cmp(right_timestamp)
             .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
     });
 
-    Ok(nodes)
+    Ok(nodes.into_iter().map(|(node, _)| node).collect())
 }
 
 fn default_workspace_metadata() -> WorkspaceMetadata {
@@ -774,11 +779,15 @@ fn read_modified_at(path: &Path) -> Result<u128, String> {
     let modified = metadata
         .modified()
         .map_err(|_| "无法读取文档修改时间".to_string())?;
-    let duration = modified
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| "文档修改时间无效".to_string())?;
 
-    Ok(duration.as_millis())
+    Ok(system_time_to_millis(modified))
+}
+
+fn read_sort_timestamp(path: &Path) -> std::io::Result<u128> {
+    let metadata = fs::metadata(path)?;
+    let timestamp = metadata.created().or_else(|_| metadata.modified())?;
+
+    Ok(system_time_to_millis(timestamp))
 }
 
 fn build_directory_node(
@@ -858,16 +867,12 @@ fn collect_plate_document_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Res
     Ok(())
 }
 
-fn directory_rank(node: &WorkspaceNode) -> u8 {
-    match node.kind {
-        WorkspaceNodeKind::Directory => 0,
-        WorkspaceNodeKind::Document => 1,
-    }
+fn unix_timestamp_millis() -> u128 {
+    system_time_to_millis(SystemTime::now())
 }
 
-fn unix_timestamp_millis() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+fn system_time_to_millis(time: SystemTime) -> u128 {
+    time.duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or(0)
 }
@@ -979,6 +984,43 @@ mod tests {
         assert!(!debug.contains("intro.md"));
         assert!(!debug.contains("draft.mdx"));
         assert!(!debug.contains("data.json"));
+    }
+
+    #[test]
+    fn orders_new_nodes_after_existing_siblings() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        fs::create_dir(temp_dir.path().join("ZFolder")).expect("创建已有目录失败");
+        fs::write(
+            temp_dir.path().join("A.plate.json"),
+            r#"{"schemaVersion":1,"title":"A","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":""}]}]}"#,
+        )
+        .expect("写入已有文档失败");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        create_workspace_directory(
+            temp_dir.path().to_string_lossy().to_string(),
+            "".to_string(),
+            "未命名目录".to_string(),
+        )
+        .expect("创建新目录失败");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        create_plate_document(
+            temp_dir.path().to_string_lossy().to_string(),
+            "".to_string(),
+            "未命名文档".to_string(),
+        )
+        .expect("创建新文档失败");
+
+        let snapshot = build_workspace_snapshot(temp_dir.path()).expect("读取工作区失败");
+        let relative_paths = snapshot
+            .nodes
+            .iter()
+            .map(|node| node.relative_path.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(relative_paths.len(), 4);
+        assert_eq!(relative_paths[2], "未命名目录");
+        assert_eq!(relative_paths[3], "未命名文档.plate.json");
     }
 
     #[test]
