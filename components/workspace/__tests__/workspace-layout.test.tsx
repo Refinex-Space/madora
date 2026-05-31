@@ -388,6 +388,18 @@ describe('WorkspaceLayout', () => {
     ).toBe('wide');
   });
 
+  it('shows saved feedback when applying appearance settings', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开设置菜单' }));
+    await user.click(screen.getByText('设置...'));
+    await user.click(await screen.findByRole('radio', { name: '全宽' }));
+    await user.click(screen.getByRole('button', { name: '应用' }));
+
+    expect(screen.getByText('设置已保存。')).toBeTruthy();
+  });
+
   it('filters storage settings with the settings search input', async () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={snapshot} />);

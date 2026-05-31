@@ -342,7 +342,9 @@ export function WorkspaceSettingsDialog({
           <section className="min-h-0 overflow-auto px-6 py-5">
             {activeSection === 'appearance' ? (
               <AppearanceSettingsSection
+                errorMessage={errorMessage}
                 pageWidthMode={settings.appearance.pageWidthMode}
+                saveState={saveState}
                 theme={theme ?? 'system'}
                 visibleFields={visibleAppearanceFields.map((field) => field.id)}
                 onPageWidthModeChange={updatePageWidthMode}
@@ -414,13 +416,17 @@ export function WorkspaceSettingsDialog({
 }
 
 function AppearanceSettingsSection({
+  errorMessage,
   pageWidthMode,
+  saveState,
   theme,
   visibleFields,
   onPageWidthModeChange,
   onThemeChange,
 }: {
+  errorMessage: string | null;
   pageWidthMode: PageWidthMode;
+  saveState: 'idle' | 'saving' | 'saved' | 'error';
   theme: string;
   visibleFields: string[];
   onPageWidthModeChange: (pageWidthMode: PageWidthMode) => void;
@@ -488,6 +494,12 @@ function AppearanceSettingsSection({
             </div>
           </section>
         ) : null}
+
+        <SettingsFeedback
+          defaultMessage="当前配置会作为全局外观默认值。"
+          errorMessage={errorMessage}
+          saveState={saveState}
+        />
       </div>
     </>
   );
@@ -577,21 +589,42 @@ function StorageSettingsSection({
           </div>
         </div>
 
-        <div
-          className={cn(
-            'min-h-8 rounded-md px-2.5 py-1.5 text-xs',
-            errorMessage
-              ? 'border border-destructive/40 text-destructive'
-              : 'text-muted-foreground',
-          )}
-        >
-          {errorMessage ??
-            (saveState === 'saved'
-              ? '设置已保存。'
-              : '当前配置会作为全局上传默认值。')}
-        </div>
+        <SettingsFeedback
+          defaultMessage="当前配置会作为全局上传默认值。"
+          errorMessage={errorMessage}
+          saveState={saveState}
+        />
       </div>
     </>
+  );
+}
+
+function SettingsFeedback({
+  defaultMessage,
+  errorMessage,
+  saveState,
+}: {
+  defaultMessage: string;
+  errorMessage: string | null;
+  saveState: 'idle' | 'saving' | 'saved' | 'error';
+}) {
+  return (
+    <div
+      aria-live="polite"
+      className={cn(
+        'min-h-8 rounded-md px-2.5 py-1.5 text-xs',
+        errorMessage
+          ? 'border border-destructive/40 text-destructive'
+          : 'text-muted-foreground',
+      )}
+    >
+      {errorMessage ??
+        (saveState === 'saved'
+          ? '设置已保存。'
+          : saveState === 'saving'
+            ? '正在保存设置...'
+            : defaultMessage)}
+    </div>
   );
 }
 
