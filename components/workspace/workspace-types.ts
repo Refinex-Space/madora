@@ -44,6 +44,13 @@ export interface WorkspaceMetadata {
   sortOrder: Record<string, unknown>;
 }
 
+export interface AppSettings {
+  schemaVersion: 1;
+  storage: {
+    defaultProvider: 'local';
+  };
+}
+
 export interface PlateDocumentEnvelope {
   schemaVersion: 1;
   title: string;

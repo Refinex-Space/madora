@@ -1,4 +1,5 @@
 mod assets;
+mod settings;
 mod workspace;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -12,6 +13,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             assets::upload_workspace_asset,
             assets::resolve_workspace_asset,
+            settings::read_app_settings,
+            settings::save_app_settings,
             workspace::ensure_workspace,
             workspace::load_workspace_tree,
             workspace::create_workspace_root,

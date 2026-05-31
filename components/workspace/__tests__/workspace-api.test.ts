@@ -12,9 +12,11 @@ import {
   getWorkspaceHistory,
   readMarkdownSourceFiles,
   readPlateDocument,
+  readAppSettings,
   recordWorkspaceHistory,
   removeWorkspaceHistory,
   renameWorkspaceNode,
+  saveAppSettings,
   savePlateDocument,
 } from '../workspace-api';
 import type { WorkspaceSnapshot } from '../workspace-types';
@@ -144,7 +146,15 @@ describe('workspace-api native Plate commands', () => {
         absolutePath: '/repo/guide-renamed.plate.json',
         title: '新指南',
       })
-      .mockResolvedValueOnce({ path: '/repo/guide-renamed.plate.json' });
+      .mockResolvedValueOnce({ path: '/repo/guide-renamed.plate.json' })
+      .mockResolvedValueOnce({
+        schemaVersion: 1,
+        storage: { defaultProvider: 'local' },
+      })
+      .mockResolvedValueOnce({
+        schemaVersion: 1,
+        storage: { defaultProvider: 'local' },
+      });
 
     await ensureWorkspace('/repo');
     await createWorkspaceRoot('/Users/refinex', '新知识库');
@@ -158,6 +168,11 @@ describe('workspace-api native Plate commands', () => {
     ]);
     await renameWorkspaceNode('/repo', '/repo/guide.plate.json', '新指南');
     await deleteWorkspaceNode('/repo', '/repo/guide.plate.json');
+    await readAppSettings();
+    await saveAppSettings({
+      schemaVersion: 1,
+      storage: { defaultProvider: 'local' },
+    });
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'ensure_workspace', {
       rootPath: '/repo',
@@ -207,6 +222,13 @@ describe('workspace-api native Plate commands', () => {
     expect(invokeMock).toHaveBeenNthCalledWith(10, 'delete_workspace_node', {
       rootPath: '/repo',
       nodePath: '/repo/guide.plate.json',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(11, 'read_app_settings');
+    expect(invokeMock).toHaveBeenNthCalledWith(12, 'save_app_settings', {
+      settings: {
+        schemaVersion: 1,
+        storage: { defaultProvider: 'local' },
+      },
     });
   });
 });

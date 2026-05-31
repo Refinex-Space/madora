@@ -1,5 +1,6 @@
 import type {
   CreatedPlateDocument,
+  AppSettings,
   DeletedWorkspaceNode,
   DocumentContentMeta,
   ImportedPlateDocumentInput,
@@ -252,6 +253,18 @@ export async function createImportedPlateDocuments(
     targetDir,
     documents,
   });
+}
+
+export async function readAppSettings() {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<AppSettings>('read_app_settings');
+}
+
+export async function saveAppSettings(settings: AppSettings) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<AppSettings>('save_app_settings', { settings });
 }
 
 export async function selectMarkdownSourceFiles() {
