@@ -51,6 +51,29 @@ export interface AppSettings {
   };
 }
 
+export interface UploadWorkspaceAssetInput {
+  fileName: string;
+  mediaType: string;
+  base64Data: string;
+}
+
+export interface UploadedWorkspaceAsset {
+  id: string;
+  url: string;
+  name: string;
+  mediaType: string;
+  size: number;
+  absolutePath: string;
+}
+
+export interface ResolvedWorkspaceAsset {
+  id: string;
+  absolutePath: string;
+  mediaType: string;
+  name: string;
+  size: number;
+}
+
 export interface PlateDocumentEnvelope {
   schemaVersion: 1;
   title: string;

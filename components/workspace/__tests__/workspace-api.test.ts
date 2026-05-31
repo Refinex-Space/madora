@@ -13,11 +13,13 @@ import {
   readMarkdownSourceFiles,
   readPlateDocument,
   readAppSettings,
+  resolveWorkspaceAsset,
   recordWorkspaceHistory,
   removeWorkspaceHistory,
   renameWorkspaceNode,
   saveAppSettings,
   savePlateDocument,
+  uploadWorkspaceAsset,
 } from '../workspace-api';
 import type { WorkspaceSnapshot } from '../workspace-types';
 
@@ -154,6 +156,21 @@ describe('workspace-api native Plate commands', () => {
       .mockResolvedValueOnce({
         schemaVersion: 1,
         storage: { defaultProvider: 'local' },
+      })
+      .mockResolvedValueOnce({
+        id: 'asset-a',
+        url: 'refinex-asset://asset-a',
+        name: 'cover.png',
+        mediaType: 'image/png',
+        size: 123,
+        absolutePath: '/repo/.refinex/assets/files/as/asset-a.png',
+      })
+      .mockResolvedValueOnce({
+        id: 'asset-a',
+        name: 'cover.png',
+        mediaType: 'image/png',
+        size: 123,
+        absolutePath: '/repo/.refinex/assets/files/as/asset-a.png',
       });
 
     await ensureWorkspace('/repo');
@@ -173,6 +190,12 @@ describe('workspace-api native Plate commands', () => {
       schemaVersion: 1,
       storage: { defaultProvider: 'local' },
     });
+    await uploadWorkspaceAsset('/repo', {
+      base64Data: 'ZmlsZQ==',
+      fileName: 'cover.png',
+      mediaType: 'image/png',
+    });
+    await resolveWorkspaceAsset('/repo', 'asset-a');
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'ensure_workspace', {
       rootPath: '/repo',
@@ -229,6 +252,18 @@ describe('workspace-api native Plate commands', () => {
         schemaVersion: 1,
         storage: { defaultProvider: 'local' },
       },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(13, 'upload_workspace_asset', {
+      rootPath: '/repo',
+      input: {
+        base64Data: 'ZmlsZQ==',
+        fileName: 'cover.png',
+        mediaType: 'image/png',
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(14, 'resolve_workspace_asset', {
+      rootPath: '/repo',
+      assetId: 'asset-a',
     });
   });
 });

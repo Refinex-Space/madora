@@ -10,6 +10,12 @@ import { generateReactHelpers } from '@uploadthing/react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
+import { useWorkspaceAssetContext } from '@/components/editor/workspace-asset-context';
+import {
+  isTauriRuntime,
+  uploadWorkspaceAsset,
+} from '@/components/workspace/workspace-api';
+
 export type UploadedFile<T = unknown> = ClientUploadedFileData<T>;
 
 interface UseUploadFileProps
@@ -26,6 +32,7 @@ export function useUploadFile({
   onUploadError,
   ...props
 }: UseUploadFileProps = {}) {
+  const assetContext = useWorkspaceAssetContext();
   const [uploadedFile, setUploadedFile] = React.useState<UploadedFile>();
   const [uploadingFile, setUploadingFile] = React.useState<File>();
   const [progress, setProgress] = React.useState<number>(0);
@@ -34,6 +41,45 @@ export function useUploadFile({
   async function uploadThing(file: File) {
     setIsUploading(true);
     setUploadingFile(file);
+
+    if (
+      assetContext.mode === 'workspace' &&
+      assetContext.rootPath &&
+      isTauriRuntime()
+    ) {
+      try {
+        const uploaded = await uploadWorkspaceAsset(assetContext.rootPath, {
+          base64Data: await fileToBase64(file),
+          fileName: file.name,
+          mediaType: file.type || 'application/octet-stream',
+        });
+        const localUploadedFile = {
+          key: uploaded.id,
+          appUrl: uploaded.url,
+          name: uploaded.name,
+          size: uploaded.size,
+          type: uploaded.mediaType,
+          url: uploaded.url,
+        } as UploadedFile;
+
+        setProgress(100);
+        setUploadedFile(localUploadedFile);
+        onUploadComplete?.(localUploadedFile);
+
+        return localUploadedFile;
+      } catch (error) {
+        const message = getErrorMessage(error);
+
+        toast.error(message);
+        onUploadError?.(error);
+
+        return undefined;
+      } finally {
+        setProgress(0);
+        setIsUploading(false);
+        setUploadingFile(undefined);
+      }
+    }
 
     try {
       const res = await uploadFiles('editorUploader', {
@@ -106,6 +152,19 @@ export function useUploadFile({
 
 export const { uploadFiles, useUploadThing } =
   generateReactHelpers<OurFileRouter>();
+
+async function fileToBase64(file: File) {
+  const buffer = await file.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+
+  return window.btoa(binary);
+}
 
 export function getErrorMessage(err: unknown) {
   const unknownError = 'Something went wrong, please try again later.';

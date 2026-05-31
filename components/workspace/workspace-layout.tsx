@@ -126,6 +126,7 @@ export function WorkspaceLayout({
                 documentKey={`${workspace.documentContent?.path ?? workspace.currentDocument.absolutePath}:${workspace.documentVersion}`}
                 value={workspace.draftEnvelope.content}
                 variant="workspace"
+                workspaceRootPath={workspace.snapshot?.rootPath ?? null}
                 onSaveRequested={() => void workspace.saveCurrentDocumentNow()}
                 onTocSnapshotChange={handleTocSnapshotChange}
                 onValueChange={workspace.updateDocumentValue}

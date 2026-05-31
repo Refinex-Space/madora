@@ -11,6 +11,7 @@ import {
 } from '@/components/editor/document-toc-bridge';
 import { EditorKit } from '@/components/editor/editor-kit';
 import { SettingsDialog } from '@/components/editor/settings-dialog';
+import { WorkspaceAssetProvider } from '@/components/editor/workspace-asset-context';
 import { Editor, EditorContainer } from '@/components/ui/editor';
 
 interface PlateEditorProps {
@@ -20,6 +21,7 @@ interface PlateEditorProps {
   onTocSnapshotChange?: (snapshot: DocumentTocSnapshot) => void;
   onValueChange?: (value: Value) => void;
   variant?: 'demo' | 'workspace';
+  workspaceRootPath?: string | null;
 }
 
 const emptyValue: Value = [{ children: [{ text: '' }], type: 'p' }];
@@ -31,6 +33,7 @@ export function PlateEditor({
   onValueChange,
   value,
   variant = 'demo',
+  workspaceRootPath,
 }: PlateEditorProps) {
   const editor = usePlateEditor(
     {
@@ -41,40 +44,47 @@ export function PlateEditor({
   );
 
   return (
-    <Plate
-      editor={editor}
-      onChange={({ value }) => {
-        if (variant === 'workspace') {
-          onValueChange?.(value);
-        }
-      }}
+    <WorkspaceAssetProvider
+      mode={variant}
+      rootPath={variant === 'workspace' ? (workspaceRootPath ?? null) : null}
     >
-      <EditorContainer
-        className={
-          variant === 'workspace' ? 'workspace-editor-shell' : undefined
-        }
+      <Plate
+        editor={editor}
+        onChange={({ value }) => {
+          if (variant === 'workspace') {
+            onValueChange?.(value);
+          }
+        }}
       >
-        <Editor
-          variant={variant === 'workspace' ? 'default' : 'demo'}
-          onKeyDown={(event) => {
-            if (
-              variant === 'workspace' &&
-              (event.metaKey || event.ctrlKey) &&
-              event.key.toLowerCase() === 's'
-            ) {
-              event.preventDefault();
-              onSaveRequested?.();
+        <div data-testid="plate-editor-root">
+          <EditorContainer
+            className={
+              variant === 'workspace' ? 'workspace-editor-shell' : undefined
             }
-          }}
-        />
-      </EditorContainer>
+          >
+            <Editor
+              variant={variant === 'workspace' ? 'default' : 'demo'}
+              onKeyDown={(event) => {
+                if (
+                  variant === 'workspace' &&
+                  (event.metaKey || event.ctrlKey) &&
+                  event.key.toLowerCase() === 's'
+                ) {
+                  event.preventDefault();
+                  onSaveRequested?.();
+                }
+              }}
+            />
+          </EditorContainer>
 
-      {variant === 'workspace' && onTocSnapshotChange ? (
-        <DocumentTocBridge onSnapshotChange={onTocSnapshotChange} />
-      ) : null}
+          {variant === 'workspace' && onTocSnapshotChange ? (
+            <DocumentTocBridge onSnapshotChange={onTocSnapshotChange} />
+          ) : null}
 
-      <SettingsDialog />
-    </Plate>
+          <SettingsDialog />
+        </div>
+      </Plate>
+    </WorkspaceAssetProvider>
   );
 }
 

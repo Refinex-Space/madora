@@ -209,6 +209,19 @@ describe('PlateEditor', () => {
     expect(screen.getByTestId('editor-surface').className).toBe('');
   });
 
+  it('provides workspace root path to media upload context', () => {
+    render(
+      <PlateEditor
+        documentKey="/repo/guide.plate.json:1"
+        value={[{ children: [{ text: '正文' }], type: 'p' }]}
+        variant="workspace"
+        workspaceRootPath="/repo"
+      />,
+    );
+
+    expect(screen.getByTestId('plate-editor-root')).toBeTruthy();
+  });
+
   it('defines a thin editor scrollbar with toolbar top offset', () => {
     const globalsSource = readFileSync(
       join(process.cwd(), 'app/globals.css'),

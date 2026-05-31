@@ -8,6 +8,9 @@ import type {
   MarkdownSourceFile,
   PlateDocumentContent,
   PlateDocumentEnvelope,
+  ResolvedWorkspaceAsset,
+  UploadedWorkspaceAsset,
+  UploadWorkspaceAssetInput,
   WorkspaceHistoryItem,
   WorkspaceMetadata,
   WorkspaceNode,
@@ -265,6 +268,27 @@ export async function saveAppSettings(settings: AppSettings) {
   const { invoke } = await import('@tauri-apps/api/core');
 
   return invoke<AppSettings>('save_app_settings', { settings });
+}
+
+export async function uploadWorkspaceAsset(
+  rootPath: string,
+  input: UploadWorkspaceAssetInput,
+) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<UploadedWorkspaceAsset>('upload_workspace_asset', {
+    rootPath,
+    input,
+  });
+}
+
+export async function resolveWorkspaceAsset(rootPath: string, assetId: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<ResolvedWorkspaceAsset>('resolve_workspace_asset', {
+    rootPath,
+    assetId,
+  });
 }
 
 export async function selectMarkdownSourceFiles() {
