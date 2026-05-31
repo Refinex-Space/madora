@@ -424,6 +424,15 @@ function TreeNode({
             )}
             data-testid={`tree-row-${node.id}`}
             draggable={!dragDisabled && !isEditing}
+            role={isEditing ? undefined : 'button'}
+            tabIndex={isEditing ? undefined : 0}
+            onClick={(event) => {
+              if (isTreeDragDisabledTarget(event.target)) {
+                return;
+              }
+
+              toggleOrSelect();
+            }}
             onDragEnd={onTreeDragEnd}
             onDragEnter={updateDropPreview}
             onDragOver={updateDropPreview}
@@ -467,6 +476,16 @@ function TreeNode({
                 targetPath: node.absolutePath,
               });
             }}
+            onKeyDown={(event) => {
+              if (isEditing || isTreeDragDisabledTarget(event.target)) {
+                return;
+              }
+
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleOrSelect();
+              }
+            }}
           >
             {previewPosition && previewPosition !== 'inside' ? (
               <span
@@ -498,11 +517,9 @@ function TreeNode({
                 />
               </div>
             ) : (
-              <button
+              <div
                 className="grid h-full min-w-0 flex-1 grid-cols-[15px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 text-left"
                 style={{ paddingLeft: rowPaddingLeft }}
-                type="button"
-                onClick={toggleOrSelect}
               >
                 <DirectoryIcon
                   isDirectory={isDirectory}
@@ -510,7 +527,7 @@ function TreeNode({
                   node={node}
                 />
                 <span className="truncate">{displayName}</span>
-              </button>
+              </div>
             )}
 
             <NodeActionDropdown

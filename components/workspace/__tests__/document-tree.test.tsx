@@ -85,8 +85,10 @@ describe('DocumentTree', () => {
     await user.click(screen.getByText('Guides'));
 
     expect(
-      screen.getByText('入门').closest('button')?.style.paddingLeft,
-    ).toBe(screen.getByText('Guides').closest('button')?.style.paddingLeft);
+      screen.getByText('入门').closest('[role="button"]')?.getAttribute('style'),
+    ).toBe(
+      screen.getByText('Guides').closest('[role="button"]')?.getAttribute('style'),
+    );
   });
 
   it('keeps a subtle visual gap between parent and child row backgrounds', async () => {
@@ -337,6 +339,26 @@ describe('DocumentTree', () => {
     });
 
     expect(renameInput.closest('button')).toBeNull();
+  });
+
+  it('renders tree row content without a nested native button', () => {
+    render(
+      <DocumentTree
+        currentDocumentPath={null}
+        nodes={nodes}
+        searchQuery=""
+        onCreateDirectory={vi.fn()}
+        onCreateDocument={vi.fn()}
+        onDeleteNode={vi.fn()}
+        onImportMarkdown={vi.fn()}
+        onMoveNode={vi.fn()}
+        onRenameNode={vi.fn()}
+        onSelectDocument={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Guides').closest('button')).toBeNull();
+    expect(screen.getByText('Guides').closest('[role="button"]')).toBeTruthy();
   });
 
   it('confirms recursive directory deletion from the node menu', async () => {
