@@ -1,11 +1,16 @@
 import type { ReactNode } from 'react';
-import { FileInput, FilePlus2, FolderOpen, FolderPlus, RefreshCw } from 'lucide-react';
+import {
+  FileInput,
+  FilePlus2,
+  FolderOpen,
+  FolderPlus,
+  RefreshCw,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 
 import type {
   DocumentLoadState,
-  DocumentSaveState,
   WorkspaceNode,
 } from './workspace-types';
 
@@ -21,8 +26,6 @@ interface EditorPaneProps {
   onImportMarkdown: () => void;
   onOpenWorkspace: () => void;
   onRetryDocument: () => void;
-  saveError: string | null;
-  saveState: DocumentSaveState;
 }
 
 export function EditorPane({
@@ -37,23 +40,13 @@ export function EditorPane({
   onImportMarkdown,
   onOpenWorkspace,
   onRetryDocument,
-  saveError,
-  saveState,
 }: EditorPaneProps) {
   return (
     <div className="flex h-full min-w-0 flex-col">
-      {currentDocument && documentLoadState === 'loaded' ? (
-        <div className="flex h-9 shrink-0 items-center justify-end border-b px-3 text-xs text-muted-foreground">
-          {saveState === 'dirty' ? '有未保存更改' : null}
-          {saveState === 'saving' ? '保存中...' : null}
-          {saveState === 'saved' ? '已保存' : null}
-          {saveState === 'error' ? (
-            <span className="text-destructive">{saveError ?? '保存失败'}</span>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div
+        className="min-h-0 flex-1 overflow-auto"
+        data-testid="editor-pane-content"
+      >
         {currentDocument && documentLoadState === 'loading' ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             正在打开文档...

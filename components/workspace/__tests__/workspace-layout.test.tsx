@@ -193,6 +193,48 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('button', { name: '背景' })).toBeTruthy();
   });
 
+  it('renders save state in the workspace bottom background area', async () => {
+    const user = userEvent.setup();
+    readPlateDocumentMock.mockResolvedValueOnce({
+      envelope: {
+        schemaVersion: 1,
+        title: '项目说明',
+        createdAt: '2026-05-30T00:00:00.000Z',
+        updatedAt: '2026-05-30T00:00:00.000Z',
+        content: [
+          { children: [{ text: '项目说明' }], type: 'h1' },
+          {
+            children: [
+              { text: '正文 ' },
+              { children: [{ text: '加粗' }], bold: true },
+            ],
+            type: 'p',
+          },
+        ],
+      },
+      modifiedAt: 1,
+      path: '/repo/README.plate.json',
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByText('项目说明'));
+    await screen.findByTestId('plate-editor');
+
+    const blocks = screen.getByTestId('workspace-main-blocks');
+    const statusBar = screen.getByTestId('workspace-status-bar');
+
+    expect(blocks.className).toContain('flex-1');
+    expect(statusBar.textContent).toBe('字数：8已保存');
+    expect(statusBar.className).toContain('shrink-0');
+    expect(statusBar.className).not.toContain('absolute');
+    expect(
+      blocks.compareDocumentPosition(statusBar) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.queryByTestId('editor-status-bar')).toBeNull();
+  });
+
   it('shows workspace guide in the top workspace entry when there is no history', async () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={null} />);
