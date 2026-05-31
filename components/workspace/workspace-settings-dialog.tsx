@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Cloud, Database, FolderArchive, Server } from 'lucide-react';
+import { Cloud, Database, FolderArchive, Search, Server } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -124,18 +124,22 @@ export function WorkspaceSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[min(720px,calc(100vh-48px))] max-w-[980px] gap-0 overflow-hidden p-0 sm:max-w-[980px]">
-        <DialogHeader className="border-b px-5 py-4">
-          <DialogTitle>设置</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="grid max-h-[min(620px,calc(100vh-40px))] min-h-[500px] w-[860px] max-w-[calc(100vw-40px)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl p-0 sm:max-w-[860px]">
+        <DialogHeader className="gap-1 border-b px-5 py-3">
+          <DialogTitle className="text-[15px]">设置</DialogTitle>
+          <DialogDescription className="text-xs">
             配置全局上传和资源存储方式。
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="border-r bg-muted/30 p-3">
+        <div className="grid min-h-0 grid-cols-[184px_minmax(0,1fr)]">
+          <aside className="space-y-3 border-r bg-muted/25 p-3">
+            <div className="flex h-8 items-center gap-2 rounded-md border bg-background px-2 text-muted-foreground">
+              <Search size={14} />
+              <span className="text-xs">搜索设置</span>
+            </div>
             <button
-              className="flex h-8 w-full items-center gap-2 rounded-md bg-[#3574f0] px-2 text-left text-sm font-medium text-white"
+              className="flex h-8 w-full items-center gap-2 rounded-md bg-[#3574f0] px-2 text-left text-sm font-medium text-white shadow-sm"
               type="button"
             >
               <Database size={15} />
@@ -144,17 +148,17 @@ export function WorkspaceSettingsDialog({
           </aside>
 
           <section className="min-h-0 overflow-auto px-6 py-5">
-            <div className="mb-5">
-              <h2 className="text-base font-semibold">存储</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
+            <div className="mb-4 max-w-[620px]">
+              <h2 className="text-[15px] font-semibold">存储</h2>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 选择上传资源的默认存储方式。本期仅启用工作区本地存储。
               </p>
             </div>
 
-            <div className="space-y-6">
-              <div className="grid grid-cols-[160px_minmax(0,320px)] items-center gap-3">
+            <div className="max-w-[620px] space-y-5">
+              <div className="grid grid-cols-[136px_minmax(0,320px)] items-center gap-3">
                 <label
-                  className="text-sm font-medium"
+                  className="text-sm text-foreground"
                   htmlFor="storage-provider"
                 >
                   全局存储方式
@@ -198,15 +202,15 @@ export function WorkspaceSettingsDialog({
                 </Select>
               </div>
 
-              <div className="space-y-3 rounded-lg border bg-background p-4">
-                <div>
-                  <h3 className="text-sm font-semibold">本地存储配置</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
+              <div className="border-t pt-4">
+                <div className="mb-3">
+                  <h3 className="text-sm font-medium">本地存储配置</h3>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
                     上传文件跟随当前工作区保存，文档中仅写入稳定的资源引用。
                   </p>
                 </div>
 
-                <div className="grid gap-3">
+                <div className="grid gap-2">
                   <ReadonlyField
                     label="资源目录"
                     value={assetDirectory}
@@ -224,10 +228,10 @@ export function WorkspaceSettingsDialog({
 
               <div
                 className={cn(
-                  'rounded-md border px-3 py-2 text-sm',
+                  'min-h-8 rounded-md px-2.5 py-1.5 text-xs',
                   errorMessage
-                    ? 'border-destructive/40 text-destructive'
-                    : 'border-transparent text-muted-foreground',
+                    ? 'border border-destructive/40 text-destructive'
+                    : 'text-muted-foreground',
                 )}
               >
                 {errorMessage ??
@@ -237,8 +241,9 @@ export function WorkspaceSettingsDialog({
           </section>
         </div>
 
-        <DialogFooter className="rounded-none">
+        <DialogFooter className="mx-0 mb-0 min-h-13 rounded-none px-5 py-3">
           <Button
+            size="sm"
             type="button"
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -247,6 +252,7 @@ export function WorkspaceSettingsDialog({
           </Button>
           <Button
             disabled={loadState === 'loading' || saveState === 'saving'}
+            size="sm"
             type="button"
             onClick={() => void handleApply()}
           >
@@ -254,6 +260,7 @@ export function WorkspaceSettingsDialog({
           </Button>
           <Button
             disabled={loadState === 'loading' || saveState === 'saving'}
+            size="sm"
             type="button"
             onClick={async () => {
               await handleApply();
@@ -270,9 +277,13 @@ export function WorkspaceSettingsDialog({
 
 function ReadonlyField({ label, value }: { label: string; value: string }) {
   return (
-    <label className="grid grid-cols-[120px_minmax(0,1fr)] items-center gap-3 text-sm">
+    <label className="grid grid-cols-[136px_minmax(0,1fr)] items-center gap-3 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <Input className="font-mono text-xs" readOnly value={value} />
+      <Input
+        className="h-8 rounded-md bg-muted/20 font-mono text-xs"
+        readOnly
+        value={value}
+      />
     </label>
   );
 }
