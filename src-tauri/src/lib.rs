@@ -1,3 +1,4 @@
+mod assets;
 mod workspace;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -9,6 +10,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
+            assets::upload_workspace_asset,
+            assets::resolve_workspace_asset,
             workspace::ensure_workspace,
             workspace::load_workspace_tree,
             workspace::create_workspace_root,
