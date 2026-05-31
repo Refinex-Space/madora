@@ -42,7 +42,11 @@ export function PlateEditor({
   workspaceRootPath,
 }: PlateEditorProps) {
   const editorScrollContainerRef = React.useRef<HTMLDivElement | null>(null);
-  const [showBackToTop, setShowBackToTop] = React.useState(false);
+  const scrollResetKey = `${variant}:${documentKey ?? ''}`;
+  const [backToTopState, setBackToTopState] = React.useState({
+    key: scrollResetKey,
+    visible: false,
+  });
   const editor = usePlateEditor(
     {
       plugins: EditorKit,
@@ -56,16 +60,17 @@ export function PlateEditor({
       ? 'workspaceWide'
       : 'default'
     : 'demo';
-
-  React.useEffect(() => {
-    setShowBackToTop(false);
-  }, [documentKey, variant]);
+  const showBackToTop =
+    backToTopState.key === scrollResetKey && backToTopState.visible;
 
   const handleWorkspaceEditorScroll = React.useCallback(
     (event: React.UIEvent<HTMLDivElement>) => {
-      setShowBackToTop(event.currentTarget.scrollTop > 240);
+      setBackToTopState({
+        key: scrollResetKey,
+        visible: event.currentTarget.scrollTop > 240,
+      });
     },
-    [],
+    [scrollResetKey],
   );
 
   const handleBackToTop = React.useCallback(
@@ -77,9 +82,12 @@ export function PlateEditor({
         behavior: 'smooth',
         top: 0,
       });
-      setShowBackToTop(false);
+      setBackToTopState({
+        key: scrollResetKey,
+        visible: false,
+      });
     },
-    [],
+    [scrollResetKey],
   );
 
   return (

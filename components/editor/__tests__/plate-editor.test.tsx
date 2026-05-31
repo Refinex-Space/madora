@@ -86,26 +86,8 @@ vi.mock('@/components/editor/document-toc-bridge', () => ({
   },
 }));
 
-vi.mock('@/components/ui/editor', () => ({
-  Editor: ({
-    className,
-    onKeyDown,
-    variant,
-  }: {
-    className?: string;
-    onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
-    variant?: string;
-  }) => (
-    <div
-      className={className}
-      data-testid="editor-surface"
-      data-variant={variant}
-      role="textbox"
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-    />
-  ),
-  EditorContainer: React.forwardRef<
+vi.mock('@/components/ui/editor', () => {
+  const EditorContainer = React.forwardRef<
     HTMLDivElement,
     {
       children: React.ReactNode;
@@ -122,8 +104,31 @@ vi.mock('@/components/ui/editor', () => ({
     >
       {children}
     </div>
-  )),
-}));
+  ));
+  EditorContainer.displayName = 'EditorContainer';
+
+  return {
+    Editor: ({
+      className,
+      onKeyDown,
+      variant,
+    }: {
+      className?: string;
+      onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
+      variant?: string;
+    }) => (
+      <div
+        className={className}
+        data-testid="editor-surface"
+        data-variant={variant}
+        role="textbox"
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+      />
+    ),
+    EditorContainer,
+  };
+});
 
 describe('PlateEditor', () => {
   beforeEach(() => {

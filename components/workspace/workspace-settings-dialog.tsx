@@ -206,12 +206,6 @@ export function WorkspaceSettingsDialog({
     : visibleSections[0]?.id;
 
   React.useEffect(() => {
-    if (open) {
-      setActiveSectionId('appearance');
-    }
-  }, [open]);
-
-  React.useEffect(() => {
     let cancelled = false;
 
     async function loadSettings() {
@@ -220,6 +214,7 @@ export function WorkspaceSettingsDialog({
       }
 
       setSearchQuery('');
+      setActiveSectionId('appearance');
       setLoadState('loading');
       setSaveState('idle');
       setErrorMessage(null);
