@@ -47,6 +47,7 @@ describe('theme provider source contract', () => {
     expect(layoutSource).toContain('<ThemeProvider>');
     expect(tauriConfig.app.windows[0].titleBarStyle).toBe('Overlay');
     expect(tauriConfig.app.windows[0].hiddenTitle).toBe(true);
+    expect(tauriConfig.app.windows[0].dragDropEnabled).toBe(false);
     expect(tauriCapability.permissions).toContain(
       'core:window:allow-start-dragging',
     );
