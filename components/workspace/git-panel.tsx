@@ -63,7 +63,7 @@ export function GitPanel({
             初始化后可以在这里查看变更、选择文件并提交。
           </p>
           <button
-            className="mt-4 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground"
+            className="mt-4 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm transition-all duration-150 hover:bg-primary/90 hover:shadow-md active:translate-y-px active:bg-primary/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             type="button"
             onClick={onInitRepository}
           >
@@ -172,7 +172,7 @@ export function GitPanel({
           onChange={(event) => setMessage(event.currentTarget.value)}
         />
         <button
-          className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm transition-all duration-150 hover:bg-primary/90 hover:shadow-md active:translate-y-px active:bg-primary/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-primary disabled:hover:shadow-sm disabled:active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           disabled={!canCommit || isLoading}
           type="button"
           onClick={() => onCommit(message)}
