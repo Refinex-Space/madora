@@ -168,3 +168,45 @@ export interface ImportedPlateDocumentResult {
 export type DocumentLoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
 export type DocumentSaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
+
+export interface GitProbe {
+  gitAvailable: boolean;
+  isRepository: boolean;
+  rootPath: string;
+  branch: string | null;
+}
+
+export interface GitStatus {
+  rootPath: string;
+  branch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  changes: GitChange[];
+}
+
+export interface GitChange {
+  path: string;
+  oldPath: string | null;
+  changeType: GitChangeType;
+  indexStatus: string;
+  workingTreeStatus: string;
+  staged: boolean;
+}
+
+export type GitChangeType =
+  | 'modified'
+  | 'added'
+  | 'deleted'
+  | 'renamed'
+  | 'copied'
+  | 'untracked'
+  | 'unknown';
+
+export interface GitDiff {
+  path: string;
+  staged: boolean;
+  binary: boolean;
+  truncated: boolean;
+  content: string;
+}

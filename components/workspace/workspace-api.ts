@@ -3,6 +3,9 @@ import type {
   AppSettings,
   DeletedWorkspaceNode,
   DocumentContentMeta,
+  GitDiff,
+  GitProbe,
+  GitStatus,
   ImportedPlateDocumentInput,
   ImportedPlateDocumentResult,
   ImportSourceFile,
@@ -342,6 +345,56 @@ export async function readWorkspaceAssetData(rootPath: string, assetId: string) 
     rootPath,
     assetId,
   });
+}
+
+export async function gitProbe(rootPath: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<GitProbe>('git_probe', { rootPath });
+}
+
+export async function gitInit(rootPath: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<GitProbe>('git_init', { rootPath });
+}
+
+export async function gitStatus(rootPath: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<GitStatus>('git_status', { rootPath });
+}
+
+export async function gitDiff(
+  rootPath: string,
+  path: string,
+  staged: boolean,
+) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<GitDiff>('git_diff', { rootPath, path, staged });
+}
+
+export async function gitStage(rootPath: string, paths: string[]) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<GitStatus>('git_stage', { rootPath, paths });
+}
+
+export async function gitUnstage(rootPath: string, paths: string[]) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<GitStatus>('git_unstage', { rootPath, paths });
+}
+
+export async function gitCommit(
+  rootPath: string,
+  message: string,
+  paths: string[],
+) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<GitStatus>('git_commit', { rootPath, message, paths });
 }
 
 export async function selectMarkdownSourceFiles() {

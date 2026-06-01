@@ -10,6 +10,13 @@ import {
   ensureWorkspace,
   getRecentWorkspacePath,
   getWorkspaceHistory,
+  gitCommit,
+  gitDiff,
+  gitInit,
+  gitProbe,
+  gitStage,
+  gitStatus,
+  gitUnstage,
   moveWorkspaceNode,
   readMarkdownSourceFiles,
   readPlateDocument,
@@ -298,6 +305,103 @@ describe('workspace-api native Plate commands', () => {
     expect(invokeMock).toHaveBeenNthCalledWith(16, 'read_workspace_asset_data', {
       rootPath: '/repo',
       assetId: 'asset-a',
+    });
+  });
+});
+
+describe('workspace-api native Git commands', () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+  });
+
+  it('wraps native Git commands through Tauri', async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        branch: null,
+        gitAvailable: true,
+        isRepository: false,
+        rootPath: '/repo',
+      })
+      .mockResolvedValueOnce({
+        branch: 'main',
+        gitAvailable: true,
+        isRepository: true,
+        rootPath: '/repo',
+      })
+      .mockResolvedValueOnce({
+        ahead: 0,
+        behind: 0,
+        branch: 'main',
+        changes: [],
+        rootPath: '/repo',
+        upstream: null,
+      })
+      .mockResolvedValueOnce({
+        binary: false,
+        content: 'diff --git a/a.md b/a.md',
+        path: 'a.md',
+        staged: false,
+        truncated: false,
+      })
+      .mockResolvedValueOnce({
+        ahead: 0,
+        behind: 0,
+        branch: 'main',
+        changes: [],
+        rootPath: '/repo',
+        upstream: null,
+      })
+      .mockResolvedValueOnce({
+        ahead: 0,
+        behind: 0,
+        branch: 'main',
+        changes: [],
+        rootPath: '/repo',
+        upstream: null,
+      })
+      .mockResolvedValueOnce({
+        ahead: 0,
+        behind: 0,
+        branch: 'main',
+        changes: [],
+        rootPath: '/repo',
+        upstream: null,
+      });
+
+    await gitProbe('/repo');
+    await gitInit('/repo');
+    await gitStatus('/repo');
+    await gitDiff('/repo', 'a.md', false);
+    await gitStage('/repo', ['a.md']);
+    await gitUnstage('/repo', ['a.md']);
+    await gitCommit('/repo', 'docs: update a', ['a.md']);
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'git_probe', {
+      rootPath: '/repo',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'git_init', {
+      rootPath: '/repo',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'git_status', {
+      rootPath: '/repo',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(4, 'git_diff', {
+      rootPath: '/repo',
+      path: 'a.md',
+      staged: false,
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(5, 'git_stage', {
+      rootPath: '/repo',
+      paths: ['a.md'],
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(6, 'git_unstage', {
+      rootPath: '/repo',
+      paths: ['a.md'],
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(7, 'git_commit', {
+      rootPath: '/repo',
+      message: 'docs: update a',
+      paths: ['a.md'],
     });
   });
 });
