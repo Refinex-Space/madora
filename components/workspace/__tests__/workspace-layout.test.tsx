@@ -377,6 +377,66 @@ describe('WorkspaceLayout', () => {
     });
   });
 
+  it('stages a changed file from the Git context menu', async () => {
+    const user = userEvent.setup();
+    gitProbeMock.mockResolvedValue({
+      branch: 'main',
+      gitAvailable: true,
+      isRepository: true,
+      rootPath: '/repo',
+    });
+    gitStatusMock.mockResolvedValue({
+      ahead: 0,
+      behind: 0,
+      branch: 'main',
+      changes: [
+        {
+          changeType: 'modified',
+          indexStatus: '',
+          oldPath: null,
+          path: 'README.plate.json',
+          staged: false,
+          workingTreeStatus: 'M',
+        },
+      ],
+      rootPath: '/repo',
+      upstream: null,
+    });
+    gitStageMock.mockResolvedValue({
+      ahead: 0,
+      behind: 0,
+      branch: 'main',
+      changes: [
+        {
+          changeType: 'modified',
+          indexStatus: 'M',
+          oldPath: null,
+          path: 'README.plate.json',
+          staged: true,
+          workingTreeStatus: '',
+        },
+      ],
+      rootPath: '/repo',
+      upstream: null,
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开 Git 面板' }));
+
+    const changeRow = await screen.findByRole('button', {
+      name: /README.plate.json/,
+    });
+
+    await user.pointer({
+      keys: '[MouseRight]',
+      target: changeRow,
+    });
+    await user.click(await screen.findByRole('menuitem', { name: '暂存' }));
+
+    expect(gitStageMock).toHaveBeenCalledWith('/repo', ['README.plate.json']);
+  });
+
   it('keeps ai panel collapsed by default and expands from the right tool rail', async () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={snapshot} />);

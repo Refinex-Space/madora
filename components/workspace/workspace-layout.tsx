@@ -287,6 +287,26 @@ export function WorkspaceLayout({
     }
   }, [selectedGitPaths, workspaceRootPath]);
 
+  const handleGitStageFile = React.useCallback(
+    async (path: string) => {
+      if (!workspaceRootPath) {
+        return;
+      }
+
+      setGitLoading(true);
+      setGitError(null);
+
+      try {
+        setGitStatusState(await gitStage(workspaceRootPath, [path]));
+      } catch (error) {
+        setGitError(formatUnknownError(error));
+      } finally {
+        setGitLoading(false);
+      }
+    },
+    [workspaceRootPath],
+  );
+
   const handleGitUnstageSelected = React.useCallback(async () => {
     if (!workspaceRootPath || selectedGitPaths.length === 0) {
       return;
@@ -503,6 +523,7 @@ export function WorkspaceLayout({
               onRevertFile={handleGitRevertFile}
               onSelectChange={handleGitSelectChange}
               onSelectFile={handleGitSelectFile}
+              onStageFile={handleGitStageFile}
               onStageSelected={handleGitStageSelected}
               onUnstageFile={handleGitUnstageFile}
               onUnstageSelected={handleGitUnstageSelected}

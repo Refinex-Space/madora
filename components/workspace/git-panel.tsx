@@ -1,7 +1,17 @@
 'use client';
 
 import * as React from 'react';
-import { Check, GitBranch, GitCommit, RefreshCw } from 'lucide-react';
+import {
+  Check,
+  FileDiff,
+  GitBranch,
+  GitCommit,
+  Minus,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react';
 
 import {
   AlertDialog,
@@ -39,6 +49,7 @@ interface GitPanelProps {
   onRevertFile: (path: string) => void;
   onSelectChange: (path: string, checked: boolean) => void;
   onSelectFile: (path: string) => void;
+  onStageFile: (path: string) => void;
   onStageSelected: () => void;
   onUnstageFile: (path: string) => void;
   onUnstageSelected: () => void;
@@ -59,6 +70,7 @@ export function GitPanel({
   onRevertFile,
   onSelectChange,
   onSelectFile,
+  onStageFile,
   onStageSelected,
   onUnstageFile,
   onUnstageSelected,
@@ -104,6 +116,8 @@ export function GitPanel({
   }
 
   const changes = status?.changes ?? [];
+  const stagedChanges = changes.filter(hasStagedChange);
+  const unstagedChanges = changes.filter(hasUnstagedChange);
 
   return (
     <>
@@ -137,83 +151,44 @@ export function GitPanel({
           {changes.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">没有本地变更</p>
           ) : (
-            <ul className="space-y-1">
-              {changes.map((change) => (
-                <li key={change.path}>
-                  <ContextMenu>
-                    <ContextMenuTrigger asChild>
-                      <div
-                        className={cn(
-                          'grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted',
-                          selectedPath === change.path && 'bg-muted text-foreground',
-                        )}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => onSelectFile(change.path)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            onSelectFile(change.path);
-                          }
-                        }}
-                      >
-                        <input
-                          aria-label={`选择 ${change.path}`}
-                          checked={selectedPaths.has(change.path)}
-                          type="checkbox"
-                          onChange={(event) =>
-                            onSelectChange(change.path, event.currentTarget.checked)
-                          }
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                        <span className="truncate">{change.path}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {renderChangeBadge(change)}
-                        </span>
-                      </div>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent
-                      className="w-40"
-                      onCloseAutoFocus={(event) => {
-                        if (focusCommitMessageAfterMenuCloseRef.current) {
-                          event.preventDefault();
-                          focusCommitMessageAfterMenuCloseRef.current = false;
-                          commitMessageRef.current?.focus();
-                        }
-                      }}
-                    >
-                      <ContextMenuItem
-                        onSelect={() => {
-                          focusCommitMessageAfterMenuCloseRef.current = true;
-                          onCommitSingleFile(change.path);
-                        }}
-                      >
-                        提交
-                      </ContextMenuItem>
-                      <ContextMenuItem onSelect={() => onSelectFile(change.path)}>
-                        显示差异
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        disabled={!isChangeStaged(change)}
-                        onSelect={() => onUnstageFile(change.path)}
-                      >
-                        取消暂存
-                      </ContextMenuItem>
-                      <ContextMenuSeparator />
-                      <ContextMenuItem onSelect={() => setPendingRevertPath(change.path)}>
-                        回滚
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        variant="destructive"
-                        onSelect={() => setPendingDeletePath(change.path)}
-                      >
-                        删除
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-4">
+              <GitChangeGroup
+                changes={stagedChanges}
+                focusCommitMessageAfterMenuCloseRef={focusCommitMessageAfterMenuCloseRef}
+                kind="staged"
+                selectedPath={selectedPath}
+                selectedPaths={selectedPaths}
+                title="已暂存"
+                onCommitSingleFile={onCommitSingleFile}
+                onDeleteFile={setPendingDeletePath}
+                onRevertFile={setPendingRevertPath}
+                onSelectChange={onSelectChange}
+                onSelectFile={onSelectFile}
+                onStageFile={onStageFile}
+                onUnstageFile={onUnstageFile}
+                onCloseAutoFocusCommitMessage={() => {
+                  commitMessageRef.current?.focus();
+                }}
+              />
+              <GitChangeGroup
+                changes={unstagedChanges}
+                focusCommitMessageAfterMenuCloseRef={focusCommitMessageAfterMenuCloseRef}
+                kind="unstaged"
+                selectedPath={selectedPath}
+                selectedPaths={selectedPaths}
+                title="未暂存"
+                onCommitSingleFile={onCommitSingleFile}
+                onDeleteFile={setPendingDeletePath}
+                onRevertFile={setPendingRevertPath}
+                onSelectChange={onSelectChange}
+                onSelectFile={onSelectFile}
+                onStageFile={onStageFile}
+                onUnstageFile={onUnstageFile}
+                onCloseAutoFocusCommitMessage={() => {
+                  commitMessageRef.current?.focus();
+                }}
+              />
+            </div>
           )}
         </div>
 
@@ -302,6 +277,193 @@ export function GitPanel({
   );
 }
 
+function GitChangeGroup({
+  changes,
+  focusCommitMessageAfterMenuCloseRef,
+  kind,
+  selectedPath,
+  selectedPaths,
+  title,
+  onCloseAutoFocusCommitMessage,
+  onCommitSingleFile,
+  onDeleteFile,
+  onRevertFile,
+  onSelectChange,
+  onSelectFile,
+  onStageFile,
+  onUnstageFile,
+}: {
+  changes: GitChange[];
+  focusCommitMessageAfterMenuCloseRef: React.MutableRefObject<boolean>;
+  kind: 'staged' | 'unstaged';
+  selectedPath: string | null;
+  selectedPaths: Set<string>;
+  title: string;
+  onCloseAutoFocusCommitMessage: () => void;
+  onCommitSingleFile: (path: string) => void;
+  onDeleteFile: (path: string) => void;
+  onRevertFile: (path: string) => void;
+  onSelectChange: (path: string, checked: boolean) => void;
+  onSelectFile: (path: string) => void;
+  onStageFile: (path: string) => void;
+  onUnstageFile: (path: string) => void;
+}) {
+  if (changes.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="space-y-1">
+      <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+        <span>{title}</span>
+        <span>{changes.length}</span>
+      </div>
+      <ul className="space-y-0.5">
+        {changes.map((change) => (
+          <GitChangeRow
+            key={`${kind}-${change.path}`}
+            change={change}
+            focusCommitMessageAfterMenuCloseRef={focusCommitMessageAfterMenuCloseRef}
+            groupKind={kind}
+            isSelected={selectedPath === change.path}
+            isChecked={selectedPaths.has(change.path)}
+            onCloseAutoFocusCommitMessage={onCloseAutoFocusCommitMessage}
+            onCommitSingleFile={onCommitSingleFile}
+            onDeleteFile={onDeleteFile}
+            onRevertFile={onRevertFile}
+            onSelectChange={onSelectChange}
+            onSelectFile={onSelectFile}
+            onStageFile={onStageFile}
+            onUnstageFile={onUnstageFile}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function GitChangeRow({
+  change,
+  focusCommitMessageAfterMenuCloseRef,
+  groupKind,
+  isChecked,
+  isSelected,
+  onCloseAutoFocusCommitMessage,
+  onCommitSingleFile,
+  onDeleteFile,
+  onRevertFile,
+  onSelectChange,
+  onSelectFile,
+  onStageFile,
+  onUnstageFile,
+}: {
+  change: GitChange;
+  focusCommitMessageAfterMenuCloseRef: React.MutableRefObject<boolean>;
+  groupKind: 'staged' | 'unstaged';
+  isChecked: boolean;
+  isSelected: boolean;
+  onCloseAutoFocusCommitMessage: () => void;
+  onCommitSingleFile: (path: string) => void;
+  onDeleteFile: (path: string) => void;
+  onRevertFile: (path: string) => void;
+  onSelectChange: (path: string, checked: boolean) => void;
+  onSelectFile: (path: string) => void;
+  onStageFile: (path: string) => void;
+  onUnstageFile: (path: string) => void;
+}) {
+  const fileInfo = getGitFileInfo(change.path);
+
+  return (
+    <li>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            className={cn(
+              'grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted',
+              isSelected && 'bg-muted text-foreground',
+            )}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelectFile(change.path)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onSelectFile(change.path);
+              }
+            }}
+          >
+            <input
+              aria-label={`选择 ${change.path}`}
+              checked={isChecked}
+              type="checkbox"
+              onChange={(event) =>
+                onSelectChange(change.path, event.currentTarget.checked)
+              }
+              onClick={(event) => event.stopPropagation()}
+            />
+            <span className="min-w-0">
+              <span className="block truncate text-sm leading-5">{fileInfo.name}</span>
+              <span className="block truncate text-xs leading-4 text-muted-foreground">
+                {fileInfo.directory || './'}
+              </span>
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {renderChangeBadge(change)}
+            </span>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent
+          className="w-44"
+          onCloseAutoFocus={(event) => {
+            if (focusCommitMessageAfterMenuCloseRef.current) {
+              event.preventDefault();
+              focusCommitMessageAfterMenuCloseRef.current = false;
+              onCloseAutoFocusCommitMessage();
+            }
+          }}
+        >
+          <ContextMenuItem
+            onSelect={() => {
+              focusCommitMessageAfterMenuCloseRef.current = true;
+              onCommitSingleFile(change.path);
+            }}
+          >
+            <GitCommit />
+            提交
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onSelectFile(change.path)}>
+            <FileDiff />
+            显示差异
+          </ContextMenuItem>
+          {groupKind === 'staged' ? (
+            <ContextMenuItem onSelect={() => onUnstageFile(change.path)}>
+              <Minus />
+              取消暂存
+            </ContextMenuItem>
+          ) : (
+            <ContextMenuItem onSelect={() => onStageFile(change.path)}>
+              <Plus />
+              暂存
+            </ContextMenuItem>
+          )}
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => onRevertFile(change.path)}>
+            <RotateCcw />
+            回滚
+          </ContextMenuItem>
+          <ContextMenuItem
+            variant="destructive"
+            onSelect={() => onDeleteFile(change.path)}
+          >
+            <Trash2 />
+            删除
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    </li>
+  );
+}
+
 function PanelShell({
   action,
   children,
@@ -362,6 +524,26 @@ function ConfirmGitFileActionDialog({
 
 function isChangeStaged(change: GitChange) {
   return change.staged || (change.indexStatus.length > 0 && change.indexStatus !== '?');
+}
+
+function hasStagedChange(change: GitChange) {
+  return isChangeStaged(change);
+}
+
+function hasUnstagedChange(change: GitChange) {
+  return (
+    change.changeType === 'untracked' ||
+    change.workingTreeStatus.length > 0 ||
+    (!hasStagedChange(change) && change.indexStatus === '?')
+  );
+}
+
+function getGitFileInfo(path: string) {
+  const parts = path.split('/').filter(Boolean);
+  const name = parts.at(-1) ?? path;
+  const directory = parts.slice(0, -1).join('/');
+
+  return { directory, name };
 }
 
 function renderChangeBadge(change: GitChange) {

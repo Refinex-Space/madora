@@ -30,6 +30,28 @@ const status: GitStatus = {
   upstream: 'origin/main',
 };
 
+const groupedStatus: GitStatus = {
+  ...status,
+  changes: [
+    {
+      changeType: 'modified',
+      indexStatus: 'M',
+      oldPath: null,
+      path: '.refinex/assets/index.json',
+      staged: true,
+      workingTreeStatus: '',
+    },
+    {
+      changeType: 'modified',
+      indexStatus: '',
+      oldPath: null,
+      path: 'docs/guides/a.md',
+      staged: false,
+      workingTreeStatus: 'M',
+    },
+  ],
+};
+
 type RenderGitPanelOptions = Partial<
   React.ComponentProps<typeof GitPanel>
 >;
@@ -51,6 +73,7 @@ function renderGitPanel(options: RenderGitPanelOptions = {}) {
       onRevertFile={vi.fn()}
       onSelectChange={vi.fn()}
       onSelectFile={vi.fn()}
+      onStageFile={vi.fn()}
       onStageSelected={vi.fn()}
       onUnstageFile={vi.fn()}
       onUnstageSelected={vi.fn()}
@@ -158,5 +181,41 @@ describe('GitPanel', () => {
     await user.click(await screen.findByRole('button', { name: '确认删除' }));
 
     expect(onDeleteFile).toHaveBeenCalledWith('docs/a.md');
+  });
+
+  it('groups changed files and renders file name before path', () => {
+    renderGitPanel({
+      selectedPaths: new Set([
+        '.refinex/assets/index.json',
+        'docs/guides/a.md',
+      ]),
+      status: groupedStatus,
+    });
+
+    expect(screen.getByText('已暂存')).toBeTruthy();
+    expect(screen.getByText('未暂存')).toBeTruthy();
+    expect(screen.getByText('index.json')).toBeTruthy();
+    expect(screen.getByText('.refinex/assets')).toBeTruthy();
+    expect(screen.getByText('a.md')).toBeTruthy();
+    expect(screen.getByText('docs/guides')).toBeTruthy();
+  });
+
+  it('stages a single unstaged file from the context menu', async () => {
+    const user = userEvent.setup();
+    const onStageFile = vi.fn();
+
+    renderGitPanel({
+      onStageFile,
+      selectedPaths: new Set(['docs/guides/a.md']),
+      status: groupedStatus,
+    });
+
+    await user.pointer({
+      keys: '[MouseRight]',
+      target: screen.getByRole('button', { name: /a\.md/ }),
+    });
+    await user.click(await screen.findByRole('menuitem', { name: '暂存' }));
+
+    expect(onStageFile).toHaveBeenCalledWith('docs/guides/a.md');
   });
 });
