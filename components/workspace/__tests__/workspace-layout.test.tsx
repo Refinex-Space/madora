@@ -1548,7 +1548,36 @@ describe('WorkspaceLayout', () => {
 
     expect(
       terminalButton.compareDocumentPosition(gitLogButton) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it('keeps terminal tab instances mounted when switching tabs', async () => {
+    const user = userEvent.setup();
+
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ =
+      {};
+    terminalSpawnMock
+      .mockResolvedValueOnce({
+        cwd: '/repo',
+        id: 'term-1',
+        shell: '/bin/zsh',
+      })
+      .mockResolvedValueOnce({
+        cwd: '/repo',
+        id: 'term-2',
+        shell: '/bin/zsh',
+      });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开终端' }));
+    await screen.findByRole('tab', { name: /^本地$/ });
+    await user.click(screen.getByRole('button', { name: '新建终端标签页' }));
+    await screen.findByRole('tab', { name: /本地 2/ });
+    await user.click(screen.getByRole('tab', { name: /^本地$/ }));
+
+    expect(screen.getByTestId('mock-xterm-term-1')).toBeTruthy();
+    expect(screen.getByTestId('mock-xterm-term-2')).toBeTruthy();
   });
 });

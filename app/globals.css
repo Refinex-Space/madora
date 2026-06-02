@@ -261,10 +261,6 @@
     height: 100%;
   }
 
-  .terminal-surface .xterm-screen {
-    height: 100%;
-  }
-
   .terminal-surface .xterm-helper-textarea,
   .terminal-surface .xterm-accessibility,
   .terminal-surface .xterm-accessibility-tree,
@@ -281,6 +277,7 @@
   }
 
   .terminal-surface .xterm-viewport {
+    background-color: transparent;
     scrollbar-color: color-mix(in oklab, var(--muted-foreground) 22%, transparent) transparent;
     scrollbar-width: thin;
   }

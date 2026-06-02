@@ -792,13 +792,19 @@ export function WorkspaceLayout({
 
   React.useEffect(() => {
     if (
-      terminalOpen &&
-      terminalTabs.length === 0 &&
-      workspaceRootPath &&
-      isTauriRuntime
+      !terminalOpen ||
+      terminalTabs.length > 0 ||
+      !workspaceRootPath ||
+      !isTauriRuntime
     ) {
-      void createTerminalTab();
+      return;
     }
+
+    const timeoutId = window.setTimeout(() => {
+      void createTerminalTab();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [
     createTerminalTab,
     isTauriRuntime,
@@ -1099,19 +1105,24 @@ export function WorkspaceLayout({
               onNewTab={() => void createTerminalTab()}
               onSelectTab={setTerminalActiveTabId}
             >
-              {terminalTabs.map((tab) =>
-                tab.id === terminalActiveTabId ? (
+              {terminalTabs.map((tab) => (
+                <div
+                  className={cn(
+                    'h-full min-h-0',
+                    tab.id !== terminalActiveTabId && 'hidden',
+                  )}
+                  key={tab.id}
+                >
                   <XtermTerminal
-                    isActive
-                    key={tab.id}
+                    isActive={tab.id === terminalActiveTabId}
                     output={terminalOutputs[tab.id] ?? ''}
                     sessionId={tab.id}
                     themeMode={terminalThemeMode}
                     onData={handleTerminalData}
                     onResize={handleTerminalResize}
                   />
-                ) : null,
-              )}
+                </div>
+              ))}
             </TerminalPanel>
           ) : null}
         </div>
