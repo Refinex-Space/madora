@@ -1580,4 +1580,33 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByTestId('mock-xterm-term-1')).toBeTruthy();
     expect(screen.getByTestId('mock-xterm-term-2')).toBeTruthy();
   });
+
+  it('keeps terminal instance mounted when closing and reopening the terminal panel', async () => {
+    const user = userEvent.setup();
+
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ =
+      {};
+    terminalSpawnMock.mockResolvedValueOnce({
+      cwd: '/repo',
+      id: 'term-1',
+      shell: '/bin/zsh',
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开终端' }));
+    await screen.findByRole('tab', { name: /^本地$/ });
+
+    const terminalInstance = screen.getByTestId('mock-xterm-term-1');
+
+    await user.click(screen.getByRole('button', { name: '关闭终端' }));
+
+    expect(screen.getByRole('button', { name: '打开终端' })).toBeTruthy();
+    expect(screen.getByTestId('mock-xterm-term-1')).toBe(terminalInstance);
+
+    await user.click(screen.getByRole('button', { name: '打开终端' }));
+
+    expect(screen.getByTestId('mock-xterm-term-1')).toBe(terminalInstance);
+    expect(terminalSpawnMock).toHaveBeenCalledTimes(1);
+  });
 });

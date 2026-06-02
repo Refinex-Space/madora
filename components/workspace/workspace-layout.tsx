@@ -237,6 +237,7 @@ export function WorkspaceLayout({
   const workspaceRootPath = workspace.snapshot?.rootPath ?? null;
   const gitLogOpen = bottomPanelMode === 'git-log';
   const terminalOpen = bottomPanelMode === 'terminal';
+  const shouldRenderTerminalPanel = terminalOpen || terminalTabs.length > 0;
 
   React.useEffect(() => {
     void setAppWindowTitle(pageTitle ?? 'Refinex Wiki');
@@ -1090,38 +1091,45 @@ export function WorkspaceLayout({
             onSelectCommit={(hash) => void loadGitLogCommitFiles(hash)}
             onSelectFile={(file) => void handleGitLogSelectFile(file)}
           />
-          {terminalOpen ? (
-            <TerminalPanel
-              activeTabId={terminalActiveTabId}
-              error={terminalError}
-              height={terminalHeight}
-              isTauriRuntime={isTauriRuntime}
-              rootPath={workspaceRootPath}
-              tabs={terminalTabs}
-              onClose={() => setBottomPanelMode(null)}
-              onCloseTab={handleTerminalCloseTab}
-              onNewTab={() => void createTerminalTab()}
-              onSelectTab={setTerminalActiveTabId}
+          {shouldRenderTerminalPanel ? (
+            <div
+              className={cn(
+                'min-h-0 shrink-0',
+                !terminalOpen && 'hidden',
+              )}
             >
-              {terminalTabs.map((tab) => (
-                <div
-                  className={cn(
-                    'h-full min-h-0',
-                    tab.id !== terminalActiveTabId && 'hidden',
-                  )}
-                  key={tab.id}
-                >
-                  <XtermTerminal
-                    isActive={tab.id === terminalActiveTabId}
-                    output={terminalOutputs[tab.id] ?? ''}
-                    sessionId={tab.id}
-                    themeMode={terminalThemeMode}
-                    onData={handleTerminalData}
-                    onResize={handleTerminalResize}
-                  />
-                </div>
-              ))}
-            </TerminalPanel>
+              <TerminalPanel
+                activeTabId={terminalActiveTabId}
+                error={terminalError}
+                height={terminalHeight}
+                isTauriRuntime={isTauriRuntime}
+                rootPath={workspaceRootPath}
+                tabs={terminalTabs}
+                onClose={() => setBottomPanelMode(null)}
+                onCloseTab={handleTerminalCloseTab}
+                onNewTab={() => void createTerminalTab()}
+                onSelectTab={setTerminalActiveTabId}
+              >
+                {terminalTabs.map((tab) => (
+                  <div
+                    className={cn(
+                      'h-full min-h-0',
+                      tab.id !== terminalActiveTabId && 'hidden',
+                    )}
+                    key={tab.id}
+                  >
+                    <XtermTerminal
+                      isActive={terminalOpen && tab.id === terminalActiveTabId}
+                      output={terminalOutputs[tab.id] ?? ''}
+                      sessionId={tab.id}
+                      themeMode={terminalThemeMode}
+                      onData={handleTerminalData}
+                      onResize={handleTerminalResize}
+                    />
+                  </div>
+                ))}
+              </TerminalPanel>
+            </div>
           ) : null}
         </div>
         <RightToolRail
