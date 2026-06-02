@@ -28,5 +28,8 @@ describe('GitDiffView', () => {
     expect(screen.getByText('docs/a.md')).toBeTruthy();
     expect(screen.getByText('-old')).toBeTruthy();
     expect(screen.getByText('+new')).toBeTruthy();
+    expect(screen.getByText('docs/a.md').closest('section')?.className).toContain(
+      'git-panel-scroll',
+    );
   });
 });

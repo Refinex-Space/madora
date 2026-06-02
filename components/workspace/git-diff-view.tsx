@@ -32,7 +32,7 @@ export function GitDiffView({ diff, label, error, isLoading }: GitDiffViewProps)
 
   if (diff.binary) {
     return (
-      <section className="h-full overflow-auto p-6">
+      <section className="git-panel-scroll h-full overflow-auto p-6">
         <h2 className="text-sm font-semibold">{diff.path}</h2>
         <p className="mt-4 rounded-md border p-4 text-sm text-muted-foreground">
           二进制文件暂不展示文本差异。
@@ -44,7 +44,7 @@ export function GitDiffView({ diff, label, error, isLoading }: GitDiffViewProps)
   const lines = diff.content.split('\n');
 
   return (
-    <section className="h-full overflow-auto bg-background">
+    <section className="git-panel-scroll h-full overflow-auto bg-background">
       <header className="sticky top-0 border-b bg-background/95 px-6 py-3 backdrop-blur">
         <h2 className="text-sm font-semibold">{diff.path}</h2>
         <p className="text-xs text-muted-foreground">
