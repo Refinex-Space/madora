@@ -70,7 +70,6 @@ describe('GitLogDrawer', () => {
         height={420}
         isLoading={false}
         open
-        rootName="repo"
         selectedCommitHash="abc123abc123"
         onClose={vi.fn()}
         onRefresh={vi.fn()}
@@ -83,6 +82,7 @@ describe('GitLogDrawer', () => {
     );
 
     expect(screen.getByText('Git 日志')).toBeTruthy();
+    expect(screen.queryByText('repo')).toBeNull();
     expect(screen.getByText('本地')).toBeTruthy();
     expect(screen.getByText('远程')).toBeTruthy();
     expect(screen.getByText('main')).toBeTruthy();
@@ -109,7 +109,6 @@ describe('GitLogDrawer', () => {
         height={420}
         isLoading={false}
         open
-        rootName="repo"
         selectedCommitHash="abc123abc123"
         onClose={vi.fn()}
         onRefresh={vi.fn()}
@@ -145,7 +144,6 @@ describe('GitLogDrawer', () => {
         height={420}
         isLoading={false}
         open
-        rootName="repo"
         selectedCommitHash="abc123abc123"
         onClose={vi.fn()}
         onRefresh={vi.fn()}
@@ -182,7 +180,6 @@ describe('GitLogDrawer', () => {
         height={420}
         isLoading={false}
         open
-        rootName="repo"
         selectedCommitHash="abc123abc123"
         onClose={vi.fn()}
         onRefresh={vi.fn()}
@@ -236,7 +233,6 @@ describe('GitLogDrawer', () => {
         height={420}
         isLoading={false}
         open
-        rootName="repo"
         selectedCommitHash="abc123abc123"
         onClose={vi.fn()}
         onRefresh={vi.fn()}

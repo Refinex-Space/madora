@@ -33,7 +33,6 @@ interface GitLogDrawerProps {
   height: number;
   isLoading: boolean;
   open: boolean;
-  rootName: string;
   selectedCommitHash: string | null;
   onClose: () => void;
   onRefresh: () => void;
@@ -55,7 +54,6 @@ export function GitLogDrawer({
   height,
   isLoading,
   open,
-  rootName,
   selectedCommitHash,
   onClose,
   onRefresh,
@@ -109,7 +107,6 @@ export function GitLogDrawer({
         <div className="flex items-center gap-2 text-sm font-semibold">
           <GitGraph size={16} />
           <span>Git 日志</span>
-          <span className="text-xs font-normal text-muted-foreground">{rootName}</span>
         </div>
         <div className="flex items-center gap-1">
           <button

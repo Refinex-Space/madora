@@ -19,7 +19,6 @@ interface TerminalPanelProps {
   error: string | null;
   height: number;
   isTauriRuntime: boolean;
-  rootName: string;
   rootPath: string | null;
   tabs: TerminalTab[];
   children?: React.ReactNode;
@@ -34,7 +33,6 @@ export function TerminalPanel({
   error,
   height,
   isTauriRuntime,
-  rootName,
   rootPath,
   tabs,
   children,
@@ -56,9 +54,6 @@ export function TerminalPanel({
           <div className="flex items-center gap-2 text-sm font-semibold">
             <SquareTerminal size={16} />
             <span>终端</span>
-            <span className="text-xs font-normal text-muted-foreground">
-              {rootName}
-            </span>
           </div>
           <div className="ml-2 flex min-w-0 items-center gap-1" role="tablist">
             {tabs.map((tab) => (

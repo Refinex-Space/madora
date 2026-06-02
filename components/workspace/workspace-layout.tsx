@@ -1081,7 +1081,6 @@ export function WorkspaceLayout({
             height={gitLogHeight}
             isLoading={gitLogLoading}
             open={gitLogOpen}
-            rootName={workspace.snapshot?.rootName ?? '工作区'}
             selectedCommitHash={gitLogSelectedHash}
             onClose={() => setBottomPanelMode(null)}
             onRefresh={refreshGitLog}
@@ -1097,7 +1096,6 @@ export function WorkspaceLayout({
               error={terminalError}
               height={terminalHeight}
               isTauriRuntime={isTauriRuntime}
-              rootName={workspace.snapshot?.rootName ?? '工作区'}
               rootPath={workspaceRootPath}
               tabs={terminalTabs}
               onClose={() => setBottomPanelMode(null)}

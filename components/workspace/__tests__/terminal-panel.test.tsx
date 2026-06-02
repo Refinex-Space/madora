@@ -5,14 +5,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { TerminalPanel } from '../terminal-panel';
 
 describe('TerminalPanel', () => {
-  it('renders IDEA-like header, workspace name, and active tab', () => {
+  it('renders IDEA-like header and active tab', () => {
     render(
       <TerminalPanel
         activeTabId="term-1"
         error={null}
         height={360}
         isTauriRuntime
-        rootName="repo"
         rootPath="/repo"
         tabs={[
           {
@@ -30,7 +29,7 @@ describe('TerminalPanel', () => {
     );
 
     expect(screen.getByText('终端')).toBeTruthy();
-    expect(screen.getByText('repo')).toBeTruthy();
+    expect(screen.queryByText('repo')).toBeNull();
     expect(screen.getByRole('tab', { name: /本地/ })).toBeTruthy();
   });
 
@@ -46,7 +45,6 @@ describe('TerminalPanel', () => {
         error={null}
         height={360}
         isTauriRuntime
-        rootName="repo"
         rootPath="/repo"
         tabs={[
           { cwd: '/repo', id: 'term-1', status: 'running', title: '本地' },
@@ -77,7 +75,6 @@ describe('TerminalPanel', () => {
         error={null}
         height={360}
         isTauriRuntime
-        rootName="repo"
         rootPath={null}
         tabs={[]}
         onClose={vi.fn()}
@@ -95,7 +92,6 @@ describe('TerminalPanel', () => {
         error={null}
         height={360}
         isTauriRuntime={false}
-        rootName="repo"
         rootPath="/repo"
         tabs={[]}
         onClose={vi.fn()}
