@@ -11,9 +11,11 @@ import {
   getRecentWorkspacePath,
   getWorkspaceHistory,
   gitCommit,
+  gitDeleteFile,
   gitDiff,
   gitInit,
   gitProbe,
+  gitRevertFile,
   gitStage,
   gitStatus,
   gitUnstage,
@@ -366,6 +368,22 @@ describe('workspace-api native Git commands', () => {
         changes: [],
         rootPath: '/repo',
         upstream: null,
+      })
+      .mockResolvedValueOnce({
+        ahead: 0,
+        behind: 0,
+        branch: 'main',
+        changes: [],
+        rootPath: '/repo',
+        upstream: null,
+      })
+      .mockResolvedValueOnce({
+        ahead: 0,
+        behind: 0,
+        branch: 'main',
+        changes: [],
+        rootPath: '/repo',
+        upstream: null,
       });
 
     await gitProbe('/repo');
@@ -375,6 +393,8 @@ describe('workspace-api native Git commands', () => {
     await gitStage('/repo', ['a.md']);
     await gitUnstage('/repo', ['a.md']);
     await gitCommit('/repo', 'docs: update a', ['a.md']);
+    await gitRevertFile('/repo', 'a.md');
+    await gitDeleteFile('/repo', 'a.md');
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'git_probe', {
       rootPath: '/repo',
@@ -402,6 +422,14 @@ describe('workspace-api native Git commands', () => {
       rootPath: '/repo',
       message: 'docs: update a',
       paths: ['a.md'],
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(8, 'git_revert_file', {
+      rootPath: '/repo',
+      path: 'a.md',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(9, 'git_delete_file', {
+      rootPath: '/repo',
+      path: 'a.md',
     });
   });
 });

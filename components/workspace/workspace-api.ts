@@ -397,6 +397,18 @@ export async function gitCommit(
   return invoke<GitStatus>('git_commit', { rootPath, message, paths });
 }
 
+export async function gitRevertFile(rootPath: string, path: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<GitStatus>('git_revert_file', { rootPath, path });
+}
+
+export async function gitDeleteFile(rootPath: string, path: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<GitStatus>('git_delete_file', { rootPath, path });
+}
+
 export async function selectMarkdownSourceFiles() {
   if (!isTauriRuntime()) {
     return [];
