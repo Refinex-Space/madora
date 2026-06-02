@@ -66,6 +66,7 @@ function renderGitPanel(options: RenderGitPanelOptions = {}) {
       selectedPaths={new Set(['docs/a.md'])}
       status={status}
       onCommit={vi.fn()}
+      onCommitAndPush={vi.fn()}
       onCommitSingleFile={vi.fn()}
       onDeleteFile={vi.fn()}
       onInitRepository={vi.fn()}
@@ -112,10 +113,28 @@ describe('GitPanel', () => {
 
     await user.click(screen.getByRole('checkbox', { name: '选择 docs/a.md' }));
     await user.type(screen.getByLabelText('提交信息'), 'docs: update a');
-    await user.click(screen.getByRole('button', { name: '提交 1 个文件' }));
+    await user.click(screen.getByRole('button', { name: '提交' }));
 
     expect(onSelectChange).toHaveBeenCalledWith('docs/a.md', false);
     expect(onCommit).toHaveBeenCalledWith('docs: update a');
+  });
+
+  it('submits and pushes a commit message', async () => {
+    const user = userEvent.setup();
+    const onCommitAndPush = vi.fn();
+
+    renderGitPanel({ onCommitAndPush });
+
+    await user.type(screen.getByLabelText('提交信息'), 'docs: update a');
+    await user.click(screen.getByRole('button', { name: '提交并推送' }));
+
+    expect(onCommitAndPush).toHaveBeenCalledWith('docs: update a');
+  });
+
+  it('does not render the repository panel title as submit text', () => {
+    renderGitPanel();
+
+    expect(screen.queryByRole('heading', { name: '提交' })).toBeNull();
   });
 
   it('moves selected file actions to the top toolbar', async () => {

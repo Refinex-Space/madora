@@ -397,6 +397,12 @@ export async function gitCommit(
   return invoke<GitStatus>('git_commit', { rootPath, message, paths });
 }
 
+export async function gitPush(rootPath: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<GitStatus>('git_push', { rootPath });
+}
+
 export async function gitRevertFile(rootPath: string, path: string) {
   const { invoke } = await import('@tauri-apps/api/core');
 

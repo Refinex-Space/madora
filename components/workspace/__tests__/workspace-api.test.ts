@@ -15,6 +15,7 @@ import {
   gitDiff,
   gitInit,
   gitProbe,
+  gitPush,
   gitRevertFile,
   gitStage,
   gitStatus,
@@ -393,6 +394,7 @@ describe('workspace-api native Git commands', () => {
     await gitStage('/repo', ['a.md']);
     await gitUnstage('/repo', ['a.md']);
     await gitCommit('/repo', 'docs: update a', ['a.md']);
+    await gitPush('/repo');
     await gitRevertFile('/repo', 'a.md');
     await gitDeleteFile('/repo', 'a.md');
 
@@ -423,11 +425,14 @@ describe('workspace-api native Git commands', () => {
       message: 'docs: update a',
       paths: ['a.md'],
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(8, 'git_revert_file', {
+    expect(invokeMock).toHaveBeenNthCalledWith(8, 'git_push', {
+      rootPath: '/repo',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(9, 'git_revert_file', {
       rootPath: '/repo',
       path: 'a.md',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(9, 'git_delete_file', {
+    expect(invokeMock).toHaveBeenNthCalledWith(10, 'git_delete_file', {
       rootPath: '/repo',
       path: 'a.md',
     });

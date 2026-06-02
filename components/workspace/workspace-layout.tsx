@@ -20,6 +20,7 @@ import {
   gitDiff,
   gitInit,
   gitProbe,
+  gitPush,
   gitRevertFile,
   gitStage,
   gitStatus,
@@ -428,6 +429,31 @@ export function WorkspaceLayout({
     [selectedGitPaths, workspace, workspaceRootPath],
   );
 
+  const handleGitCommitAndPush = React.useCallback(
+    async (message: string) => {
+      if (!workspaceRootPath || selectedGitPaths.length === 0) {
+        return;
+      }
+
+      setGitLoading(true);
+      setGitError(null);
+
+      try {
+        await workspace.saveCurrentDocumentNow();
+        await gitCommit(workspaceRootPath, message, selectedGitPaths);
+        setGitStatusState(await gitPush(workspaceRootPath));
+        setGitDiffState(null);
+        setGitSelectedPath(null);
+        setGitSelectedPaths(new Set());
+      } catch (error) {
+        setGitError(formatUnknownError(error));
+      } finally {
+        setGitLoading(false);
+      }
+    },
+    [selectedGitPaths, workspace, workspaceRootPath],
+  );
+
   const openWorkspacePanel = React.useCallback(() => {
     if (leftPanelMode === 'workspace') {
       workspace.setSidebarCollapsed(!workspace.isSidebarCollapsed);
@@ -516,6 +542,7 @@ export function WorkspaceLayout({
               selectedPaths={gitSelectedPaths}
               status={gitStatusState}
               onCommit={handleGitCommit}
+              onCommitAndPush={handleGitCommitAndPush}
               onCommitSingleFile={handleGitCommitSingleFile}
               onDeleteFile={handleGitDeleteFile}
               onInitRepository={handleGitInit}

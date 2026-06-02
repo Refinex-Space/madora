@@ -48,6 +48,7 @@ interface GitPanelProps {
   selectedPaths: Set<string>;
   status: GitStatus | null;
   onCommit: (message: string) => void;
+  onCommitAndPush: (message: string) => void;
   onCommitSingleFile: (path: string) => void;
   onDeleteFile: (path: string) => void;
   onInitRepository: () => void;
@@ -69,6 +70,7 @@ export function GitPanel({
   selectedPaths,
   status,
   onCommit,
+  onCommitAndPush,
   onCommitSingleFile,
   onDeleteFile,
   onInitRepository,
@@ -137,7 +139,6 @@ export function GitPanel({
             onUnstageSelected={onUnstageSelected}
           />
         }
-        title="提交"
       >
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <GitBranch size={14} />
@@ -208,15 +209,26 @@ export function GitPanel({
             value={message}
             onChange={(event) => setMessage(event.currentTarget.value)}
           />
-          <button
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm transition-all duration-150 hover:bg-primary/90 hover:shadow-md active:translate-y-px active:bg-primary/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-primary disabled:hover:shadow-sm disabled:active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            disabled={!canCommit || isLoading}
-            type="button"
-            onClick={() => onCommit(message)}
-          >
-            <GitCommit size={15} />
-            提交 {selectedCount} 个文件
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              className="flex items-center justify-center gap-2 rounded-md border bg-background px-3 py-2 text-sm text-foreground shadow-sm transition-all duration-150 hover:bg-muted active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background disabled:active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              disabled={!canCommit || isLoading}
+              type="button"
+              onClick={() => onCommit(message)}
+            >
+              <GitCommit size={15} />
+              提交
+            </button>
+            <button
+              className="flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm transition-all duration-150 hover:bg-primary/90 hover:shadow-md active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-primary disabled:hover:shadow-sm disabled:active:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              disabled={!canCommit || isLoading}
+              type="button"
+              onClick={() => onCommitAndPush(message)}
+            >
+              <GitBranch size={15} />
+              提交并推送
+            </button>
+          </div>
         </div>
       </PanelShell>
       <ConfirmGitFileActionDialog
@@ -538,12 +550,12 @@ function PanelShell({
 }: {
   action?: React.ReactNode;
   children: React.ReactNode;
-  title: string;
+  title?: string;
 }) {
   return (
     <aside className="flex h-full flex-col gap-3 rounded-lg border bg-background p-3 shadow-sm">
       <header className="flex items-center justify-between border-b pb-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        {title ? <h2 className="text-sm font-semibold">{title}</h2> : <span />}
         {action}
       </header>
       {children}

@@ -185,6 +185,13 @@ pub fn git_commit(
 }
 
 #[tauri::command]
+pub fn git_push(root_path: String) -> Result<GitStatus, String> {
+    let root = canonical_root(&root_path)?;
+    run_git(&root, &["push"])?;
+    git_status(root.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 pub fn git_revert_file(root_path: String, path: String) -> Result<GitStatus, String> {
     let root = canonical_root(&root_path)?;
     let target = validate_existing_repo_file_path(&root, &path)?;
@@ -547,6 +554,41 @@ mod tests {
         .unwrap();
         let clean = git_status(root.path().to_string_lossy().to_string()).unwrap();
         assert!(clean.changes.is_empty());
+    }
+
+    #[test]
+    fn pushes_commits_to_configured_remote() {
+        let remote = tempdir().expect("remote root");
+        run_git(remote.path(), &["init", "--bare"]).expect("init bare remote");
+
+        let root = init_repo();
+        let branch_output =
+            run_git(root.path(), &["branch", "--show-current"]).expect("current branch");
+        let branch = branch_output.stdout.trim();
+        run_git(
+            root.path(),
+            &["remote", "add", "origin", remote.path().to_str().unwrap()],
+        )
+        .expect("add remote");
+        fs::write(root.path().join("note.md"), "hello").expect("note file");
+        git_commit(
+            root.path().to_string_lossy().to_string(),
+            "docs: add note".to_string(),
+            vec!["note.md".to_string()],
+        )
+        .unwrap();
+        run_git(root.path(), &["push", "-u", "origin", branch]).expect("configure upstream");
+        fs::write(root.path().join("note.md"), "updated").expect("update note");
+        git_commit(
+            root.path().to_string_lossy().to_string(),
+            "docs: update note".to_string(),
+            vec!["note.md".to_string()],
+        )
+        .unwrap();
+
+        let status = git_push(root.path().to_string_lossy().to_string()).unwrap();
+
+        assert_eq!(status.ahead, 0);
     }
 
     #[test]

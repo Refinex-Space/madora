@@ -11,6 +11,7 @@ import {
   gitDiff,
   gitInit,
   gitProbe,
+  gitPush,
   gitRevertFile,
   gitStage,
   gitStatus,
@@ -81,6 +82,7 @@ vi.mock('../workspace-api', async (importOriginal) => {
     gitDiff: vi.fn(),
     gitInit: vi.fn(),
     gitProbe: vi.fn(),
+    gitPush: vi.fn(),
     gitRevertFile: vi.fn(),
     gitStage: vi.fn(),
     gitStatus: vi.fn(),
@@ -102,6 +104,7 @@ const gitDeleteFileMock = vi.mocked(gitDeleteFile);
 const gitDiffMock = vi.mocked(gitDiff);
 const gitInitMock = vi.mocked(gitInit);
 const gitProbeMock = vi.mocked(gitProbe);
+const gitPushMock = vi.mocked(gitPush);
 const gitRevertFileMock = vi.mocked(gitRevertFile);
 const gitStageMock = vi.mocked(gitStage);
 const gitStatusMock = vi.mocked(gitStatus);
@@ -183,6 +186,7 @@ describe('WorkspaceLayout', () => {
     gitDiffMock.mockReset();
     gitInitMock.mockReset();
     gitProbeMock.mockReset();
+    gitPushMock.mockReset();
     gitRevertFileMock.mockReset();
     gitStageMock.mockReset();
     gitStatusMock.mockReset();
@@ -435,6 +439,60 @@ describe('WorkspaceLayout', () => {
     await user.click(await screen.findByRole('menuitem', { name: '暂存' }));
 
     expect(gitStageMock).toHaveBeenCalledWith('/repo', ['README.plate.json']);
+  });
+
+  it('commits and pushes selected Git files', async () => {
+    const user = userEvent.setup();
+    gitProbeMock.mockResolvedValue({
+      branch: 'main',
+      gitAvailable: true,
+      isRepository: true,
+      rootPath: '/repo',
+    });
+    gitStatusMock.mockResolvedValue({
+      ahead: 0,
+      behind: 0,
+      branch: 'main',
+      changes: [
+        {
+          changeType: 'modified',
+          indexStatus: '',
+          oldPath: null,
+          path: 'README.plate.json',
+          staged: false,
+          workingTreeStatus: 'M',
+        },
+      ],
+      rootPath: '/repo',
+      upstream: 'origin/main',
+    });
+    gitCommitMock.mockResolvedValue({
+      ahead: 1,
+      behind: 0,
+      branch: 'main',
+      changes: [],
+      rootPath: '/repo',
+      upstream: 'origin/main',
+    });
+    gitPushMock.mockResolvedValue({
+      ahead: 0,
+      behind: 0,
+      branch: 'main',
+      changes: [],
+      rootPath: '/repo',
+      upstream: 'origin/main',
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开 Git 面板' }));
+    await user.type(await screen.findByLabelText('提交信息'), 'docs: update readme');
+    await user.click(screen.getByRole('button', { name: '提交并推送' }));
+
+    expect(gitCommitMock).toHaveBeenCalledWith('/repo', 'docs: update readme', [
+      'README.plate.json',
+    ]);
+    expect(gitPushMock).toHaveBeenCalledWith('/repo');
   });
 
   it('keeps ai panel collapsed by default and expands from the right tool rail', async () => {
