@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@xterm/xterm/css/xterm.css";
 
 @plugin "tailwind-scrollbar-hide";
 @import "tw-animate-css";
@@ -254,5 +255,39 @@
     display: none;
     width: 0;
     height: 0;
+  }
+
+  .terminal-surface .xterm {
+    height: 100%;
+  }
+
+  .terminal-surface .xterm-screen {
+    height: 100%;
+  }
+
+  .terminal-surface .xterm-viewport {
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 22%, transparent) transparent;
+    scrollbar-width: thin;
+  }
+
+  .terminal-surface .xterm-viewport::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .terminal-surface .xterm-viewport::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .terminal-surface .xterm-viewport::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--muted-foreground) 20%, transparent);
+    background-clip: padding-box;
+  }
+
+  .terminal-surface .xterm-viewport:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--muted-foreground) 34%, transparent);
+    background-clip: padding-box;
   }
 }
