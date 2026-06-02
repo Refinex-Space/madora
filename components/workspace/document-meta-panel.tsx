@@ -64,7 +64,7 @@ export function DocumentMetaPanel({
 
   return (
     <>
-      <header className="flex h-12 items-center border-b px-3">
+      <header className="flex h-10 items-center border-b px-3">
         <span className="truncate text-sm font-medium">文档信息</span>
       </header>
 
@@ -146,13 +146,15 @@ function DocumentMetaDetails({
   const title = documentEnvelope?.title || currentDocument.title || '未命名文档';
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-lg border bg-muted/20 p-3">
-        <p className="text-xs text-muted-foreground">标题</p>
-        <p className="mt-1 break-words text-sm font-medium">{title}</p>
+    <div className="rounded-xl bg-muted/25 px-4 py-3">
+      <div className="pb-3">
+        <p className="text-[11px] text-muted-foreground">标题</p>
+        <p className="mt-1 break-words text-base font-medium leading-6">
+          {title}
+        </p>
       </div>
 
-      <div className="grid gap-2">
+      <div className="divide-y divide-border/60">
         <MetaRow
           icon={<Clock size={14} />}
           label="创建时间"
@@ -188,8 +190,8 @@ function MetaRow({
   value: string;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-background px-3 py-2">
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+    <div className="flex min-h-11 items-center gap-3 py-2.5">
+      <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground/80">
         {icon}
       </span>
       <span className="min-w-0 flex-1 text-xs text-muted-foreground">
