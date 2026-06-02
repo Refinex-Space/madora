@@ -16,9 +16,11 @@ import { GitPanel } from './git-panel';
 import { useWorkspace } from './use-workspace';
 import {
   gitCommit,
+  gitDeleteFile,
   gitDiff,
   gitInit,
   gitProbe,
+  gitRevertFile,
   gitStage,
   gitStatus,
   gitUnstage,
@@ -302,6 +304,84 @@ export function WorkspaceLayout({
     }
   }, [selectedGitPaths, workspaceRootPath]);
 
+  const handleGitCommitSingleFile = React.useCallback((path: string) => {
+    setGitSelectedPaths(new Set([path]));
+  }, []);
+
+  const handleGitUnstageFile = React.useCallback(
+    async (path: string) => {
+      if (!workspaceRootPath) {
+        return;
+      }
+
+      setGitLoading(true);
+      setGitError(null);
+
+      try {
+        setGitStatusState(await gitUnstage(workspaceRootPath, [path]));
+      } catch (error) {
+        setGitError(formatUnknownError(error));
+      } finally {
+        setGitLoading(false);
+      }
+    },
+    [workspaceRootPath],
+  );
+
+  const clearGitFileSelection = React.useCallback((path: string) => {
+    setGitSelectedPath((current) => (current === path ? null : current));
+    setGitSelectedPaths((current) => {
+      const next = new Set(current);
+
+      next.delete(path);
+
+      return next;
+    });
+    setGitDiffState((current) => (current?.path === path ? null : current));
+  }, []);
+
+  const handleGitRevertFile = React.useCallback(
+    async (path: string) => {
+      if (!workspaceRootPath) {
+        return;
+      }
+
+      setGitLoading(true);
+      setGitError(null);
+
+      try {
+        setGitStatusState(await gitRevertFile(workspaceRootPath, path));
+        clearGitFileSelection(path);
+      } catch (error) {
+        setGitError(formatUnknownError(error));
+      } finally {
+        setGitLoading(false);
+      }
+    },
+    [clearGitFileSelection, workspaceRootPath],
+  );
+
+  const handleGitDeleteFile = React.useCallback(
+    async (path: string) => {
+      if (!workspaceRootPath) {
+        return;
+      }
+
+      setGitLoading(true);
+      setGitError(null);
+
+      try {
+        setGitStatusState(await gitDeleteFile(workspaceRootPath, path));
+        clearGitFileSelection(path);
+      } catch (error) {
+        setGitError(formatUnknownError(error));
+      } finally {
+        setGitLoading(false);
+      }
+    },
+    [clearGitFileSelection, workspaceRootPath],
+  );
+
   const handleGitCommit = React.useCallback(
     async (message: string) => {
       if (!workspaceRootPath || selectedGitPaths.length === 0) {
@@ -416,11 +496,15 @@ export function WorkspaceLayout({
               selectedPaths={gitSelectedPaths}
               status={gitStatusState}
               onCommit={handleGitCommit}
+              onCommitSingleFile={handleGitCommitSingleFile}
+              onDeleteFile={handleGitDeleteFile}
               onInitRepository={handleGitInit}
               onRefresh={refreshGitStatus}
+              onRevertFile={handleGitRevertFile}
               onSelectChange={handleGitSelectChange}
               onSelectFile={handleGitSelectFile}
               onStageSelected={handleGitStageSelected}
+              onUnstageFile={handleGitUnstageFile}
               onUnstageSelected={handleGitUnstageSelected}
             />
           </div>

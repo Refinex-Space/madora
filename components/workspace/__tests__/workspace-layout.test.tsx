@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,9 +7,11 @@ import {
   createWorkspaceDirectory,
   createWorkspaceRoot,
   gitCommit,
+  gitDeleteFile,
   gitDiff,
   gitInit,
   gitProbe,
+  gitRevertFile,
   gitStage,
   gitStatus,
   gitUnstage,
@@ -75,9 +77,11 @@ vi.mock('../workspace-api', async (importOriginal) => {
     createWorkspaceDirectory: vi.fn(),
     createWorkspaceRoot: vi.fn(),
     gitCommit: vi.fn(),
+    gitDeleteFile: vi.fn(),
     gitDiff: vi.fn(),
     gitInit: vi.fn(),
     gitProbe: vi.fn(),
+    gitRevertFile: vi.fn(),
     gitStage: vi.fn(),
     gitStatus: vi.fn(),
     gitUnstage: vi.fn(),
@@ -94,9 +98,11 @@ const createPlateDocumentMock = vi.mocked(createPlateDocument);
 const createWorkspaceDirectoryMock = vi.mocked(createWorkspaceDirectory);
 const createWorkspaceRootMock = vi.mocked(createWorkspaceRoot);
 const gitCommitMock = vi.mocked(gitCommit);
+const gitDeleteFileMock = vi.mocked(gitDeleteFile);
 const gitDiffMock = vi.mocked(gitDiff);
 const gitInitMock = vi.mocked(gitInit);
 const gitProbeMock = vi.mocked(gitProbe);
+const gitRevertFileMock = vi.mocked(gitRevertFile);
 const gitStageMock = vi.mocked(gitStage);
 const gitStatusMock = vi.mocked(gitStatus);
 const gitUnstageMock = vi.mocked(gitUnstage);
@@ -173,9 +179,11 @@ describe('WorkspaceLayout', () => {
     createWorkspaceDirectoryMock.mockReset();
     createWorkspaceRootMock.mockReset();
     gitCommitMock.mockReset();
+    gitDeleteFileMock.mockReset();
     gitDiffMock.mockReset();
     gitInitMock.mockReset();
     gitProbeMock.mockReset();
+    gitRevertFileMock.mockReset();
     gitStageMock.mockReset();
     gitStatusMock.mockReset();
     gitUnstageMock.mockReset();
@@ -310,6 +318,63 @@ describe('WorkspaceLayout', () => {
 
     expect(screen.getByText('-old')).toBeTruthy();
     expect(screen.getByText('+new')).toBeTruthy();
+  });
+
+  it('reverts a changed file from the Git context menu', async () => {
+    const user = userEvent.setup();
+    gitProbeMock.mockResolvedValue({
+      branch: 'main',
+      gitAvailable: true,
+      isRepository: true,
+      rootPath: '/repo',
+    });
+    gitStatusMock.mockResolvedValue({
+      ahead: 0,
+      behind: 0,
+      branch: 'main',
+      changes: [
+        {
+          changeType: 'modified',
+          indexStatus: '',
+          oldPath: null,
+          path: 'README.plate.json',
+          staged: false,
+          workingTreeStatus: 'M',
+        },
+      ],
+      rootPath: '/repo',
+      upstream: null,
+    });
+    gitRevertFileMock.mockResolvedValue({
+      ahead: 0,
+      behind: 0,
+      branch: 'main',
+      changes: [],
+      rootPath: '/repo',
+      upstream: null,
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开 Git 面板' }));
+
+    const changeRow = await screen.findByRole('button', {
+      name: /README.plate.json/,
+    });
+
+    await user.pointer({
+      keys: '[MouseRight]',
+      target: changeRow,
+    });
+    await user.click(await screen.findByRole('menuitem', { name: '回滚' }));
+    await user.click(await screen.findByRole('button', { name: '确认回滚' }));
+
+    expect(gitRevertFileMock).toHaveBeenCalledWith('/repo', 'README.plate.json');
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: /README.plate.json/ }),
+      ).toBeNull();
+    });
   });
 
   it('keeps ai panel collapsed by default and expands from the right tool rail', async () => {
