@@ -16,6 +16,10 @@ import type {
   PlateDocumentContent,
   PlateDocumentEnvelope,
   ResolvedWorkspaceAsset,
+  TerminalDataEvent,
+  TerminalErrorEvent,
+  TerminalExitEvent,
+  TerminalSessionInfo,
   UploadedWorkspaceAsset,
   UploadWorkspaceAssetInput,
   WorkspaceExportFormat,
@@ -27,6 +31,8 @@ import type {
   WorkspaceNode,
   WorkspaceSnapshot,
 } from './workspace-types';
+
+import type { UnlistenFn } from '@tauri-apps/api/event';
 
 const RECENT_WORKSPACE_KEY = 'refinex-wiki:recent-workspace-path';
 const WORKSPACE_HISTORY_KEY = 'refinex-wiki:workspace-history';
@@ -444,6 +450,72 @@ export async function gitDeleteFile(rootPath: string, path: string) {
   const { invoke } = await import('@tauri-apps/api/core');
 
   return invoke<GitStatus>('git_delete_file', { rootPath, path });
+}
+
+export async function terminalSpawn(
+  rootPath: string,
+  cols: number,
+  rows: number,
+) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<TerminalSessionInfo>('terminal_spawn', {
+    rootPath,
+    cols,
+    rows,
+  });
+}
+
+export async function terminalWrite(sessionId: string, data: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<void>('terminal_write', { sessionId, data });
+}
+
+export async function terminalResize(
+  sessionId: string,
+  cols: number,
+  rows: number,
+) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<void>('terminal_resize', { sessionId, cols, rows });
+}
+
+export async function terminalKill(sessionId: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<void>('terminal_kill', { sessionId });
+}
+
+export async function listenTerminalData(
+  handler: (event: TerminalDataEvent) => void,
+): Promise<UnlistenFn> {
+  const { listen } = await import('@tauri-apps/api/event');
+
+  return listen<TerminalDataEvent>('terminal:data', (event) =>
+    handler(event.payload),
+  );
+}
+
+export async function listenTerminalExit(
+  handler: (event: TerminalExitEvent) => void,
+): Promise<UnlistenFn> {
+  const { listen } = await import('@tauri-apps/api/event');
+
+  return listen<TerminalExitEvent>('terminal:exit', (event) =>
+    handler(event.payload),
+  );
+}
+
+export async function listenTerminalError(
+  handler: (event: TerminalErrorEvent) => void,
+): Promise<UnlistenFn> {
+  const { listen } = await import('@tauri-apps/api/event');
+
+  return listen<TerminalErrorEvent>('terminal:error', (event) =>
+    handler(event.payload),
+  );
 }
 
 export async function selectMarkdownSourceFiles() {

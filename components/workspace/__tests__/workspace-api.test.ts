@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -24,6 +25,9 @@ import {
   gitStage,
   gitStatus,
   gitUnstage,
+  listenTerminalData,
+  listenTerminalError,
+  listenTerminalExit,
   moveWorkspaceNode,
   readMarkdownSourceFiles,
   readPlateDocument,
@@ -35,6 +39,10 @@ import {
   renameWorkspaceNode,
   saveAppSettings,
   savePlateDocument,
+  terminalKill,
+  terminalResize,
+  terminalSpawn,
+  terminalWrite,
   uploadWorkspaceAsset,
 } from '../workspace-api';
 import type { WorkspaceSnapshot } from '../workspace-types';
@@ -43,7 +51,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(),
+}));
+
 const invokeMock = vi.mocked(invoke);
+const listenMock = vi.mocked(listen);
 
 const snapshot: WorkspaceSnapshot = {
   rootPath: '/repo',
@@ -489,5 +502,83 @@ describe('workspace-api native Git commands', () => {
       rootPath: '/repo',
       path: 'a.md',
     });
+  });
+});
+
+describe('workspace-api terminal commands', () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+    listenMock.mockReset();
+  });
+
+  it('wraps terminal Tauri commands', async () => {
+    invokeMock
+      .mockResolvedValueOnce({
+        cwd: '/repo',
+        id: 'term-1',
+        shell: '/bin/zsh',
+      })
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    await expect(terminalSpawn('/repo', 120, 32)).resolves.toEqual({
+      cwd: '/repo',
+      id: 'term-1',
+      shell: '/bin/zsh',
+    });
+    await terminalWrite('term-1', 'git status\r');
+    await terminalResize('term-1', 100, 24);
+    await terminalKill('term-1');
+
+    expect(invokeMock).toHaveBeenNthCalledWith(1, 'terminal_spawn', {
+      rootPath: '/repo',
+      cols: 120,
+      rows: 32,
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(2, 'terminal_write', {
+      sessionId: 'term-1',
+      data: 'git status\r',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'terminal_resize', {
+      sessionId: 'term-1',
+      cols: 100,
+      rows: 24,
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(4, 'terminal_kill', {
+      sessionId: 'term-1',
+    });
+  });
+
+  it('wraps terminal event listeners', async () => {
+    const onData = vi.fn();
+    const onError = vi.fn();
+    const onExit = vi.fn();
+    const unlisten = vi.fn();
+
+    listenMock
+      .mockResolvedValueOnce(unlisten)
+      .mockResolvedValueOnce(unlisten)
+      .mockResolvedValueOnce(unlisten);
+
+    await listenTerminalData(onData);
+    await listenTerminalExit(onExit);
+    await listenTerminalError(onError);
+
+    expect(listenMock).toHaveBeenNthCalledWith(
+      1,
+      'terminal:data',
+      expect.any(Function),
+    );
+    expect(listenMock).toHaveBeenNthCalledWith(
+      2,
+      'terminal:exit',
+      expect.any(Function),
+    );
+    expect(listenMock).toHaveBeenNthCalledWith(
+      3,
+      'terminal:error',
+      expect.any(Function),
+    );
   });
 });

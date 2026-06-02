@@ -239,3 +239,24 @@ export interface GitCommitFile {
   status: string;
   changeType: Exclude<GitChangeType, 'untracked'>;
 }
+
+export interface TerminalSessionInfo {
+  id: string;
+  cwd: string;
+  shell: string;
+}
+
+export interface TerminalDataEvent {
+  sessionId: string;
+  data: string;
+}
+
+export interface TerminalExitEvent {
+  sessionId: string;
+  code: number | null;
+}
+
+export interface TerminalErrorEvent {
+  sessionId: string;
+  message: string;
+}
