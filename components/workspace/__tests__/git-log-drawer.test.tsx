@@ -77,7 +77,6 @@ describe('GitLogDrawer', () => {
         onResizeBranchWidth={vi.fn()}
         onResizeDetailsHeight={vi.fn()}
         onResizeDetailsWidth={vi.fn()}
-        onResizeHeight={vi.fn()}
         onSelectCommit={vi.fn()}
         onSelectFile={vi.fn()}
       />,
@@ -117,7 +116,6 @@ describe('GitLogDrawer', () => {
         onResizeBranchWidth={vi.fn()}
         onResizeDetailsHeight={vi.fn()}
         onResizeDetailsWidth={vi.fn()}
-        onResizeHeight={vi.fn()}
         onSelectCommit={onSelectCommit}
         onSelectFile={vi.fn()}
       />,
@@ -154,7 +152,6 @@ describe('GitLogDrawer', () => {
         onResizeBranchWidth={vi.fn()}
         onResizeDetailsHeight={vi.fn()}
         onResizeDetailsWidth={vi.fn()}
-        onResizeHeight={vi.fn()}
         onSelectCommit={vi.fn()}
         onSelectFile={vi.fn()}
       />,
@@ -172,7 +169,6 @@ describe('GitLogDrawer', () => {
     const onResizeBranchWidth = vi.fn();
     const onResizeDetailsWidth = vi.fn();
     const onResizeDetailsHeight = vi.fn();
-    const onResizeHeight = vi.fn();
 
     render(
       <GitLogDrawer
@@ -193,18 +189,10 @@ describe('GitLogDrawer', () => {
         onResizeBranchWidth={onResizeBranchWidth}
         onResizeDetailsHeight={onResizeDetailsHeight}
         onResizeDetailsWidth={onResizeDetailsWidth}
-        onResizeHeight={onResizeHeight}
         onSelectCommit={vi.fn()}
         onSelectFile={vi.fn()}
       />,
     );
-
-    const drawerHeightHandle = screen.getByRole('separator', {
-      name: '调整 Git 日志高度',
-    });
-    fireEvent.pointerDown(drawerHeightHandle, { clientY: 700, pointerId: 1 });
-    fireEvent.pointerMove(document, { clientY: 580, pointerId: 1 });
-    fireEvent.pointerUp(document, { pointerId: 1 });
 
     const branchWidthHandle = screen.getByRole('separator', {
       name: '调整 Git 日志分支树宽度',
@@ -227,7 +215,6 @@ describe('GitLogDrawer', () => {
     fireEvent.pointerMove(document, { clientY: 580, pointerId: 1 });
     fireEvent.pointerUp(document, { pointerId: 1 });
 
-    expect(onResizeHeight).toHaveBeenCalledWith(540);
     expect(onResizeBranchWidth).toHaveBeenCalledWith(340);
     expect(onResizeDetailsWidth).toHaveBeenCalledWith(500);
     expect(onResizeDetailsHeight).toHaveBeenCalledWith(340);
@@ -256,7 +243,6 @@ describe('GitLogDrawer', () => {
         onResizeBranchWidth={vi.fn()}
         onResizeDetailsHeight={vi.fn()}
         onResizeDetailsWidth={vi.fn()}
-        onResizeHeight={vi.fn()}
         onSelectCommit={vi.fn()}
         onSelectFile={onSelectFile}
       />,

@@ -712,7 +712,7 @@ export function WorkspaceLayout({
           </button>
         </nav>
 
-        <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
             {leftPanelMode === 'workspace' ? (
               <WorkspaceSidebar width={leftSidebarWidth} workspace={workspace} />
@@ -833,6 +833,15 @@ export function WorkspaceLayout({
               width={rightPanelWidth}
             />
           </div>
+          {gitLogOpen ? (
+            <WorkspaceHorizontalResizeHandle
+              aria-label="调整 Git 日志高度"
+              max={GIT_LOG_HEIGHT.max}
+              min={GIT_LOG_HEIGHT.min}
+              value={gitLogHeight}
+              onResize={setGitLogHeight}
+            />
+          ) : null}
           <GitLogDrawer
             branches={gitLogBranches}
             branchWidth={gitLogBranchWidth}
@@ -851,7 +860,6 @@ export function WorkspaceLayout({
             onResizeBranchWidth={setGitLogBranchWidth}
             onResizeDetailsHeight={setGitLogDetailHeight}
             onResizeDetailsWidth={setGitLogDetailWidth}
-            onResizeHeight={setGitLogHeight}
             onSelectCommit={(hash) => void loadGitLogCommitFiles(hash)}
             onSelectFile={(file) => void handleGitLogSelectFile(file)}
           />
@@ -897,6 +905,100 @@ function getTauriRuntimeSnapshot() {
 
 function getServerTauriRuntimeSnapshot() {
   return false;
+}
+
+function WorkspaceHorizontalResizeHandle({
+  'aria-label': ariaLabel,
+  max,
+  min,
+  value,
+  onResize,
+}: {
+  'aria-label': string;
+  max: number;
+  min: number;
+  value: number;
+  onResize: (height: number) => void;
+}) {
+  const dragStateRef = React.useRef<{
+    startHeight: number;
+    startPointerY: number;
+  } | null>(null);
+  const [isDragging, setIsDragging] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isDragging) {
+      return;
+    }
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const dragState = dragStateRef.current;
+
+      if (!dragState) {
+        return;
+      }
+
+      onResize(
+        clampPanelWidth(
+          dragState.startHeight + dragState.startPointerY - event.clientY,
+          min,
+          max,
+        ),
+      );
+    };
+
+    const handlePointerUp = () => {
+      dragStateRef.current = null;
+      setIsDragging(false);
+    };
+
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('pointermove', handlePointerMove);
+    document.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isDragging, max, min, onResize]);
+
+  return (
+    <div
+      aria-label={ariaLabel}
+      aria-orientation="horizontal"
+      aria-valuemax={max}
+      aria-valuemin={min}
+      aria-valuenow={value}
+      className="group flex h-2 shrink-0 cursor-row-resize items-center justify-center outline-none"
+      data-dragging={isDragging ? 'true' : 'false'}
+      role="separator"
+      tabIndex={0}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        dragStateRef.current = {
+          startHeight: value,
+          startPointerY: event.clientY,
+        };
+        setIsDragging(true);
+      }}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'h-px w-12 rounded-full bg-border/0 transition-[background-color,height] duration-150',
+          'group-hover:h-0.5 group-hover:bg-[#3574f0]/60',
+          'group-focus-visible:h-0.5 group-focus-visible:bg-[#3574f0]/70',
+          isDragging && 'h-0.5 bg-[#3574f0]/80',
+        )}
+      />
+    </div>
+  );
 }
 
 function useStoredPanelWidth(

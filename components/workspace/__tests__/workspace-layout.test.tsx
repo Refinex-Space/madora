@@ -554,6 +554,30 @@ describe('WorkspaceLayout', () => {
     expect(gitBranchesMock).toHaveBeenCalledWith('/repo');
     expect(gitLogMock).toHaveBeenCalledWith('/repo');
     expect(gitCommitFilesMock).toHaveBeenCalledWith('/repo', 'abc123abc123');
+
+    const heightHandle = screen.getByRole('separator', {
+      name: '调整 Git 日志高度',
+    });
+    expect(
+      within(screen.getByTestId('git-log-drawer')).queryByRole('separator', {
+        name: '调整 Git 日志高度',
+      }),
+    ).toBeNull();
+    fireEvent.pointerDown(heightHandle, { clientY: 700, pointerId: 1 });
+    await waitFor(() =>
+      expect(heightHandle.getAttribute('data-dragging')).toBe('true'),
+    );
+    fireEvent.pointerMove(document, { clientY: 580, pointerId: 1 });
+    fireEvent.pointerUp(document, { pointerId: 1 });
+
+    const storedHeight = window.localStorage.getItem(
+      'refinex-wiki:workspace:git-log-height',
+    );
+
+    expect(storedHeight).not.toBeNull();
+    expect(screen.getByTestId('git-log-drawer').style.height).toBe(
+      `${storedHeight}px`,
+    );
   });
 
   it('opens commit file diff from the Git log drawer in the editor block', async () => {

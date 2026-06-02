@@ -40,7 +40,6 @@ interface GitLogDrawerProps {
   onResizeBranchWidth: (width: number) => void;
   onResizeDetailsHeight: (height: number) => void;
   onResizeDetailsWidth: (width: number) => void;
-  onResizeHeight: (height: number) => void;
   onSelectCommit: (hash: string) => void;
   onSelectFile: (file: GitCommitFile) => void;
 }
@@ -63,7 +62,6 @@ export function GitLogDrawer({
   onResizeBranchWidth,
   onResizeDetailsHeight,
   onResizeDetailsWidth,
-  onResizeHeight,
   onSelectCommit,
   onSelectFile,
 }: GitLogDrawerProps) {
@@ -107,13 +105,6 @@ export function GitLogDrawer({
       data-testid="git-log-drawer"
       style={{ height }}
     >
-      <HorizontalResizeHandle
-        aria-label="调整 Git 日志高度"
-        max={680}
-        min={280}
-        value={height}
-        onResize={onResizeHeight}
-      />
       <header className="flex h-10 shrink-0 items-center justify-between border-b px-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
           <GitGraph size={16} />
