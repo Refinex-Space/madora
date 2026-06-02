@@ -70,21 +70,17 @@ export function WorkspaceLayout({
   initialSnapshot = null,
 }: WorkspaceLayoutProps) {
   const workspace = useWorkspace(initialSnapshot);
-  const [leftSidebarWidth, setLeftSidebarWidth] = React.useState(() =>
-    readStoredPanelWidth(
-      WORKSPACE_PANEL_WIDTH_STORAGE_KEYS.left,
-      LEFT_PANEL_WIDTH.defaultValue,
-      LEFT_PANEL_WIDTH.min,
-      LEFT_PANEL_WIDTH.max,
-    ),
+  const [leftSidebarWidth, setLeftSidebarWidth] = useStoredPanelWidth(
+    WORKSPACE_PANEL_WIDTH_STORAGE_KEYS.left,
+    LEFT_PANEL_WIDTH.defaultValue,
+    LEFT_PANEL_WIDTH.min,
+    LEFT_PANEL_WIDTH.max,
   );
-  const [rightPanelWidth, setRightPanelWidth] = React.useState(() =>
-    readStoredPanelWidth(
-      WORKSPACE_PANEL_WIDTH_STORAGE_KEYS.right,
-      RIGHT_PANEL_WIDTH.defaultValue,
-      RIGHT_PANEL_WIDTH.min,
-      RIGHT_PANEL_WIDTH.max,
-    ),
+  const [rightPanelWidth, setRightPanelWidth] = useStoredPanelWidth(
+    WORKSPACE_PANEL_WIDTH_STORAGE_KEYS.right,
+    RIGHT_PANEL_WIDTH.defaultValue,
+    RIGHT_PANEL_WIDTH.min,
+    RIGHT_PANEL_WIDTH.max,
   );
   const [tocSnapshotState, setTocSnapshotState] = React.useState<{
     documentPath: string | null;
@@ -171,29 +167,12 @@ export function WorkspaceLayout({
   );
 
   const handleLeftSidebarResize = React.useCallback((nextWidth: number) => {
-    const clampedWidth = clampPanelWidth(
-      nextWidth,
-      LEFT_PANEL_WIDTH.min,
-      LEFT_PANEL_WIDTH.max,
-    );
-
-    setLeftSidebarWidth(clampedWidth);
-    writeStoredPanelWidth(WORKSPACE_PANEL_WIDTH_STORAGE_KEYS.left, clampedWidth);
-  }, []);
+    setLeftSidebarWidth(nextWidth);
+  }, [setLeftSidebarWidth]);
 
   const handleRightPanelResize = React.useCallback((nextWidth: number) => {
-    const clampedWidth = clampPanelWidth(
-      nextWidth,
-      RIGHT_PANEL_WIDTH.min,
-      RIGHT_PANEL_WIDTH.max,
-    );
-
-    setRightPanelWidth(clampedWidth);
-    writeStoredPanelWidth(
-      WORKSPACE_PANEL_WIDTH_STORAGE_KEYS.right,
-      clampedWidth,
-    );
-  }, []);
+    setRightPanelWidth(nextWidth);
+  }, [setRightPanelWidth]);
 
   const refreshGitStatus = React.useCallback(async () => {
     if (!workspaceRootPath) {
@@ -579,6 +558,63 @@ function getServerTauriRuntimeSnapshot() {
   return false;
 }
 
+function useStoredPanelWidth(
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+) {
+  const subscribe = React.useCallback(
+    (onStoreChange: () => void) => subscribeStoredPanelWidth(key, onStoreChange),
+    [key],
+  );
+  const getSnapshot = React.useCallback(
+    () => readStoredPanelWidth(key, fallback, min, max),
+    [fallback, key, max, min],
+  );
+  const getServerSnapshot = React.useCallback(() => fallback, [fallback]);
+  const width = React.useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
+  const setWidth = React.useCallback(
+    (nextWidth: number) => {
+      const clampedWidth = clampPanelWidth(nextWidth, min, max);
+
+      writeStoredPanelWidth(key, clampedWidth);
+      emitStoredPanelWidthChange(key);
+    },
+    [key, max, min],
+  );
+
+  return [width, setWidth] as const;
+}
+
+function subscribeStoredPanelWidth(
+  key: string,
+  onStoreChange: () => void,
+) {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  const eventName = getStoredPanelWidthEventName(key);
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === key) {
+      onStoreChange();
+    }
+  };
+
+  window.addEventListener(eventName, onStoreChange);
+  window.addEventListener('storage', handleStorage);
+
+  return () => {
+    window.removeEventListener(eventName, onStoreChange);
+    window.removeEventListener('storage', handleStorage);
+  };
+}
+
 function clampPanelWidth(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
@@ -608,6 +644,18 @@ function writeStoredPanelWidth(key: string, value: number) {
   }
 
   window.localStorage.setItem(key, String(value));
+}
+
+function emitStoredPanelWidthChange(key: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(new Event(getStoredPanelWidthEventName(key)));
+}
+
+function getStoredPanelWidthEventName(key: string) {
+  return `refinex-wiki:panel-width:${key}`;
 }
 
 function formatUnknownError(error: unknown) {
