@@ -2,6 +2,8 @@ import type { Value } from 'platejs';
 
 export type WorkspaceNodeKind = 'directory' | 'document';
 
+export type RightPanelMode = 'ai' | 'toc' | 'meta' | null;
+
 export interface WorkspaceNode {
   id: string;
   name: string;

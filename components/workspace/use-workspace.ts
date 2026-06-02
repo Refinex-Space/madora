@@ -34,6 +34,7 @@ import type {
   DocumentSaveState,
   PlateDocumentContent,
   PlateDocumentEnvelope,
+  RightPanelMode,
   WorkspaceLoadError,
   WorkspaceHistoryItem,
   WorkspaceExportFormat,
@@ -72,9 +73,8 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
   const [error, setError] = React.useState<WorkspaceLoadError | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isSidebarCollapsed, setSidebarCollapsed] = React.useState(false);
-  const [rightPanelMode, setRightPanelMode] = React.useState<
-    'ai' | 'toc' | null
-  >(null);
+  const [rightPanelMode, setRightPanelMode] =
+    React.useState<RightPanelMode>(null);
   const [storedWorkspaceHistory, setStoredWorkspaceHistory] = React.useState<
     WorkspaceHistoryItem[]
   >(() => getWorkspaceHistory());

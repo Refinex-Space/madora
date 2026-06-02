@@ -577,6 +577,30 @@ export async function selectExportFilePath(
   });
 }
 
+export async function selectWorkspaceAssetDownloadPath(
+  defaultPath: string,
+  mediaType: string,
+) {
+  if (!isTauriRuntime()) {
+    return defaultPath;
+  }
+
+  const { save } = await import('@tauri-apps/plugin-dialog');
+  const extension = getDownloadFileExtension(defaultPath);
+
+  return save({
+    defaultPath,
+    filters: extension
+      ? [
+          {
+            extensions: [extension],
+            name: getDownloadDialogFilterName(mediaType),
+          },
+        ]
+      : undefined,
+  });
+}
+
 function getImportDialogFilter(format: WorkspaceImportFormat) {
   switch (format) {
     case 'html':
@@ -603,6 +627,37 @@ function getExportDialogFilter(format: WorkspaceExportFormat | 'zip') {
     case 'zip':
       return { name: 'Zip Archive', extensions: ['zip'] };
   }
+}
+
+function getDownloadFileExtension(fileName: string) {
+  const normalized = fileName.replace(/\\/g, '/');
+  const name = normalized.slice(normalized.lastIndexOf('/') + 1);
+  const dotIndex = name.lastIndexOf('.');
+
+  return dotIndex > 0 ? name.slice(dotIndex + 1).toLowerCase() : '';
+}
+
+function getDownloadDialogFilterName(mediaType: string) {
+  if (mediaType.startsWith('image/')) {
+    return 'Image';
+  }
+
+  if (mediaType.startsWith('audio/')) {
+    return 'Audio';
+  }
+
+  if (mediaType.startsWith('video/')) {
+    return 'Video';
+  }
+
+  if (
+    mediaType === 'application/zip' ||
+    mediaType === 'application/x-zip-compressed'
+  ) {
+    return 'Archive';
+  }
+
+  return 'Resource';
 }
 
 export async function setAppWindowTitle(title: string) {

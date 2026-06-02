@@ -9,7 +9,6 @@ import {
   GitGraph,
   SquareTerminal,
 } from 'lucide-react';
-import type { Value } from 'platejs';
 
 import type { DocumentTocSnapshot } from '@/components/editor/document-toc-bridge';
 import { PlateEditor } from '@/components/editor/plate-editor';
@@ -50,6 +49,7 @@ import {
 } from './workspace-api';
 import { WorkspaceResizeHandle } from './workspace-resize-handle';
 import { WorkspaceSidebar } from './workspace-sidebar';
+import { countPlateDocumentCharacters } from './workspace-document-insights';
 import { XtermTerminal } from './xterm-terminal';
 import type {
   AppSettings,
@@ -1048,9 +1048,11 @@ export function WorkspaceLayout({
 
             <RightSidePanel
               currentDocument={workspace.currentDocument}
+              documentEnvelope={workspace.draftEnvelope}
               mode={workspace.rightPanelMode}
               tocSnapshot={tocSnapshot}
               width={rightPanelWidth}
+              workspaceRootPath={workspaceRootPath}
             />
           </div>
           {gitLogOpen ? (
@@ -1406,32 +1408,4 @@ function WorkspaceStatusBar({
       ) : null}
     </div>
   );
-}
-
-function countPlateDocumentCharacters(value: Value | undefined) {
-  if (!value) {
-    return 0;
-  }
-
-  return value.reduce((count, node) => count + countNodeCharacters(node), 0);
-}
-
-function countNodeCharacters(node: unknown): number {
-  if (!node || typeof node !== 'object') {
-    return 0;
-  }
-
-  const record = node as { children?: unknown; text?: unknown };
-  const textCount =
-    typeof record.text === 'string'
-      ? Array.from(record.text.replace(/\s+/g, '')).length
-      : 0;
-  const childrenCount = Array.isArray(record.children)
-    ? record.children.reduce(
-        (count, child) => count + countNodeCharacters(child),
-        0,
-      )
-    : 0;
-
-  return textCount + childrenCount;
 }

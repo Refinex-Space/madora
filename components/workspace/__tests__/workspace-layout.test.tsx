@@ -26,12 +26,16 @@ import {
   loadWorkspaceTree,
   readAppSettings,
   readPlateDocument,
+  readWorkspaceAssetData,
+  resolveWorkspaceAsset,
   saveAppSettings,
+  selectWorkspaceAssetDownloadPath,
   selectWorkspaceParentDirectory,
   terminalKill,
   terminalResize,
   terminalSpawn,
   terminalWrite,
+  writeExportFile,
 } from '../workspace-api';
 import { WorkspaceLayout } from '../workspace-layout';
 import type { WorkspaceSnapshot } from '../workspace-types';
@@ -118,14 +122,18 @@ vi.mock('../workspace-api', async (importOriginal) => {
     listenTerminalExit: vi.fn(),
     loadWorkspaceTree: vi.fn(),
     readPlateDocument: vi.fn(),
+    readWorkspaceAssetData: vi.fn(),
+    resolveWorkspaceAsset: vi.fn(),
     readAppSettings: vi.fn(),
     saveAppSettings: vi.fn(),
+    selectWorkspaceAssetDownloadPath: vi.fn(),
     selectWorkspaceParentDirectory: vi.fn(),
     setAppWindowTitle: vi.fn(),
     terminalKill: vi.fn(),
     terminalResize: vi.fn(),
     terminalSpawn: vi.fn(),
     terminalWrite: vi.fn(),
+    writeExportFile: vi.fn(),
   };
 });
 
@@ -152,7 +160,12 @@ const listenTerminalExitMock = vi.mocked(listenTerminalExit);
 const loadWorkspaceTreeMock = vi.mocked(loadWorkspaceTree);
 const readAppSettingsMock = vi.mocked(readAppSettings);
 const readPlateDocumentMock = vi.mocked(readPlateDocument);
+const readWorkspaceAssetDataMock = vi.mocked(readWorkspaceAssetData);
+const resolveWorkspaceAssetMock = vi.mocked(resolveWorkspaceAsset);
 const saveAppSettingsMock = vi.mocked(saveAppSettings);
+const selectWorkspaceAssetDownloadPathMock = vi.mocked(
+  selectWorkspaceAssetDownloadPath,
+);
 const selectWorkspaceParentDirectoryMock = vi.mocked(
   selectWorkspaceParentDirectory,
 );
@@ -160,6 +173,7 @@ const terminalKillMock = vi.mocked(terminalKill);
 const terminalResizeMock = vi.mocked(terminalResize);
 const terminalSpawnMock = vi.mocked(terminalSpawn);
 const terminalWriteMock = vi.mocked(terminalWrite);
+const writeExportFileMock = vi.mocked(writeExportFile);
 
 const snapshot: WorkspaceSnapshot = {
   rootPath: '/repo',
@@ -245,12 +259,16 @@ describe('WorkspaceLayout', () => {
     loadWorkspaceTreeMock.mockReset();
     readAppSettingsMock.mockReset();
     readPlateDocumentMock.mockReset();
+    readWorkspaceAssetDataMock.mockReset();
+    resolveWorkspaceAssetMock.mockReset();
     saveAppSettingsMock.mockReset();
+    selectWorkspaceAssetDownloadPathMock.mockReset();
     selectWorkspaceParentDirectoryMock.mockReset();
     terminalKillMock.mockReset();
     terminalResizeMock.mockReset();
     terminalSpawnMock.mockReset();
     terminalWriteMock.mockReset();
+    writeExportFileMock.mockReset();
     setThemeMock.mockReset();
     listenTerminalDataMock.mockResolvedValue(vi.fn());
     listenTerminalErrorMock.mockResolvedValue(vi.fn());
@@ -722,6 +740,76 @@ describe('WorkspaceLayout', () => {
 
     expect(screen.queryByTestId('ai-panel-island')).toBeNull();
     expect(screen.queryByTestId('document-toc-panel')).toBeNull();
+  });
+
+  it('shows document metadata, resources, and downloads a resource from the right rail', async () => {
+    const user = userEvent.setup();
+    readPlateDocumentMock.mockResolvedValueOnce({
+      envelope: {
+        schemaVersion: 1,
+        title: '项目说明',
+        createdAt: '2026-06-01T10:00:00.000Z',
+        updatedAt: '2026-06-02T11:30:00.000Z',
+        content: [
+          {
+            type: 'p',
+            children: [{ text: '你好 世界' }],
+          },
+          {
+            type: 'img',
+            url: 'refinex-asset://asset-img',
+            children: [{ text: '' }],
+          },
+        ],
+      },
+      modifiedAt: 1,
+      path: '/repo/README.plate.json',
+    });
+    resolveWorkspaceAssetMock.mockResolvedValue({
+      absolutePath: '/repo/.refinex/assets/files/as/asset-img.png',
+      id: 'asset-img',
+      mediaType: 'image/png',
+      name: 'cover.png',
+      size: 2048,
+    });
+    readWorkspaceAssetDataMock.mockResolvedValue({
+      base64Data: 'cG5n',
+      id: 'asset-img',
+      mediaType: 'image/png',
+      name: 'cover.png',
+    });
+    selectWorkspaceAssetDownloadPathMock.mockResolvedValue('/Downloads/cover.png');
+    writeExportFileMock.mockResolvedValue('/Downloads/cover.png');
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByText('项目说明'));
+    await user.click(screen.getByRole('button', { name: '展开元信息面板' }));
+
+    const metaPanel = await screen.findByTestId('document-meta-panel');
+
+    expect(metaPanel).toBeTruthy();
+    expect(within(metaPanel).getByText('文档信息')).toBeTruthy();
+    expect(within(metaPanel).getByText('项目说明')).toBeTruthy();
+    expect(within(metaPanel).getByText('4 字')).toBeTruthy();
+    expect(within(metaPanel).getByText('1 个')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '资源 1' }));
+
+    expect(await screen.findByText('cover.png')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '下载资源 cover.png' }));
+
+    await waitFor(() => {
+      expect(selectWorkspaceAssetDownloadPathMock).toHaveBeenCalledWith(
+        'cover.png',
+        'image/png',
+      );
+      expect(writeExportFileMock).toHaveBeenCalledWith(
+        '/Downloads/cover.png',
+        'cG5n',
+      );
+    });
   });
 
   it('keeps the active right tool visually highlighted', async () => {

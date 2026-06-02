@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Bot, ListTree, Palette, Settings, Sparkles } from 'lucide-react';
+import { Bot, Info, ListTree, Palette, Settings, Sparkles } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
 import type { DocumentTocSnapshot } from '@/components/editor/document-toc-bridge';
@@ -20,17 +20,23 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
+import { DocumentMetaPanel } from './document-meta-panel';
 import { DocumentTocPanel } from './document-toc-panel';
 import { WorkspaceSettingsDialog } from './workspace-settings-dialog';
-import type { AppSettings, WorkspaceNode } from './workspace-types';
-
-export type RightPanelMode = 'ai' | 'toc' | null;
+import type {
+  AppSettings,
+  PlateDocumentEnvelope,
+  RightPanelMode,
+  WorkspaceNode,
+} from './workspace-types';
 
 interface RightSidePanelProps {
   currentDocument: WorkspaceNode | null;
+  documentEnvelope: PlateDocumentEnvelope | null;
   mode: RightPanelMode;
   tocSnapshot: DocumentTocSnapshot | null;
   width: number;
+  workspaceRootPath: string | null;
 }
 
 interface RightToolRailProps {
@@ -42,9 +48,11 @@ interface RightToolRailProps {
 
 export function RightSidePanel({
   currentDocument,
+  documentEnvelope,
   mode,
   tocSnapshot,
   width,
+  workspaceRootPath,
 }: RightSidePanelProps) {
   if (!mode) {
     return null;
@@ -53,15 +61,21 @@ export function RightSidePanel({
   return (
     <aside
       className="flex h-full shrink-0 flex-col overflow-hidden rounded-lg border bg-background shadow-sm"
-      data-testid={mode === 'ai' ? 'ai-panel-island' : 'document-toc-panel'}
+      data-testid={getRightPanelTestId(mode)}
       style={{ width }}
     >
       {mode === 'ai' ? (
         <AiPanelContent currentDocument={currentDocument} />
-      ) : (
+      ) : mode === 'toc' ? (
         <DocumentTocPanel
           currentDocument={currentDocument}
           snapshot={tocSnapshot}
+        />
+      ) : (
+        <DocumentMetaPanel
+          currentDocument={currentDocument}
+          documentEnvelope={documentEnvelope}
+          workspaceRootPath={workspaceRootPath}
         />
       )}
     </aside>
@@ -110,6 +124,16 @@ export function RightToolRail({
         onClick={() => onModeChange(nextMode('toc'))}
       >
         <ListTree size={17} />
+      </button>
+
+      <button
+        aria-label={mode === 'meta' ? '折叠元信息面板' : '展开元信息面板'}
+        className={rightToolButtonClassName(mode === 'meta')}
+        data-testid="document-meta-panel-icon-button"
+        type="button"
+        onClick={() => onModeChange(nextMode('meta'))}
+      >
+        <Info size={17} />
       </button>
 
       <DropdownMenu>
@@ -161,6 +185,17 @@ export function RightToolRail({
       />
     </nav>
   );
+}
+
+function getRightPanelTestId(mode: Exclude<RightPanelMode, null>) {
+  switch (mode) {
+    case 'ai':
+      return 'ai-panel-island';
+    case 'toc':
+      return 'document-toc-panel';
+    case 'meta':
+      return 'document-meta-panel';
+  }
 }
 
 function AiPanelContent({
