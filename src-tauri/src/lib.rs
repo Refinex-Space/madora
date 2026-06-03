@@ -4,6 +4,8 @@ mod settings;
 mod terminal;
 mod workspace;
 
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -53,6 +55,12 @@ pub fn run() {
             workspace::write_export_file,
         ])
         .setup(|app| {
+            if cfg!(target_os = "windows") {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_decorations(false)?;
+                }
+            }
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

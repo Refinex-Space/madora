@@ -647,6 +647,11 @@ export const TableElement = withHOC(
         () => TABLE_DEFAULT_COLUMN_WIDTH
       );
     }, [colSizes, props.element]);
+    const usesDefaultColumnSizing = colSizes.length === 0;
+    const defaultColumnWidth =
+      resolvedColSizes.length > 0
+        ? `calc((100% - ${controlColumnWidth}px) / ${resolvedColSizes.length})`
+        : undefined;
     const tableVariableStyle = React.useMemo(() => {
       if (resolvedColSizes.length === 0) {
         return;
@@ -656,20 +661,25 @@ export const TableElement = withHOC(
         ...Object.fromEntries(
           resolvedColSizes.map((colSize, index) => [
             `--table-col-${index}`,
-            `${colSize}px`,
+            usesDefaultColumnSizing && defaultColumnWidth
+              ? defaultColumnWidth
+              : `${colSize}px`,
           ])
         ),
       } as React.CSSProperties;
-    }, [resolvedColSizes]);
+    }, [defaultColumnWidth, resolvedColSizes, usesDefaultColumnSizing]);
     const tableStyle = React.useMemo(
       () =>
         ({
-          width: `${
-            resolvedColSizes.reduce((total, colSize) => total + colSize, 0) +
-            controlColumnWidth
-          }px`,
+          minWidth: '100%',
+          width: usesDefaultColumnSizing
+            ? '100%'
+            : `${
+                resolvedColSizes.reduce((total, colSize) => total + colSize, 0) +
+                controlColumnWidth
+              }px`,
         }) as React.CSSProperties,
-      [controlColumnWidth, resolvedColSizes]
+      [controlColumnWidth, resolvedColSizes, usesDefaultColumnSizing]
     );
 
     const isSelectingTable = useBlockSelected(props.element.id as string);
@@ -686,7 +696,7 @@ export const TableElement = withHOC(
         <TableResizeContext.Provider value={resizeController}>
           <div
             ref={wrapperRef}
-            className="group/table relative w-fit"
+            className="group/table relative w-full"
             style={tableVariableStyle}
           >
             <div
@@ -702,7 +712,7 @@ export const TableElement = withHOC(
             <table
               ref={tableRef}
               className={cn(
-                'mr-0 ml-px table h-px table-fixed border-collapse',
+                'mr-0 table h-px table-fixed border-collapse',
                 'data-[table-selecting=true]:[&_*::selection]:!bg-transparent',
                 'data-[table-selecting=true]:[&_*::selection]:!text-inherit',
                 'data-[table-selecting=true]:[&_*::-moz-selection]:!bg-transparent',
@@ -727,9 +737,18 @@ export const TableElement = withHOC(
                     <col
                       key={index}
                       style={{
-                        maxWidth: colSize,
-                        minWidth: colSize,
-                        width: colSize,
+                        maxWidth:
+                          usesDefaultColumnSizing && defaultColumnWidth
+                            ? defaultColumnWidth
+                            : colSize,
+                        minWidth:
+                          usesDefaultColumnSizing && defaultColumnWidth
+                            ? defaultColumnWidth
+                            : colSize,
+                        width:
+                          usesDefaultColumnSizing && defaultColumnWidth
+                            ? defaultColumnWidth
+                            : colSize,
                       }}
                     />
                   ))}
@@ -1237,7 +1256,7 @@ function useTableCellPresentation(element: TTableCellElement) {
   };
 }
 
-function RowDragHandle({ dragRef }: { dragRef: React.Ref<any> }) {
+function RowDragHandle({ dragRef }: { dragRef: React.Ref<HTMLButtonElement> }) {
   const editor = useEditorRef();
   const element = useElement();
 

@@ -21,10 +21,14 @@ export function TableElementStatic({
       className="overflow-x-auto py-5"
       style={{ paddingLeft: marginLeft }}
     >
-      <div className="group/table relative w-fit">
+      <div className="group/table relative w-full">
         <table
-          className="mr-0 ml-px table h-px table-fixed border-collapse"
-          style={{ borderCollapse: 'collapse', width: '100%' }}
+          className="mr-0 table h-px table-fixed border-collapse"
+          style={{
+            borderCollapse: 'collapse',
+            minWidth: '100%',
+            width: '100%',
+          }}
         >
           <tbody className="min-w-full">{children}</tbody>
         </table>

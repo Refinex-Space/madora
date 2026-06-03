@@ -7,7 +7,10 @@ import {
   FolderOpen,
   GitBranch,
   GitGraph,
+  Minus,
   SquareTerminal,
+  Square,
+  X,
 } from 'lucide-react';
 
 import type { DocumentTocSnapshot } from '@/components/editor/document-toc-bridge';
@@ -40,8 +43,11 @@ import {
   listenTerminalData,
   listenTerminalError,
   listenTerminalExit,
+  closeAppWindow,
   readAppSettings,
+  minimizeAppWindow,
   setAppWindowTitle,
+  toggleMaximizeAppWindow,
   terminalKill,
   terminalResize,
   terminalSpawn,
@@ -188,6 +194,7 @@ export function WorkspaceLayout({
     [workspace.draftEnvelope?.content],
   );
   const isTauriRuntime = useIsTauriRuntime();
+  const isWindowsRuntime = useIsWindowsRuntime();
   const { resolvedTheme } = useTheme();
   const terminalThemeMode = resolvedTheme === 'dark' ? 'dark' : 'light';
   const [pageWidthMode, setPageWidthMode] = React.useState<PageWidthMode>(
@@ -855,13 +862,19 @@ export function WorkspaceLayout({
     >
       {isTauriRuntime ? (
         <div
-          className="-mx-2 -mt-2 flex h-8 shrink-0 items-center px-20 text-xs font-semibold text-muted-foreground"
+          className={cn(
+            '-mx-2 -mt-2 flex h-8 shrink-0 items-center text-xs font-semibold text-muted-foreground',
+            isWindowsRuntime
+              ? 'bg-muted/50 pl-3 pr-0'
+              : 'px-20',
+          )}
           data-tauri-drag-region="deep"
           data-testid="workspace-titlebar-drag-region"
         >
           <span className="truncate" data-tauri-drag-region>
             {pageTitle ?? 'Refinex Wiki'}
           </span>
+          {isWindowsRuntime ? <WindowsTitlebarControls /> : null}
         </div>
       ) : null}
 
@@ -1175,6 +1188,68 @@ function getTauriRuntimeSnapshot() {
 
 function getServerTauriRuntimeSnapshot() {
   return false;
+}
+
+function useIsWindowsRuntime() {
+  return React.useSyncExternalStore(
+    subscribeToStaticRuntimeSnapshot,
+    getWindowsRuntimeSnapshot,
+    getServerWindowsRuntimeSnapshot,
+  );
+}
+
+function getWindowsRuntimeSnapshot() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const navigatorWithUserAgentData = navigator as Navigator & {
+    userAgentData?: { platform?: string };
+  };
+  const platform =
+    navigatorWithUserAgentData.userAgentData?.platform ??
+    navigator.platform ??
+    '';
+
+  return /win/i.test(platform) || /windows/i.test(navigator.userAgent);
+}
+
+function getServerWindowsRuntimeSnapshot() {
+  return false;
+}
+
+function WindowsTitlebarControls() {
+  return (
+    <div
+      className="ml-auto flex h-full items-stretch"
+      data-testid="windows-titlebar-controls"
+    >
+      <button
+        aria-label="最小化窗口"
+        className="flex h-full w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+        type="button"
+        onClick={() => void minimizeAppWindow()}
+      >
+        <Minus size={14} strokeWidth={1.8} />
+      </button>
+      <button
+        aria-label="最大化或还原窗口"
+        className="flex h-full w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+        type="button"
+        onClick={() => void toggleMaximizeAppWindow()}
+      >
+        <Square size={12} strokeWidth={1.8} />
+      </button>
+      <button
+        aria-label="关闭窗口"
+        className="flex h-full w-11 items-center justify-center text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
+        type="button"
+        onClick={() => void closeAppWindow()}
+      >
+        <X size={15} strokeWidth={1.8} />
+      </button>
+    </div>
+  );
 }
 
 function WorkspaceHorizontalResizeHandle({

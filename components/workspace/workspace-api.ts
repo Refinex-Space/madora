@@ -670,6 +670,36 @@ export async function setAppWindowTitle(title: string) {
   await getCurrentWindow().setTitle(title);
 }
 
+export async function minimizeAppWindow() {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+
+  await getCurrentWindow().minimize();
+}
+
+export async function toggleMaximizeAppWindow() {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+
+  await getCurrentWindow().toggleMaximize();
+}
+
+export async function closeAppWindow() {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+
+  await getCurrentWindow().close();
+}
+
 function getParentPath(path: string) {
   const normalizedPath = path.replace(/\\/g, '/');
   const lastSlashIndex = normalizedPath.lastIndexOf('/');

@@ -31,6 +31,9 @@ import {
   saveAppSettings,
   selectWorkspaceAssetDownloadPath,
   selectWorkspaceParentDirectory,
+  closeAppWindow,
+  minimizeAppWindow,
+  toggleMaximizeAppWindow,
   terminalKill,
   terminalResize,
   terminalSpawn,
@@ -129,6 +132,9 @@ vi.mock('../workspace-api', async (importOriginal) => {
     selectWorkspaceAssetDownloadPath: vi.fn(),
     selectWorkspaceParentDirectory: vi.fn(),
     setAppWindowTitle: vi.fn(),
+    closeAppWindow: vi.fn(),
+    minimizeAppWindow: vi.fn(),
+    toggleMaximizeAppWindow: vi.fn(),
     terminalKill: vi.fn(),
     terminalResize: vi.fn(),
     terminalSpawn: vi.fn(),
@@ -169,6 +175,9 @@ const selectWorkspaceAssetDownloadPathMock = vi.mocked(
 const selectWorkspaceParentDirectoryMock = vi.mocked(
   selectWorkspaceParentDirectory,
 );
+const closeAppWindowMock = vi.mocked(closeAppWindow);
+const minimizeAppWindowMock = vi.mocked(minimizeAppWindow);
+const toggleMaximizeAppWindowMock = vi.mocked(toggleMaximizeAppWindow);
 const terminalKillMock = vi.mocked(terminalKill);
 const terminalResizeMock = vi.mocked(terminalResize);
 const terminalSpawnMock = vi.mocked(terminalSpawn);
@@ -264,12 +273,18 @@ describe('WorkspaceLayout', () => {
     saveAppSettingsMock.mockReset();
     selectWorkspaceAssetDownloadPathMock.mockReset();
     selectWorkspaceParentDirectoryMock.mockReset();
+    closeAppWindowMock.mockReset();
+    minimizeAppWindowMock.mockReset();
+    toggleMaximizeAppWindowMock.mockReset();
     terminalKillMock.mockReset();
     terminalResizeMock.mockReset();
     terminalSpawnMock.mockReset();
     terminalWriteMock.mockReset();
     writeExportFileMock.mockReset();
     setThemeMock.mockReset();
+    closeAppWindowMock.mockResolvedValue(undefined);
+    minimizeAppWindowMock.mockResolvedValue(undefined);
+    toggleMaximizeAppWindowMock.mockResolvedValue(undefined);
     listenTerminalDataMock.mockResolvedValue(vi.fn());
     listenTerminalErrorMock.mockResolvedValue(vi.fn());
     listenTerminalExitMock.mockResolvedValue(vi.fn());
@@ -1421,8 +1436,35 @@ describe('WorkspaceLayout', () => {
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     expect(screen.queryByTestId('workspace-titlebar')).toBeNull();
+    expect(screen.queryByTestId('windows-titlebar-controls')).toBeNull();
     expect(screen.queryByText('未选择文档')).toBeNull();
     expect(screen.getByPlaceholderText('搜索标题或路径')).toBeTruthy();
+  });
+
+  it('renders compact Windows titlebar controls in the Tauri Windows runtime', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window.navigator, 'platform', {
+      configurable: true,
+      value: 'Win32',
+    });
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ =
+      {};
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    expect(screen.getByTestId('workspace-titlebar-drag-region')).toBeTruthy();
+    expect(
+      screen.getByTestId('workspace-titlebar-drag-region').className,
+    ).not.toContain('border-b');
+    expect(screen.getByTestId('windows-titlebar-controls')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '最小化窗口' }));
+    await user.click(screen.getByRole('button', { name: '最大化或还原窗口' }));
+    await user.click(screen.getByRole('button', { name: '关闭窗口' }));
+
+    expect(minimizeAppWindowMock).toHaveBeenCalledTimes(1);
+    expect(toggleMaximizeAppWindowMock).toHaveBeenCalledTimes(1);
+    expect(closeAppWindowMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the active document title out of the editor body chrome', async () => {
