@@ -53,12 +53,20 @@ describe('extractH1Text', () => {
     expect(extractH1Text(value)).toBe('Hello World');
   });
 
-  it('H1 无文本内容时返回空字符串', () => {
+  it('H1 无文本内容时返回 null', () => {
     const value: Value = [
       { type: 'h1', children: [{ text: '' }] } as never,
     ];
 
-    expect(extractH1Text(value)).toBe('');
+    expect(extractH1Text(value)).toBeNull();
+  });
+
+  it('H1 仅空白时返回 null', () => {
+    const value: Value = [
+      { type: 'h1', children: [{ text: '   ' }] } as never,
+    ];
+
+    expect(extractH1Text(value)).toBeNull();
   });
 });
 

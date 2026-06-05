@@ -147,7 +147,8 @@ function unquote(value: string) {
 export function extractH1Text(value: Value): string | null {
   for (const node of value) {
     if (node.type === 'h1') {
-      return getNodeText(node);
+      const text = getNodeText(node).trim();
+      return text || null;
     }
   }
 
