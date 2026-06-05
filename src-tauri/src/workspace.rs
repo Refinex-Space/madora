@@ -1798,9 +1798,26 @@ fn read_frontmatter_title(raw: &str) -> Option<String> {
 
 fn update_markdown_document_title(path: &Path, title: &str) -> io::Result<()> {
     let raw = fs::read_to_string(path)?;
-    let updated = upsert_markdown_frontmatter_title(&raw, title);
+    let with_frontmatter = upsert_markdown_frontmatter_title(&raw, title);
+    let updated = replace_first_h1(&with_frontmatter, title);
 
     write_text_atomic(path, &updated)
+}
+
+fn replace_first_h1(raw: &str, new_title: &str) -> String {
+    let mut found = false;
+    raw.split('\n')
+        .map(|line| {
+            if !found && line.trim_start().starts_with("# ") && line.trim().len() > 2 {
+                found = true;
+                let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+                format!("{indent}# {new_title}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<String>>()
+        .join("\n")
 }
 
 fn upsert_markdown_frontmatter_title(raw: &str, title: &str) -> String {
@@ -2723,6 +2740,73 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(paths, vec!["c.md", "a.md", "b.md"]);
+    }
+
+    #[test]
+    fn update_markdown_document_title_updates_both_frontmatter_and_h1() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let doc_path = temp_dir.path().join("guide.md");
+        fs::write(
+            &doc_path,
+            "---\ntitle: 旧标题\nrefinexDialect: 1\n---\n\n# 旧标题\n\n正文内容\n",
+        )
+        .expect("写入 Markdown 失败");
+
+        update_markdown_document_title(&doc_path, "新标题").expect("更新标题失败");
+
+        let updated = fs::read_to_string(&doc_path).expect("读取文件失败");
+        assert!(
+            updated.contains("title: 新标题"),
+            "frontmatter title 应更新为 新标题，实际: {updated}"
+        );
+        assert!(
+            updated.contains("# 新标题"),
+            "正文 H1 应更新为 新标题，实际: {updated}"
+        );
+        assert!(
+            updated.contains("正文内容"),
+            "正文其他内容应保留，实际: {updated}"
+        );
+    }
+
+    #[test]
+    fn update_markdown_document_title_preserves_body_without_h1() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let doc_path = temp_dir.path().join("note.md");
+        fs::write(&doc_path, "---\ntitle: 笔记\n---\n\n只有正文没有标题\n").expect("写入 Markdown 失败");
+
+        update_markdown_document_title(&doc_path, "新笔记").expect("更新标题失败");
+
+        let updated = fs::read_to_string(&doc_path).expect("读取文件失败");
+        assert!(updated.contains("title: 新笔记"));
+        assert!(
+            !updated.contains("# "),
+            "无 H1 的文档不应被添加 H1，实际: {updated}"
+        );
+        assert!(
+            updated.contains("只有正文没有标题"),
+            "正文应保留，实际: {updated}"
+        );
+    }
+
+    #[test]
+    fn update_markdown_document_title_only_replaces_first_h1() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let doc_path = temp_dir.path().join("guide.md");
+        fs::write(
+            &doc_path,
+            "---\ntitle: 旧标题\n---\n\n# 旧标题\n\n## 子标题\n\n# 另一个H1\n",
+        )
+        .expect("写入 Markdown 失败");
+
+        update_markdown_document_title(&doc_path, "新标题").expect("更新标题失败");
+
+        let updated = fs::read_to_string(&doc_path).expect("读取文件失败");
+        assert!(updated.contains("# 新标题\n"));
+        assert!(
+            updated.contains("# 另一个H1"),
+            "第二个 H1 不应被修改，实际: {updated}"
+        );
     }
 
     fn sample_envelope(title: &str, text: &str) -> PlateDocumentEnvelope {
