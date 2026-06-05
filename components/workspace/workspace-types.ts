@@ -151,6 +151,17 @@ export interface CreatedMarkdownDocument {
   content: MarkdownDocumentContent;
 }
 
+export interface MarkdownMigrationReport {
+  migrated: Array<{
+    sourcePath: string;
+    targetPath: string;
+  }>;
+  failed: Array<{
+    sourcePath: string;
+    message: string;
+  }>;
+}
+
 export interface MarkdownSourceFile {
   path: string;
   fileName: string;

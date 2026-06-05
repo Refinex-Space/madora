@@ -14,6 +14,7 @@ import type {
   ImportedPlateDocumentResult,
   ImportSourceFile,
   MarkdownDocumentContent,
+  MarkdownMigrationReport,
   MarkdownSourceFile,
   PlateDocumentContent,
   PlateDocumentEnvelope,
@@ -229,6 +230,14 @@ export async function createMarkdownDocument(
     rootPath,
     parentPath,
     title,
+  });
+}
+
+export async function migratePlateDocumentsToMarkdown(rootPath: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<MarkdownMigrationReport>('migrate_plate_documents_to_markdown', {
+    rootPath,
   });
 }
 

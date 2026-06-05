@@ -29,6 +29,7 @@ import {
   listenTerminalError,
   listenTerminalExit,
   moveWorkspaceNode,
+  migratePlateDocumentsToMarkdown,
   readMarkdownSourceFiles,
   readPlateDocument,
   readAppSettings,
@@ -111,11 +112,25 @@ describe('workspace-api history', () => {
     ]);
     expect(getRecentWorkspacePath()).toBe('/repo');
   });
+
 });
 
 describe('workspace-api native Plate commands', () => {
   beforeEach(() => {
     invokeMock.mockReset();
+  });
+
+  it('wraps legacy Plate migration through Tauri', async () => {
+    invokeMock.mockResolvedValueOnce({ failed: [], migrated: [] });
+
+    await migratePlateDocumentsToMarkdown('/repo');
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'migrate_plate_documents_to_markdown',
+      {
+        rootPath: '/repo',
+      },
+    );
   });
 
   it('wraps native Plate workspace commands through Tauri', async () => {

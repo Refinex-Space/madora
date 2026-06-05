@@ -1,6 +1,4 @@
-use crate::assets::{
-    cleanup_unreferenced_assets, extract_asset_ids,
-};
+use crate::assets::{cleanup_unreferenced_assets, extract_asset_ids};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -125,6 +123,27 @@ pub struct CreatedMarkdownDocument {
     pub content: MarkdownDocumentContent,
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkdownMigrationReport {
+    pub migrated: Vec<MarkdownMigrationItem>,
+    pub failed: Vec<MarkdownMigrationFailure>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkdownMigrationItem {
+    pub source_path: String,
+    pub target_path: String,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkdownMigrationFailure {
+    pub source_path: String,
+    pub message: String,
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MarkdownSourceFile {
@@ -228,8 +247,7 @@ pub fn save_markdown_document(
         .cloned()
         .collect::<BTreeSet<_>>();
 
-    write_text_atomic(&document, &content)
-        .map_err(|_| "无法保存 Markdown 文档内容".to_string())?;
+    write_text_atomic(&document, &content).map_err(|_| "无法保存 Markdown 文档内容".to_string())?;
 
     if let Err(error) = cleanup_unreferenced_assets(&root, cleanup_candidates) {
         log::warn!("本地资产清理失败：{error}");
@@ -256,7 +274,8 @@ pub fn create_markdown_document(
         "---\ntitle: {safe_title}\ncreatedAt: {now}\nupdatedAt: {now}\nrefinexDialect: 1\n---\n\n# {safe_title}\n"
     );
 
-    write_text_atomic(&document_path, &content).map_err(|_| "无法创建 Markdown 文档".to_string())?;
+    write_text_atomic(&document_path, &content)
+        .map_err(|_| "无法创建 Markdown 文档".to_string())?;
 
     let file_name = document_path
         .file_name()
@@ -268,6 +287,33 @@ pub fn create_markdown_document(
     let content = read_markdown_document(root_path, node.absolute_path.clone())?;
 
     Ok(CreatedMarkdownDocument { node, content })
+}
+
+#[tauri::command]
+pub fn migrate_plate_documents_to_markdown(
+    root_path: String,
+) -> Result<MarkdownMigrationReport, String> {
+    let root = canonical_workspace_root(&root_path)?;
+    let mut paths = Vec::new();
+    collect_plate_document_paths(&root, &mut paths).map_err(|_| "无法扫描旧文档".to_string())?;
+
+    let backup_dir = root.join(".refinex/migrations/backup");
+    fs::create_dir_all(&backup_dir).map_err(|_| "无法创建迁移备份目录".to_string())?;
+
+    let mut migrated = Vec::new();
+    let mut failed = Vec::new();
+
+    for source in paths {
+        match migrate_one_plate_document(&backup_dir, &source) {
+            Ok(item) => migrated.push(item),
+            Err(message) => failed.push(MarkdownMigrationFailure {
+                source_path: source.to_string_lossy().to_string(),
+                message,
+            }),
+        }
+    }
+
+    Ok(MarkdownMigrationReport { migrated, failed })
 }
 
 #[tauri::command]
@@ -466,7 +512,9 @@ pub fn delete_workspace_node(
                 .map_err(|_| "无法扫描待删除目录".to_string())?;
             collect_asset_ids_from_markdown_paths(&documents)
         }
-        WorkspaceNodeKind::Document => collect_asset_ids_from_markdown_paths(std::slice::from_ref(&node)),
+        WorkspaceNodeKind::Document => {
+            collect_asset_ids_from_markdown_paths(std::slice::from_ref(&node))
+        }
     };
 
     match kind {
@@ -1306,7 +1354,10 @@ fn validate_existing_markdown_document_path(
     Ok(document)
 }
 
-fn validate_markdown_document_path(root_path: &str, document_path: &str) -> Result<PathBuf, String> {
+fn validate_markdown_document_path(
+    root_path: &str,
+    document_path: &str,
+) -> Result<PathBuf, String> {
     let root = canonical_workspace_root(root_path)?;
     let document = PathBuf::from(document_path);
     let document = if document.exists() {
@@ -1567,6 +1618,80 @@ fn unique_path(parent: &Path, stem: &str, suffix: &str) -> PathBuf {
     unreachable!("无限序列应始终找到可用路径")
 }
 
+fn migrate_one_plate_document(
+    backup_dir: &Path,
+    source: &Path,
+) -> Result<MarkdownMigrationItem, String> {
+    let raw = fs::read_to_string(source).map_err(|_| "无法读取旧文档".to_string())?;
+    let envelope = serde_json::from_str::<PlateDocumentEnvelope>(&raw)
+        .map_err(|_| "旧文档格式损坏".to_string())?;
+    validate_plate_envelope(&envelope)?;
+
+    let parent = source
+        .parent()
+        .ok_or_else(|| "旧文档路径无效".to_string())?;
+    let target = unique_path(parent, &sanitize_file_stem(&envelope.title), ".md");
+    let markdown = format!(
+        "---\ntitle: {}\ncreatedAt: {}\nupdatedAt: {}\nrefinexDialect: 1\n---\n\n{}\n",
+        envelope.title,
+        envelope.created_at,
+        envelope.updated_at,
+        plate_value_to_basic_markdown(&envelope.content),
+    );
+
+    write_text_atomic(&target, &markdown).map_err(|_| "无法写入 Markdown 文档".to_string())?;
+
+    let backup_path = backup_dir.join(
+        source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("legacy.plate.json"),
+    );
+    fs::rename(source, &backup_path).map_err(|_| "无法备份旧文档".to_string())?;
+
+    Ok(MarkdownMigrationItem {
+        source_path: source.to_string_lossy().to_string(),
+        target_path: target.to_string_lossy().to_string(),
+    })
+}
+
+fn plate_value_to_basic_markdown(value: &Value) -> String {
+    let Some(nodes) = value.as_array() else {
+        return String::new();
+    };
+
+    nodes
+        .iter()
+        .map(plate_node_to_basic_markdown)
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn plate_node_to_basic_markdown(node: &Value) -> String {
+    let node_type = node.get("type").and_then(Value::as_str).unwrap_or("p");
+    let text = plate_node_text(node);
+
+    match node_type {
+        "h1" => format!("# {text}"),
+        "h2" => format!("## {text}"),
+        "h3" => format!("### {text}"),
+        "blockquote" => format!("> {text}"),
+        _ => text,
+    }
+}
+
+fn plate_node_text(node: &Value) -> String {
+    if let Some(text) = node.get("text").and_then(Value::as_str) {
+        return text.to_string();
+    }
+
+    node.get("children")
+        .and_then(Value::as_array)
+        .map(|children| children.iter().map(plate_node_text).collect::<String>())
+        .unwrap_or_default()
+}
+
 fn read_modified_at(path: &Path) -> Result<u128, String> {
     let metadata = fs::metadata(path).map_err(|_| "无法读取文档信息".to_string())?;
     let modified = metadata
@@ -1659,11 +1784,7 @@ fn read_frontmatter_title(raw: &str) -> Option<String> {
         }
 
         if let Some(value) = line.strip_prefix("title:") {
-            let title = value
-                .trim()
-                .trim_matches('"')
-                .trim_matches('\'')
-                .trim();
+            let title = value.trim().trim_matches('"').trim_matches('\'').trim();
             if !title.is_empty() {
                 return Some(title.to_string());
             }
@@ -1673,7 +1794,6 @@ fn read_frontmatter_title(raw: &str) -> Option<String> {
     None
 }
 
-#[allow(dead_code)]
 fn collect_plate_document_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -1894,8 +2014,7 @@ mod tests {
     #[test]
     fn workspace_tree_uses_markdown_documents_as_visible_documents() {
         let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
-        fs::write(temp_dir.path().join("README.md"), "# 项目说明\n")
-            .expect("写入 Markdown 失败");
+        fs::write(temp_dir.path().join("README.md"), "# 项目说明\n").expect("写入 Markdown 失败");
         fs::write(temp_dir.path().join("legacy.plate.json"), "{}").expect("写入旧文档失败");
         fs::write(temp_dir.path().join("notes.txt"), "text").expect("写入文本失败");
 
@@ -1911,8 +2030,7 @@ mod tests {
     fn reads_markdown_document_inside_workspace() {
         let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
         let document_path = temp_dir.path().join("guide.md");
-        fs::write(&document_path, "---\ntitle: 指南\n---\n\n# 指南\n")
-            .expect("写入 Markdown 失败");
+        fs::write(&document_path, "---\ntitle: 指南\n---\n\n# 指南\n").expect("写入 Markdown 失败");
 
         let document = read_markdown_document(
             temp_dir.path().to_string_lossy().to_string(),
@@ -1966,6 +2084,38 @@ mod tests {
 
         assert!(error.contains("文档已在磁盘上更新"));
         assert_eq!(fs::read_to_string(&document_path).unwrap(), "# 外部修改\n");
+    }
+
+    #[test]
+    fn migrates_plate_json_documents_to_markdown_files() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let plate_path = temp_dir.path().join("Guide.plate.json");
+        fs::write(
+            &plate_path,
+            r#"{
+  "schemaVersion": 1,
+  "title": "Guide",
+  "createdAt": "2026-06-05T00:00:00.000Z",
+  "updatedAt": "2026-06-05T00:00:00.000Z",
+  "content": [{"type":"h1","children":[{"text":"Guide"}]}]
+}"#,
+        )
+        .expect("写入旧文档失败");
+
+        let report =
+            migrate_plate_documents_to_markdown(temp_dir.path().to_string_lossy().to_string())
+                .expect("迁移失败");
+
+        assert_eq!(report.migrated.len(), 1);
+        assert!(report.failed.is_empty());
+        assert!(temp_dir.path().join("Guide.md").is_file());
+        assert!(temp_dir
+            .path()
+            .join(".refinex/migrations/backup/Guide.plate.json")
+            .is_file());
+        assert!(fs::read_to_string(temp_dir.path().join("Guide.md"))
+            .expect("读取迁移后 Markdown 失败")
+            .contains("# Guide"));
     }
 
     #[test]

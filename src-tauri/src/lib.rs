@@ -45,6 +45,7 @@ pub fn run() {
             workspace::read_markdown_document,
             workspace::save_markdown_document,
             workspace::create_markdown_document,
+            workspace::migrate_plate_documents_to_markdown,
             workspace::read_plate_document,
             workspace::save_plate_document,
             workspace::create_plate_document,
