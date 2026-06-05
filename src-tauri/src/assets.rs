@@ -232,6 +232,7 @@ pub fn cleanup_unreferenced_assets(
     write_asset_index(root, &index).map_err(|_| "无法写入资产索引".to_string())
 }
 
+#[allow(dead_code)]
 pub fn collect_asset_ids_from_documents(paths: &[PathBuf]) -> BTreeSet<String> {
     let mut ids = BTreeSet::new();
 
@@ -272,12 +273,19 @@ fn collect_asset_ids(value: &Value, ids: &mut BTreeSet<String>) {
 
 fn collect_workspace_asset_references(root: &Path) -> Result<BTreeSet<String>, String> {
     let mut paths = Vec::new();
-    collect_plate_documents(root, &mut paths).map_err(|_| "无法扫描工作区文档".to_string())?;
+    collect_markdown_documents(root, &mut paths).map_err(|_| "无法扫描工作区文档".to_string())?;
+    let mut ids = BTreeSet::new();
 
-    Ok(collect_asset_ids_from_documents(&paths))
+    for path in paths {
+        if let Ok(raw) = fs::read_to_string(path) {
+            ids.extend(extract_asset_ids_from_markdown(&raw));
+        }
+    }
+
+    Ok(ids)
 }
 
-fn collect_plate_documents(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
+fn collect_markdown_documents(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -294,8 +302,13 @@ fn collect_plate_documents(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Result<(
         }
 
         if path.is_dir() {
-            collect_plate_documents(&path, paths)?;
-        } else if file_name.ends_with(".plate.json") {
+            collect_markdown_documents(&path, paths)?;
+        } else if path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| matches!(extension.to_ascii_lowercase().as_str(), "md" | "mdx"))
+            .unwrap_or(false)
+        {
             paths.push(path);
         }
     }
@@ -534,6 +547,22 @@ mod tests {
 
         assert_eq!(
             extract_asset_ids(&value),
+            BTreeSet::from(["asset-a".to_string(), "asset-b".to_string()])
+        );
+    }
+
+    #[test]
+    fn extracts_asset_ids_from_markdown_text() {
+        let markdown = r#"
+![cover](refinex-asset://asset-a)
+
+<refinex-file src="refinex-asset://asset-b" />
+
+![remote](https://example.com/image.png)
+"#;
+
+        assert_eq!(
+            extract_asset_ids_from_markdown(markdown),
             BTreeSet::from(["asset-a".to_string(), "asset-b".to_string()])
         );
     }

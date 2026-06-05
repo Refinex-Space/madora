@@ -1,5 +1,5 @@
 use crate::assets::{
-    cleanup_unreferenced_assets, collect_asset_ids_from_documents, extract_asset_ids,
+    cleanup_unreferenced_assets, extract_asset_ids,
 };
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
@@ -462,13 +462,11 @@ pub fn delete_workspace_node(
     let cleanup_candidates = match kind {
         WorkspaceNodeKind::Directory => {
             let mut documents = Vec::new();
-            collect_plate_document_paths(&node, &mut documents)
+            collect_markdown_document_paths(&node, &mut documents)
                 .map_err(|_| "无法扫描待删除目录".to_string())?;
-            collect_asset_ids_from_documents(&documents)
+            collect_asset_ids_from_markdown_paths(&documents)
         }
-        WorkspaceNodeKind::Document => {
-            collect_asset_ids_from_documents(std::slice::from_ref(&node))
-        }
+        WorkspaceNodeKind::Document => collect_asset_ids_from_markdown_paths(std::slice::from_ref(&node)),
     };
 
     match kind {
@@ -1675,6 +1673,7 @@ fn read_frontmatter_title(raw: &str) -> Option<String> {
     None
 }
 
+#[allow(dead_code)]
 fn collect_plate_document_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
@@ -1696,6 +1695,41 @@ fn collect_plate_document_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Res
     }
 
     Ok(())
+}
+
+fn collect_markdown_document_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+
+        if should_skip_entry(file_name) {
+            continue;
+        }
+
+        if path.is_dir() {
+            collect_markdown_document_paths(&path, paths)?;
+        } else if is_markdown_document_file(&path) {
+            paths.push(path);
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_asset_ids_from_markdown_paths(paths: &[PathBuf]) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+
+    for path in paths {
+        if let Ok(raw) = fs::read_to_string(path) {
+            ids.extend(crate::assets::extract_asset_ids_from_markdown(&raw));
+        }
+    }
+
+    ids
 }
 
 fn unix_timestamp_millis() -> u128 {
@@ -1830,33 +1864,30 @@ mod tests {
     }
 
     #[test]
-    fn builds_native_plate_only_snapshot_with_document_titles() {
+    fn builds_markdown_snapshot_with_document_titles() {
         let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
         let guide_dir = temp_dir.path().join("Guides");
         fs::create_dir(&guide_dir).expect("创建测试目录失败");
-        fs::write(
-            temp_dir.path().join("README.plate.json"),
-            r#"{"schemaVersion":1,"title":"项目说明","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":""}]}]}"#,
-        )
-        .unwrap();
-        fs::write(guide_dir.join("intro.md"), "# 入门").unwrap();
+        fs::write(temp_dir.path().join("README.md"), "# 项目说明\n").unwrap();
+        fs::write(guide_dir.join("intro.md"), "# 入门指南").unwrap();
         fs::write(guide_dir.join("draft.mdx"), "# 草稿").unwrap();
         fs::write(guide_dir.join("data.json"), "{}").unwrap();
         fs::write(
-            guide_dir.join("intro.plate.json"),
-            r#"{"schemaVersion":1,"title":"入门指南","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":"正文"}]}]}"#,
+            guide_dir.join("legacy.plate.json"),
+            r#"{"schemaVersion":1,"title":"项目说明","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":""}]}]}"#,
         )
         .unwrap();
 
         let snapshot = build_workspace_snapshot(temp_dir.path()).unwrap();
         let debug = format!("{snapshot:?}");
 
-        assert!(debug.contains("README.plate.json"));
-        assert!(debug.contains("intro.plate.json"));
+        assert!(debug.contains("README.md"));
+        assert!(debug.contains("intro.md"));
+        assert!(debug.contains("draft.mdx"));
         assert!(debug.contains("项目说明"));
         assert!(debug.contains("入门指南"));
-        assert!(!debug.contains("intro.md"));
-        assert!(!debug.contains("draft.mdx"));
+        assert!(debug.contains("草稿"));
+        assert!(!debug.contains("legacy.plate.json"));
         assert!(!debug.contains("data.json"));
     }
 
@@ -1941,11 +1972,7 @@ mod tests {
     fn orders_new_nodes_after_existing_siblings() {
         let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
         fs::create_dir(temp_dir.path().join("ZFolder")).expect("创建已有目录失败");
-        fs::write(
-            temp_dir.path().join("A.plate.json"),
-            r#"{"schemaVersion":1,"title":"A","createdAt":"2026-05-30T00:00:00.000Z","updatedAt":"2026-05-30T00:00:00.000Z","content":[{"type":"p","children":[{"text":""}]}]}"#,
-        )
-        .expect("写入已有文档失败");
+        fs::write(temp_dir.path().join("A.md"), "# A\n").expect("写入已有文档失败");
         std::thread::sleep(std::time::Duration::from_millis(20));
 
         create_workspace_directory(
@@ -1955,7 +1982,7 @@ mod tests {
         )
         .expect("创建新目录失败");
         std::thread::sleep(std::time::Duration::from_millis(20));
-        create_plate_document(
+        create_markdown_document(
             temp_dir.path().to_string_lossy().to_string(),
             "".to_string(),
             "未命名文档".to_string(),
@@ -1971,7 +1998,7 @@ mod tests {
 
         assert_eq!(relative_paths.len(), 4);
         assert_eq!(relative_paths[2], "未命名目录");
-        assert_eq!(relative_paths[3], "未命名文档.plate.json");
+        assert_eq!(relative_paths[3], "未命名文档.md");
     }
 
     #[test]
@@ -2125,33 +2152,17 @@ mod tests {
         .expect("上传资产失败");
         let asset_path = PathBuf::from(uploaded.absolute_path.clone());
 
-        for name in ["a.plate.json", "b.plate.json"] {
-            write_json_pretty(
-                &temp_dir.path().join(name),
-                &PlateDocumentEnvelope {
-                    schema_version: 1,
-                    title: name.to_string(),
-                    created_at: "2026-05-31T00:00:00.000Z".to_string(),
-                    updated_at: "2026-05-31T00:00:00.000Z".to_string(),
-                    content: serde_json::json!([
-                        {
-                            "type": "img",
-                            "url": uploaded.url.clone(),
-                            "children": [{ "text": "" }]
-                        }
-                    ]),
-                },
+        for name in ["a.md", "b.md"] {
+            fs::write(
+                temp_dir.path().join(name),
+                format!("# {name}\n\n![cover]({})\n", uploaded.url),
             )
             .expect("写入文档失败");
         }
 
         delete_workspace_node(
             temp_dir.path().to_string_lossy().to_string(),
-            temp_dir
-                .path()
-                .join("a.plate.json")
-                .to_string_lossy()
-                .to_string(),
+            temp_dir.path().join("a.md").to_string_lossy().to_string(),
         )
         .expect("删除文档失败");
 
