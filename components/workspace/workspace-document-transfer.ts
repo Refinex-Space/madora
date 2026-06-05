@@ -132,11 +132,13 @@ export async function buildExportArchiveEntries({
   format,
   node,
   readDocument,
+  readRawMarkdown,
   workspaceRootPath,
 }: {
   format: WorkspaceExportFormat;
   node: WorkspaceNode;
   readDocument: (node: WorkspaceNode) => Promise<PlateDocumentEnvelope>;
+  readRawMarkdown?: (node: WorkspaceNode) => Promise<string>;
   workspaceRootPath?: string | null;
 }) {
   const documents = collectDocumentNodes(node);
@@ -145,9 +147,14 @@ export async function buildExportArchiveEntries({
 
   for (const item of documents) {
     const envelope = await readDocument(item.node);
-    const blob = await exportPlateValueAsBlob(envelope.content, format, {
-      workspaceRootPath,
-    });
+    const blob =
+      format === 'markdown' && readRawMarkdown
+        ? new Blob([await readRawMarkdown(item.node)], {
+            type: EXPORT_MIME_TYPES.markdown,
+          })
+        : await exportPlateValueAsBlob(envelope.content, format, {
+            workspaceRootPath,
+          });
     const path = createUniqueArchiveEntryPath(
       item.pathSegments,
       getDocumentBaseName(item.node, envelope),
@@ -298,7 +305,7 @@ function getDocumentBaseName(
   return (
     envelope?.title ||
     node.title ||
-    node.name.replace(/\.plate\.json$/i, '') ||
+    node.name.replace(/\.(md|mdx)$/i, '') ||
     '未命名文档'
   );
 }

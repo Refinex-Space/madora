@@ -26,7 +26,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 import { inlineLocalImageAssets } from './workspace-local-assets';
-import { readPlateDocument } from './workspace-api';
+import { readMarkdownDocument } from './workspace-api';
 import type { WorkspaceNode } from './workspace-types';
 
 type DirectoryViewMode = 'grid' | 'list';
@@ -120,26 +120,23 @@ export function DirectoryPage({
       const loadedEntries = await Promise.all(
         documentsToLoad.map(async (node) => {
           try {
-            const content = await readPlateDocument(
+            const content = await readMarkdownDocument(
               workspaceRootPath,
               node.absolutePath,
             );
+            const { markdownToPlateValue, parseMarkdownDocument } =
+              await import('@/components/editor/markdown-document');
+            const parsed = parseMarkdownDocument(content.content, node.name);
 
             return [
               node.absolutePath,
               await createDocumentPreview(
-                content.envelope.content,
+                markdownToPlateValue(parsed.body),
                 workspaceRootPath,
                 {
-                  createdAt:
-                    content.envelope.createdAt ??
-                    content.envelope.updatedAt ??
-                    content.modifiedAt,
+                  createdAt: parsed.metadata.createdAt ?? content.modifiedAt,
                   modifiedAt: content.modifiedAt,
-                  updatedAt:
-                    content.envelope.updatedAt ??
-                    content.envelope.createdAt ??
-                    content.modifiedAt,
+                  updatedAt: parsed.metadata.updatedAt ?? content.modifiedAt,
                 },
               ),
             ] as const;

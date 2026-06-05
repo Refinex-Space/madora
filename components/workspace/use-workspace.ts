@@ -17,7 +17,6 @@ import {
   removeWorkspaceHistory,
   readMarkdownSourceFiles,
   readMarkdownDocument,
-  readPlateDocument,
   renameWorkspaceNode,
   saveRecentWorkspacePath,
   saveMarkdownDocument,
@@ -41,6 +40,7 @@ import type {
   DocumentSaveState,
   MarkdownDocumentContent,
   MarkdownDocumentDraft,
+  PlateDocumentEnvelope,
   RightPanelMode,
   WorkspaceLoadError,
   WorkspaceHistoryItem,
@@ -528,23 +528,31 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
       }
 
       const sourceFiles = await readMarkdownSourceFiles(selected);
-      const { extractMarkdownImportTitle, markdownToPlateValue } = await import(
+      const { extractMarkdownImportTitle } = await import(
         '@/components/editor/markdown-import'
       );
-      const documents = sourceFiles.map((source) => ({
-        title: extractMarkdownImportTitle(source.content, source.fileName),
-        sourceFileName: source.fileName,
-        content: markdownToPlateValue(source.content),
-      }));
-      const result = await createImportedPlateDocuments(
-        snapshot.rootPath,
-        targetDir,
-        documents,
-      );
+      const createdNodes: WorkspaceNode[] = [];
+
+      for (const source of sourceFiles) {
+        const created = await createMarkdownDocument(
+          snapshot.rootPath,
+          targetDir,
+          extractMarkdownImportTitle(source.content, source.fileName),
+        );
+
+        await saveMarkdownDocument(
+          snapshot.rootPath,
+          created.node.absolutePath,
+          source.content,
+          created.content.modifiedAt,
+        );
+        createdNodes.push(created.node);
+      }
+
       await refreshWorkspaceTree();
 
-      if (result.created[0]) {
-        await openDocument(result.created[0].node);
+      if (createdNodes[0]) {
+        await openDocument(createdNodes[0]);
       }
     },
     [openDocument, refreshWorkspaceTree, snapshot],
@@ -597,19 +605,25 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
       const transfer = await import('./workspace-document-transfer');
 
       if (node.kind === 'document') {
-        const documentContent = await readPlateDocument(
+        const documentContent = await readMarkdownDocument(
           snapshot.rootPath,
           node.absolutePath,
         );
-        const blob = await transfer.exportPlateValueAsBlob(
-          documentContent.envelope.content,
-          format,
-          { workspaceRootPath: snapshot.rootPath },
-        );
+        const envelope = createTransferEnvelope(documentContent, node.name);
+        const blob =
+          format === 'markdown'
+            ? new Blob([documentContent.content], {
+                type: 'text/markdown;charset=utf-8',
+              })
+            : await transfer.exportPlateValueAsBlob(
+                envelope.content,
+                format,
+                { workspaceRootPath: snapshot.rootPath },
+              );
         const defaultPath = transfer.createExportFileName(
           node,
           format,
-          documentContent.envelope,
+          envelope,
         );
         const targetPath = await selectExportFilePath(format, defaultPath);
 
@@ -624,14 +638,22 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
       const entries = await transfer.buildExportArchiveEntries({
         format,
         node,
-        workspaceRootPath: snapshot.rootPath,
-        readDocument: async (documentNode) => {
-          const documentContent = await readPlateDocument(
+        readRawMarkdown: async (documentNode) => {
+          const documentContent = await readMarkdownDocument(
             snapshot.rootPath,
             documentNode.absolutePath,
           );
 
-          return documentContent.envelope;
+          return documentContent.content;
+        },
+        workspaceRootPath: snapshot.rootPath,
+        readDocument: async (documentNode) => {
+          const documentContent = await readMarkdownDocument(
+            snapshot.rootPath,
+            documentNode.absolutePath,
+          );
+
+          return createTransferEnvelope(documentContent, documentNode.name);
         },
       });
       const targetPath = await selectExportFilePath(
@@ -829,6 +851,21 @@ function withUpdatedMarkdownValue(
     markdown: serializeMarkdownDocument({ body, metadata }),
     metadata,
     value,
+  };
+}
+
+function createTransferEnvelope(
+  content: MarkdownDocumentContent,
+  fileName: string,
+): PlateDocumentEnvelope {
+  const parsed = parseMarkdownDocument(content.content, fileName);
+
+  return {
+    content: markdownToPlateValue(parsed.body),
+    createdAt: parsed.metadata.createdAt ?? '',
+    schemaVersion: 1,
+    title: parsed.metadata.title,
+    updatedAt: parsed.metadata.updatedAt ?? '',
   };
 }
 
