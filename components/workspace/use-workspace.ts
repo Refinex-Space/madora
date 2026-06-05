@@ -28,9 +28,11 @@ import {
   writeExportFile,
 } from './workspace-api';
 import {
+  extractH1Text,
   markdownToPlateValue,
   parseMarkdownDocument,
   plateValueToMarkdown,
+  sanitizeTitleForFileName,
   serializeMarkdownDocument,
 } from '@/components/editor/markdown-document';
 import { createExportArchiveBlob } from './workspace-export-archive';
@@ -840,9 +842,11 @@ function withUpdatedMarkdownValue(
   value: MarkdownDocumentDraft['value'],
 ): MarkdownDocumentDraft {
   const body = plateValueToMarkdown(value);
+  const h1Text = extractH1Text(value);
   const metadata = {
     ...draft.metadata,
     updatedAt: new Date().toISOString(),
+    ...(h1Text !== null && h1Text !== '' ? { title: h1Text } : {}),
   };
 
   return {

@@ -39,6 +39,7 @@ vi.mock('@/components/editor/plate-editor', () => ({
 }));
 
 vi.mock('@/components/editor/markdown-document', () => ({
+  extractH1Text: vi.fn(() => null),
   markdownToPlateValue: vi.fn((markdown: string) => [
     {
       children: [
@@ -68,6 +69,7 @@ vi.mock('@/components/editor/markdown-document', () => ({
       .map((child) => child.text ?? '')
       .join(''),
   ),
+  sanitizeTitleForFileName: vi.fn((title: string) => title),
   serializeMarkdownDocument: vi.fn(
     ({
       body,
