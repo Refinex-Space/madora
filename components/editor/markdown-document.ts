@@ -143,3 +143,34 @@ function readNumber(value: unknown) {
 function unquote(value: string) {
   return value.replace(/^["']|["']$/g, '');
 }
+
+export function extractH1Text(value: Value): string | null {
+  for (const node of value) {
+    if (node.type === 'h1') {
+      return getNodeText(node);
+    }
+  }
+
+  return null;
+}
+
+function getNodeText(node: unknown): string {
+  if (!node || typeof node !== 'object') return '';
+  const record = node as Record<string, unknown>;
+  if (typeof record.text === 'string') return record.text;
+  if (Array.isArray(record.children)) {
+    return record.children.map((child) => getNodeText(child)).join('');
+  }
+
+  return '';
+}
+
+export function sanitizeTitleForFileName(title: string): string {
+  const sanitized = title
+    .trim()
+    .replace(/[/\\:*?"<>|]/g, '-')
+    .replace(/^\.+|\.+$/g, '')
+    .trim();
+
+  return sanitized || '未命名文档';
+}
