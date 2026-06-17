@@ -40,7 +40,7 @@ describe('useWorkspaceAssetUploader', () => {
       type: 'image/png',
     });
 
-    let out: { url: string; name: string; mimeType: string } | undefined;
+    let out: Awaited<ReturnType<typeof result.current>> | undefined;
 
     await act(async () => {
       out = await result.current(file, stubContext);

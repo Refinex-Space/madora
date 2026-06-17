@@ -10,7 +10,7 @@ import type { EditorView } from '@codemirror/view';
 import type { MarkoraTocItem } from '@refinex/markora/editor';
 
 function makeItem(
-  level: 2 | 3 | 4,
+  level: 2 | 3 | 4 | 6,
   text: string,
   from: number,
 ): MarkoraTocItem {

@@ -64,7 +64,7 @@ export function scrollToHeadingIn(
 
   const item = items.find((entry) => entry.id === id);
 
-  if (!item) {
+  if (!item || typeof item.from !== 'number') {
     return;
   }
 

@@ -13,8 +13,8 @@ import {
   X,
 } from 'lucide-react';
 
-import type { DocumentTocSnapshot } from '@/components/editor/document-toc-bridge';
-import { PlateEditor } from '@/components/editor/plate-editor';
+import type { DocumentTocSnapshot } from '@/components/editor/markdown-toc';
+import { MarkdownEditor } from '@/components/editor/markdown-editor';
 import { cn } from '@/lib/utils';
 
 import { RightSidePanel, RightToolRail } from './ai-side-panel';
@@ -55,7 +55,7 @@ import {
 } from './workspace-api';
 import { WorkspaceResizeHandle } from './workspace-resize-handle';
 import { WorkspaceSidebar } from './workspace-sidebar';
-import { countPlateDocumentCharacters } from './workspace-document-insights';
+import { countMarkdownCharacters } from './workspace-document-insights';
 import { XtermTerminal } from './xterm-terminal';
 import type {
   AppSettings,
@@ -67,7 +67,6 @@ import type {
   GitProbe,
   GitStatus,
   PageWidthMode,
-  PlateDocumentEnvelope,
   WorkspaceSnapshot,
 } from './workspace-types';
 
@@ -191,23 +190,26 @@ export function WorkspaceLayout({
   const isWorkspaceEmpty =
     workspace.snapshot !== null && workspace.snapshot.nodes.length === 0;
   const documentCharacterCount = React.useMemo(
-    () => countPlateDocumentCharacters(workspace.draftDocument?.value),
-    [workspace.draftDocument?.value],
+    () => countMarkdownCharacters(workspace.draftDocument?.markdown),
+    [workspace.draftDocument?.markdown],
   );
-  const documentEnvelopeForPanel =
-    React.useMemo<PlateDocumentEnvelope | null>(() => {
-      if (!workspace.draftDocument) {
-        return null;
-      }
+  const documentPanelData = React.useMemo<{
+    markdown: string;
+    metadata: { title: string; createdAt: string; updatedAt: string };
+  } | null>(() => {
+    if (!workspace.draftDocument) {
+      return null;
+    }
 
-      return {
-        content: workspace.draftDocument.value,
-        createdAt: workspace.draftDocument.metadata.createdAt ?? '',
-        schemaVersion: 1,
+    return {
+      markdown: workspace.draftDocument.markdown,
+      metadata: {
         title: workspace.draftDocument.metadata.title,
+        createdAt: workspace.draftDocument.metadata.createdAt ?? '',
         updatedAt: workspace.draftDocument.metadata.updatedAt ?? '',
-      };
-    }, [workspace.draftDocument]);
+      },
+    };
+  }, [workspace.draftDocument]);
   const isTauriRuntime = useIsTauriRuntime();
   const isWindowsRuntime = useIsWindowsRuntime();
   const { resolvedTheme } = useTheme();
@@ -1045,17 +1047,16 @@ export function WorkspaceLayout({
                   {workspace.currentDocument &&
                   workspace.draftDocument &&
                   workspace.documentLoadState === 'loaded' ? (
-                    <PlateEditor
+                    <MarkdownEditor
                       documentKey={`${workspace.documentVersion}`}
                       pageWidthMode={pageWidthMode}
-                      value={workspace.draftDocument.value}
-                      variant="workspace"
+                      markdown={workspace.draftDocument.markdown}
                       workspaceRootPath={workspace.snapshot?.rootPath ?? null}
                       onSaveRequested={() =>
                         void workspace.saveCurrentDocumentNow()
                       }
                       onTocSnapshotChange={handleTocSnapshotChange}
-                      onValueChange={workspace.updateDocumentValue}
+                      onMarkdownChange={workspace.updateMarkdown}
                     />
                   ) : null}
                 </EditorPane>
@@ -1076,7 +1077,7 @@ export function WorkspaceLayout({
 
             <RightSidePanel
               currentDocument={workspace.currentDocument}
-              documentEnvelope={documentEnvelopeForPanel}
+              documentPanelData={documentPanelData}
               mode={workspace.rightPanelMode}
               tocSnapshot={tocSnapshot}
               width={rightPanelWidth}

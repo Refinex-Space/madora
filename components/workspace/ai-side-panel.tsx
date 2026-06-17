@@ -25,14 +25,18 @@ import { DocumentTocPanel } from './document-toc-panel';
 import { WorkspaceSettingsDialog } from './workspace-settings-dialog';
 import type {
   AppSettings,
-  PlateDocumentEnvelope,
   RightPanelMode,
   WorkspaceNode,
 } from './workspace-types';
 
+export interface DocumentPanelData {
+  markdown: string;
+  metadata: { title: string; createdAt: string; updatedAt: string };
+}
+
 interface RightSidePanelProps {
   currentDocument: WorkspaceNode | null;
-  documentEnvelope: PlateDocumentEnvelope | null;
+  documentPanelData: DocumentPanelData | null;
   mode: RightPanelMode;
   tocSnapshot: DocumentTocSnapshot | null;
   width: number;
@@ -48,7 +52,7 @@ interface RightToolRailProps {
 
 export function RightSidePanel({
   currentDocument,
-  documentEnvelope,
+  documentPanelData,
   mode,
   tocSnapshot,
   width,
@@ -74,7 +78,7 @@ export function RightSidePanel({
       ) : (
         <DocumentMetaPanel
           currentDocument={currentDocument}
-          documentEnvelope={documentEnvelope}
+          documentPanelData={documentPanelData}
           workspaceRootPath={workspaceRootPath}
         />
       )}
