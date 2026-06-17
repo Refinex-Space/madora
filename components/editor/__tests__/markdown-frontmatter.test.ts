@@ -6,7 +6,7 @@ import {
   parseFrontmatter,
   sanitizeTitleForFileName,
   serializeFrontmatter,
-} from '@/components/editor/markora-frontmatter';
+} from '@/components/editor/markdown-frontmatter';
 
 describe('parseFrontmatter', () => {
   it('解析带 frontmatter 的文档', () => {

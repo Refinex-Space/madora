@@ -28,20 +28,18 @@ import {
   writeExportFile,
 } from './workspace-api';
 import {
-  extractH1Text,
-  markdownToPlateValue,
-  parseMarkdownDocument,
-  plateValueToMarkdown,
+  extractH1FromMarkdown,
+  parseMarkdownMetadata,
   sanitizeTitleForFileName,
-  serializeMarkdownDocument,
-} from '@/components/editor/markdown-document';
+  serializeFrontmatter,
+} from '@/components/editor/markdown-frontmatter';
 import { createExportArchiveBlob } from './workspace-export-archive';
 import { searchWorkspace } from './workspace-tree';
 import type {
   DocumentLoadState,
   DocumentSaveState,
   MarkdownDocumentContent,
-  MarkdownDocumentDraft,
+  MarkdownDraft,
   PlateDocumentEnvelope,
   RightPanelMode,
   WorkspaceLoadError,
@@ -65,7 +63,7 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
   const [documentContent, setDocumentContent] =
     React.useState<MarkdownDocumentContent | null>(null);
   const [draftDocument, setDraftDocument] =
-    React.useState<MarkdownDocumentDraft | null>(null);
+    React.useState<MarkdownDraft | null>(null);
   const [documentLoadState, setDocumentLoadState] =
     React.useState<DocumentLoadState>('idle');
   const [documentLoadError, setDocumentLoadError] = React.useState<
@@ -170,7 +168,7 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
   }, [resetDocumentState]);
 
   const saveCurrentDocumentNow = React.useCallback(
-    async (draftOverride?: MarkdownDocumentDraft | null) => {
+    async (draftOverride?: MarkdownDraft | null) => {
       if (!snapshot || !currentDocument || currentDocument.kind !== 'document') {
         return;
       }
@@ -410,13 +408,13 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     ],
   );
 
-  const updateDocumentValue = React.useCallback(
-    (nextValue: MarkdownDocumentDraft['value']) => {
+  const updateMarkdown = React.useCallback(
+    (nextMarkdown: string) => {
       if (!draftDocument) {
         return;
       }
 
-      const nextDraft = withUpdatedMarkdownValue(draftDocument, nextValue);
+      const nextDraft = withUpdatedMarkdown(draftDocument, nextMarkdown);
       const titleChanged =
         nextDraft.metadata.title !== draftDocument.metadata.title;
 
@@ -886,7 +884,7 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     clearPendingRenameNode,
     snapshot,
     switchWorkspace: loadWorkspace,
-    updateDocumentValue,
+    updateMarkdown,
     workspaceHistory,
     removeWorkspace,
   };
@@ -907,37 +905,35 @@ function getWorkspaceErrorMessage(error: unknown, fallback: string) {
 function createMarkdownDraft(
   content: MarkdownDocumentContent,
   fileName: string,
-): MarkdownDocumentDraft {
-  const parsed = parseMarkdownDocument(content.content, fileName);
+): MarkdownDraft {
+  const parsed = parseMarkdownMetadata(content.content, fileName);
 
   return {
-    body: parsed.body,
     markdown: content.content,
     metadata: parsed.metadata,
     modifiedAt: content.modifiedAt,
     path: content.path,
-    value: markdownToPlateValue(parsed.body),
   };
 }
 
-function withUpdatedMarkdownValue(
-  draft: MarkdownDocumentDraft,
-  value: MarkdownDocumentDraft['value'],
-): MarkdownDocumentDraft {
-  const body = plateValueToMarkdown(value);
-  const h1Text = extractH1Text(value);
+function withUpdatedMarkdown(
+  draft: MarkdownDraft,
+  markdown: string,
+): MarkdownDraft {
+  const parsed = parseMarkdownMetadata(markdown, '');
+  const h1Text = extractH1FromMarkdown(parsed.body);
   const metadata = {
     ...draft.metadata,
     updatedAt: new Date().toISOString(),
     ...(h1Text !== null && h1Text !== '' ? { title: h1Text } : {}),
   };
 
+  const nextMarkdown = serializeFrontmatter({ body: parsed.body, metadata });
+
   return {
     ...draft,
-    body,
-    markdown: serializeMarkdownDocument({ body, metadata }),
+    markdown: nextMarkdown,
     metadata,
-    value,
   };
 }
 
@@ -945,11 +941,12 @@ async function compensateMarkdownDocument(
   rootPath: string,
   node: WorkspaceNode,
   content: MarkdownDocumentContent,
-  draft: MarkdownDocumentDraft,
-): Promise<{ draft: MarkdownDocumentDraft; content: MarkdownDocumentContent }> {
+  draft: MarkdownDraft,
+): Promise<{ draft: MarkdownDraft; content: MarkdownDocumentContent }> {
   const fileStem = node.name.replace(/\.md$/i, '');
+  const parsed = parseMarkdownMetadata(content.content, node.name);
   const needsFrontmatter = !content.content.startsWith('---\n');
-  const hasH1InBody = /^#{1}\s+\S/m.test(draft.body);
+  const hasH1InBody = /^#{1}\s+\S/m.test(parsed.body);
   const needsH1 = !hasH1InBody;
 
   if (!needsH1 && !needsFrontmatter) {
@@ -958,14 +955,14 @@ async function compensateMarkdownDocument(
 
   const title = draft.metadata.title || fileStem;
   const h1Prefix = needsH1 ? `# ${title}\n\n` : '';
-  const body = needsH1 ? `${h1Prefix}${draft.body}` : draft.body;
+  const body = needsH1 ? `${h1Prefix}${parsed.body}` : parsed.body;
   const metadata = {
     ...draft.metadata,
     title,
     createdAt: draft.metadata.createdAt ?? new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  const markdown = serializeMarkdownDocument({ body, metadata });
+  const markdown = serializeFrontmatter({ body, metadata });
 
   const meta = await saveMarkdownDocument(
     rootPath,
@@ -990,10 +987,10 @@ function createTransferEnvelope(
   content: MarkdownDocumentContent,
   fileName: string,
 ): PlateDocumentEnvelope {
-  const parsed = parseMarkdownDocument(content.content, fileName);
+  const parsed = parseMarkdownMetadata(content.content, fileName);
 
   return {
-    content: markdownToPlateValue(parsed.body),
+    content: [],
     createdAt: parsed.metadata.createdAt ?? '',
     schemaVersion: 1,
     title: parsed.metadata.title,

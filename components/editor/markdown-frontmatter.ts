@@ -22,7 +22,7 @@ export interface ParsedFrontmatter {
 
 export interface SerializeFrontmatterInput {
   body: string;
-  metadata: Record<string, string>;
+  metadata: Record<string, string | number | null | undefined>;
 }
 
 const FRONTMATTER_DELIMITER = '---';
@@ -53,19 +53,19 @@ export function parseFrontmatter(raw: string): ParsedFrontmatter {
 export function serializeFrontmatter(
   input: SerializeFrontmatterInput,
 ): string {
-  const metadata = input.metadata;
-  const lines = [
-    FRONTMATTER_DELIMITER,
-    ...Object.entries(metadata)
-      .filter(([, value]) => value !== '' && value !== null && value !== undefined)
-      .map(([key, value]) => `${key}: ${value}`),
-    FRONTMATTER_DELIMITER,
-  ];
+  const entries = Object.entries(input.metadata).filter(
+    ([, value]) => value !== '' && value !== null && value !== undefined,
+  );
 
-  if (lines.length === 2) {
+  if (entries.length === 0) {
     return `${input.body.trimEnd()}\n`;
   }
 
+  const lines = [
+    FRONTMATTER_DELIMITER,
+    ...entries.map(([key, value]) => `${key}: ${value}`),
+    FRONTMATTER_DELIMITER,
+  ];
   const body = input.body.trimEnd();
 
   return `${lines.join('\n')}\n\n${body}\n`;

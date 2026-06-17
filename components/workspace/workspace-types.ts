@@ -110,19 +110,22 @@ export interface MarkdownDocumentContent {
   modifiedAt: number;
 }
 
-export interface MarkdownDocumentDraft {
-  body: string;
+export interface MarkdownDraft {
   markdown: string;
   metadata: {
-    createdAt: string | null;
-    refinexDialect: number;
     title: string;
+    createdAt: string | null;
     updatedAt: string | null;
+    refinexDialect: number;
   };
   modifiedAt: number;
   path: string;
-  value: Value;
 }
+
+/**
+ * @deprecated 使用 MarkdownDraft。仅为过渡期保留，后续删除。
+ */
+export type MarkdownDocumentDraft = MarkdownDraft;
 
 export interface DocumentContentMeta {
   path: string;
