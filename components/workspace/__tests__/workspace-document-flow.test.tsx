@@ -1,6 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { Value } from 'platejs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -11,26 +10,28 @@ import {
 import { WorkspaceLayout } from '../workspace-layout';
 import type { WorkspaceSnapshot } from '../workspace-types';
 
-vi.mock('@/components/editor/plate-editor', () => ({
-  PlateEditor: ({
+vi.mock('@/components/editor/markdown-editor', () => ({
+  MarkdownEditor: ({
     documentKey,
+    markdown,
+    onMarkdownChange,
     onSaveRequested,
-    onValueChange,
-    value,
   }: {
     documentKey?: string;
+    markdown?: string;
+    onMarkdownChange?: (markdown: string) => void;
     onSaveRequested?: () => void;
-    onValueChange?: (value: Value) => void;
-    value?: Value;
   }) => (
     <div>
-      <div data-document-key={documentKey} data-testid="plate-editor">
-        {JSON.stringify(value)}
+      <div data-document-key={documentKey} data-testid="markdown-editor">
+        {markdown ?? ''}
       </div>
       <button
         type="button"
         onClick={() =>
-          onValueChange?.([{ type: 'p', children: [{ text: '更新正文' }] }])
+          onMarkdownChange?.(
+            '---\ntitle: 指南\n---\n\n# 指南\n\n更新正文\n',
+          )
         }
       >
         模拟编辑
@@ -38,7 +39,7 @@ vi.mock('@/components/editor/plate-editor', () => ({
       <button
         type="button"
         onClick={() =>
-          onValueChange?.([{ type: 'h1', children: [{ text: '新标题' }] }])
+          onMarkdownChange?.('---\ntitle: 新标题\n---\n\n# 新标题\n\n正文\n')
         }
       >
         模拟H1修改
@@ -50,59 +51,6 @@ vi.mock('@/components/editor/plate-editor', () => ({
   ),
 }));
 
-vi.mock('@/components/editor/markdown-document', () => ({
-  extractH1Text: vi.fn((value: unknown[]) => {
-    const h1 = value?.find(
-      (n) => typeof n === 'object' && n !== null && (n as Record<string, unknown>).type === 'h1',
-    );
-    if (!h1) return null;
-    return (
-      ((h1 as Record<string, unknown>).children as Array<Record<string, unknown>>)
-        ?.map((c) => (c.text as string) ?? '')
-        .join('') ?? null
-    );
-  }),
-  markdownToPlateValue: vi.fn((markdown: string) => [
-    {
-      children: [
-        {
-          text: markdown.includes('笔记正文')
-            ? '笔记正文'
-            : markdown.includes('正文')
-              ? '正文'
-              : '',
-        },
-      ],
-      type: 'p',
-    },
-  ]),
-  parseMarkdownDocument: vi.fn((markdown: string, fileName: string) => ({
-    body: markdown.replace(/^---[\s\S]*?---\s*/, '').trim(),
-    metadata: {
-      createdAt: '2026-05-30T00:00:00.000Z',
-      refinexDialect: 1,
-      title: fileName.includes('notes') ? '笔记' : '指南',
-      updatedAt: '2026-05-30T00:00:00.000Z',
-    },
-  })),
-  plateValueToMarkdown: vi.fn((value: Value) =>
-    value
-      .flatMap((node) => node.children ?? [])
-      .map((child) => child.text ?? '')
-      .join(''),
-  ),
-  sanitizeTitleForFileName: vi.fn((title: string) => title),
-  serializeMarkdownDocument: vi.fn(
-    ({
-      body,
-      metadata,
-    }: {
-      body: string;
-      metadata: { refinexDialect: number; title: string; updatedAt: string };
-    }) =>
-      `---\ntitle: ${metadata.title}\nupdatedAt: ${metadata.updatedAt}\nrefinexDialect: ${metadata.refinexDialect}\n---\n\n${body}\n`,
-  ),
-}));
 
 vi.mock('../workspace-api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../workspace-api')>();
@@ -196,7 +144,7 @@ describe('Workspace native document flow', () => {
     await user.click(screen.getByText('指南'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('plate-editor').textContent).toContain('正文');
+      expect(screen.getByTestId('markdown-editor').textContent).toContain('正文');
     });
 
     expect(readMarkdownDocumentMock).toHaveBeenCalledWith(
@@ -204,7 +152,7 @@ describe('Workspace native document flow', () => {
       '/repo/guide.md',
     );
     expect(
-      screen.getByTestId('plate-editor').getAttribute('data-document-key'),
+      screen.getByTestId('markdown-editor').getAttribute('data-document-key'),
     ).toBe('1');
   });
 
@@ -223,7 +171,7 @@ describe('Workspace native document flow', () => {
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     await user.click(screen.getByText('指南'));
-    await screen.findByTestId('plate-editor');
+    await screen.findByTestId('markdown-editor');
     vi.useFakeTimers();
     fireEvent.click(screen.getByText('模拟编辑'));
 
@@ -260,7 +208,7 @@ describe('Workspace native document flow', () => {
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     await user.click(screen.getByText('指南'));
-    await screen.findByTestId('plate-editor');
+    await screen.findByTestId('markdown-editor');
     await user.click(screen.getByText('模拟编辑'));
     await user.click(screen.getByText('模拟快捷保存'));
 
@@ -288,7 +236,7 @@ describe('Workspace native document flow', () => {
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     await user.click(screen.getByText('指南'));
-    await screen.findByTestId('plate-editor');
+    await screen.findByTestId('markdown-editor');
     vi.useFakeTimers();
     fireEvent.click(screen.getByText('模拟编辑'));
 
@@ -299,7 +247,7 @@ describe('Workspace native document flow', () => {
       expect(screen.getByText('无法保存 Markdown 文档内容')).toBeTruthy();
     });
 
-    expect(screen.getByTestId('plate-editor')).toBeTruthy();
+    expect(screen.getByTestId('markdown-editor')).toBeTruthy();
   });
 
   it('saves dirty content before opening another document', async () => {
@@ -323,7 +271,7 @@ describe('Workspace native document flow', () => {
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     await user.click(screen.getByText('指南'));
-    await screen.findByTestId('plate-editor');
+    await screen.findByTestId('markdown-editor');
     await user.click(screen.getByText('模拟编辑'));
     await user.click(screen.getByText('笔记'));
 
@@ -336,7 +284,7 @@ describe('Workspace native document flow', () => {
       );
     });
     await waitFor(() => {
-      expect(screen.getByTestId('plate-editor').textContent).toContain(
+      expect(screen.getByTestId('markdown-editor').textContent).toContain(
         '笔记正文',
       );
     });
@@ -365,7 +313,7 @@ describe('Workspace native document flow', () => {
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
     const user = userEvent.setup();
     await user.click(screen.getByText('指南'));
-    await screen.findByTestId('plate-editor');
+    await screen.findByTestId('markdown-editor');
     vi.useFakeTimers();
     fireEvent.click(screen.getByText('模拟H1修改'));
 

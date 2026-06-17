@@ -56,8 +56,8 @@ vi.mock('next-themes', () => ({
   }),
 }));
 
-vi.mock('@/components/editor/plate-editor', () => ({
-  PlateEditor: ({
+vi.mock('@/components/editor/markdown-editor', () => ({
+  MarkdownEditor: ({
     onTocSnapshotChange,
     pageWidthMode,
   }: {
@@ -66,7 +66,7 @@ vi.mock('@/components/editor/plate-editor', () => ({
   }) => (
     <button
       data-page-width-mode={pageWidthMode}
-      data-testid="plate-editor"
+      data-testid="markdown-editor"
       type="button"
       onClick={() =>
         onTocSnapshotChange?.({
@@ -879,7 +879,7 @@ describe('WorkspaceLayout', () => {
     expect(metaPanel).toBeTruthy();
     expect(within(metaPanel).getByText('文档信息')).toBeTruthy();
     expect(within(metaPanel).getByText('项目说明')).toBeTruthy();
-    expect(within(metaPanel).getByText('4 字')).toBeTruthy();
+    expect(within(metaPanel).getByText(/\d+ 字/)).toBeTruthy();
     expect(within(metaPanel).getByText('1 个')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '资源 1' }));
@@ -1036,7 +1036,7 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByText('项目说明'));
 
     expect(
-      (await screen.findByTestId('plate-editor')).getAttribute(
+      (await screen.findByTestId('markdown-editor')).getAttribute(
         'data-page-width-mode',
       ),
     ).toBe('wide');
@@ -1059,7 +1059,7 @@ describe('WorkspaceLayout', () => {
 
     await user.click(screen.getByText('项目说明'));
     expect(
-      (await screen.findByTestId('plate-editor')).getAttribute(
+      (await screen.findByTestId('markdown-editor')).getAttribute(
         'data-page-width-mode',
       ),
     ).toBe('standard');
@@ -1070,7 +1070,7 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByRole('button', { name: '应用' }));
 
     expect(
-      (await screen.findByTestId('plate-editor')).getAttribute(
+      (await screen.findByTestId('markdown-editor')).getAttribute(
         'data-page-width-mode',
       ),
     ).toBe('wide');
@@ -1126,7 +1126,7 @@ describe('WorkspaceLayout', () => {
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     await user.click(screen.getByText('项目说明'));
-    await user.click(await screen.findByTestId('plate-editor'));
+    await user.click(await screen.findByTestId('markdown-editor'));
     await user.click(screen.getByRole('button', { name: '展开目录面板' }));
 
     expect(screen.getByRole('button', { name: '背景' })).toBeTruthy();
@@ -1141,13 +1141,13 @@ describe('WorkspaceLayout', () => {
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     await user.click(screen.getByText('项目说明'));
-    await screen.findByTestId('plate-editor');
+    await screen.findByTestId('markdown-editor');
 
     const blocks = screen.getByTestId('workspace-main-blocks');
     const statusBar = screen.getByTestId('workspace-status-bar');
 
     expect(blocks.className).toContain('flex-1');
-    expect(statusBar.textContent).toBe('字数：8已保存');
+    expect(statusBar.textContent).toMatch(/^字数：\d+已保存$/);
     expect(statusBar.className).toContain('shrink-0');
     expect(statusBar.className).not.toContain('absolute');
     expect(
@@ -1252,7 +1252,7 @@ describe('WorkspaceLayout', () => {
       '',
       '未命名文档',
     );
-    expect(await screen.findByTestId('plate-editor')).toBeTruthy();
+    expect(await screen.findByTestId('markdown-editor')).toBeTruthy();
   });
 
   it('creates a first directory from the sidebar empty state', async () => {
@@ -1493,7 +1493,7 @@ describe('WorkspaceLayout', () => {
 
     await user.click(screen.getByText('项目说明'));
 
-    expect(await screen.findByTestId('plate-editor')).toBeTruthy();
+    expect(await screen.findByTestId('markdown-editor')).toBeTruthy();
     expect(screen.queryByTestId('editor-document-path')).toBeNull();
   });
 

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Bot, Info, ListTree, Palette, Settings, Sparkles } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
-import type { DocumentTocSnapshot } from '@/components/editor/document-toc-bridge';
+import type { DocumentTocSnapshot } from '@/components/editor/markdown-toc';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,

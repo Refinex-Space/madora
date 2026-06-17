@@ -1,5 +1,3 @@
-import type { Value } from 'platejs';
-
 export type WorkspaceNodeKind = 'directory' | 'document';
 
 export type RightPanelMode = 'ai' | 'toc' | 'meta' | null;
@@ -90,20 +88,6 @@ export interface WorkspaceAssetData {
   base64Data: string;
 }
 
-export interface PlateDocumentEnvelope {
-  schemaVersion: 1;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  content: Value;
-}
-
-export interface PlateDocumentContent {
-  path: string;
-  envelope: PlateDocumentEnvelope;
-  modifiedAt: number;
-}
-
 export interface MarkdownDocumentContent {
   path: string;
   content: string;
@@ -122,11 +106,6 @@ export interface MarkdownDraft {
   path: string;
 }
 
-/**
- * @deprecated 使用 MarkdownDraft。仅为过渡期保留，后续删除。
- */
-export type MarkdownDocumentDraft = MarkdownDraft;
-
 export interface DocumentContentMeta {
   path: string;
   modifiedAt: number;
@@ -144,66 +123,15 @@ export interface WorkspaceMoveRequest {
   position: WorkspaceMovePosition;
 }
 
-export interface CreatedPlateDocument {
-  node: WorkspaceNode;
-  envelope: PlateDocumentEnvelope;
-}
-
 export interface CreatedMarkdownDocument {
   node: WorkspaceNode;
   content: MarkdownDocumentContent;
-}
-
-export interface MarkdownMigrationReport {
-  migrated: Array<{
-    sourcePath: string;
-    targetPath: string;
-  }>;
-  failed: Array<{
-    sourcePath: string;
-    message: string;
-  }>;
 }
 
 export interface MarkdownSourceFile {
   path: string;
   fileName: string;
   content: string;
-}
-
-export type WorkspaceImportFormat = 'html' | 'markdown' | 'word';
-
-export type WorkspaceExportFormat =
-  | 'html'
-  | 'pdf'
-  | 'image'
-  | 'markdown'
-  | 'word';
-
-export interface ImportSourceFile {
-  path: string;
-  fileName: string;
-  content?: string | null;
-  base64Data?: string | null;
-}
-
-export interface ExportArchiveEntry {
-  path: string;
-  base64Data: string;
-}
-
-export interface ImportedPlateDocumentInput {
-  title: string;
-  sourceFileName: string;
-  content: Value;
-}
-
-export interface ImportedPlateDocumentResult {
-  created: CreatedPlateDocument[];
-  failed: Array<{
-    sourceFileName: string;
-    message: string;
-  }>;
 }
 
 export type DocumentLoadState = 'idle' | 'loading' | 'loaded' | 'error';
