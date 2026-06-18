@@ -110,4 +110,47 @@ describe('document tabs model', () => {
     });
     expect(layout.activeGroupId).toBe('group-2');
   });
+
+  it('removes an empty split group after closing its last tab', () => {
+    let layout = createInitialEditorLayout();
+    layout = openDocumentInGroup(layout, doc('a'));
+    layout = splitEditorGroup(layout, 'group-1', '/repo/a.md', 'right');
+
+    layout = closeTabInGroup(layout, 'group-2', '/repo/a.md');
+
+    expect(layout.groups).toHaveLength(1);
+    expect(layout.groups[0].id).toBe('group-1');
+    expect(layout.groups[0].activeTabPath).toBe('/repo/a.md');
+    expect(layout.orientation).toBe('single');
+    expect(layout.activeGroupId).toBe('group-1');
+  });
+
+  it('removes a split group when closing all tabs in that group', () => {
+    let layout = createInitialEditorLayout();
+    layout = openDocumentInGroup(layout, doc('a'));
+    layout = splitEditorGroup(layout, 'group-1', '/repo/a.md', 'down');
+
+    layout = closeAllTabsInGroup(layout, 'group-2');
+
+    expect(layout.groups).toHaveLength(1);
+    expect(layout.groups[0].id).toBe('group-1');
+    expect(layout.orientation).toBe('single');
+  });
+
+  it('keeps a single empty group when every tab is closed', () => {
+    let layout = createInitialEditorLayout();
+    layout = openDocumentInGroup(layout, doc('a'));
+
+    layout = closeAllTabsInGroup(layout, 'group-1');
+
+    expect(layout.groups).toEqual([
+      {
+        activeTabPath: null,
+        id: 'group-1',
+        tabs: [],
+      },
+    ]);
+    expect(layout.orientation).toBe('single');
+    expect(layout.activeGroupId).toBe('group-1');
+  });
 });

@@ -75,21 +75,25 @@ export function closeTabInGroup(
   groupId: string,
   tabPath: string,
 ): DocumentEditorLayout {
-  return updateGroup(layout, groupId, (group) => {
-    const tabIndex = group.tabs.findIndex((tab) => tab.absolutePath === tabPath);
+  return normalizeEditorLayout(
+    updateGroup(layout, groupId, (group) => {
+      const tabIndex = group.tabs.findIndex(
+        (tab) => tab.absolutePath === tabPath,
+      );
 
-    if (tabIndex === -1) {
-      return group;
-    }
+      if (tabIndex === -1) {
+        return group;
+      }
 
-    const tabs = group.tabs.filter((tab) => tab.absolutePath !== tabPath);
-    const activeTabPath =
-      group.activeTabPath === tabPath
-        ? tabs[Math.min(tabIndex, tabs.length - 1)]?.absolutePath ?? null
-        : group.activeTabPath;
+      const tabs = group.tabs.filter((tab) => tab.absolutePath !== tabPath);
+      const activeTabPath =
+        group.activeTabPath === tabPath
+          ? tabs[Math.min(tabIndex, tabs.length - 1)]?.absolutePath ?? null
+          : group.activeTabPath;
 
-    return { ...group, activeTabPath, tabs };
-  });
+      return { ...group, activeTabPath, tabs };
+    }),
+  );
 }
 
 export function closeOtherTabsInGroup(
@@ -97,22 +101,26 @@ export function closeOtherTabsInGroup(
   groupId: string,
   tabPath: string,
 ): DocumentEditorLayout {
-  return updateGroup(layout, groupId, (group) => {
-    const tab = group.tabs.find((entry) => entry.absolutePath === tabPath);
+  return normalizeEditorLayout(
+    updateGroup(layout, groupId, (group) => {
+      const tab = group.tabs.find((entry) => entry.absolutePath === tabPath);
 
-    return tab ? { ...group, activeTabPath: tabPath, tabs: [tab] } : group;
-  });
+      return tab ? { ...group, activeTabPath: tabPath, tabs: [tab] } : group;
+    }),
+  );
 }
 
 export function closeAllTabsInGroup(
   layout: DocumentEditorLayout,
   groupId: string,
 ): DocumentEditorLayout {
-  return updateGroup(layout, groupId, (group) => ({
-    ...group,
-    activeTabPath: null,
-    tabs: [],
-  }));
+  return normalizeEditorLayout(
+    updateGroup(layout, groupId, (group) => ({
+      ...group,
+      activeTabPath: null,
+      tabs: [],
+    })),
+  );
 }
 
 export function closeTabsToLeftInGroup(
@@ -120,22 +128,28 @@ export function closeTabsToLeftInGroup(
   groupId: string,
   tabPath: string,
 ): DocumentEditorLayout {
-  return updateGroup(layout, groupId, (group) => {
-    const tabIndex = group.tabs.findIndex((tab) => tab.absolutePath === tabPath);
+  return normalizeEditorLayout(
+    updateGroup(layout, groupId, (group) => {
+      const tabIndex = group.tabs.findIndex(
+        (tab) => tab.absolutePath === tabPath,
+      );
 
-    if (tabIndex === -1) {
-      return group;
-    }
+      if (tabIndex === -1) {
+        return group;
+      }
 
-    const tabs = group.tabs.slice(tabIndex);
-    return {
-      ...group,
-      activeTabPath: tabs.some((tab) => tab.absolutePath === group.activeTabPath)
-        ? group.activeTabPath
-        : tabPath,
-      tabs,
-    };
-  });
+      const tabs = group.tabs.slice(tabIndex);
+      return {
+        ...group,
+        activeTabPath: tabs.some(
+          (tab) => tab.absolutePath === group.activeTabPath,
+        )
+          ? group.activeTabPath
+          : tabPath,
+        tabs,
+      };
+    }),
+  );
 }
 
 export function closeTabsToRightInGroup(
@@ -143,22 +157,28 @@ export function closeTabsToRightInGroup(
   groupId: string,
   tabPath: string,
 ): DocumentEditorLayout {
-  return updateGroup(layout, groupId, (group) => {
-    const tabIndex = group.tabs.findIndex((tab) => tab.absolutePath === tabPath);
+  return normalizeEditorLayout(
+    updateGroup(layout, groupId, (group) => {
+      const tabIndex = group.tabs.findIndex(
+        (tab) => tab.absolutePath === tabPath,
+      );
 
-    if (tabIndex === -1) {
-      return group;
-    }
+      if (tabIndex === -1) {
+        return group;
+      }
 
-    const tabs = group.tabs.slice(0, tabIndex + 1);
-    return {
-      ...group,
-      activeTabPath: tabs.some((tab) => tab.absolutePath === group.activeTabPath)
-        ? group.activeTabPath
-        : tabPath,
-      tabs,
-    };
-  });
+      const tabs = group.tabs.slice(0, tabIndex + 1);
+      return {
+        ...group,
+        activeTabPath: tabs.some(
+          (tab) => tab.absolutePath === group.activeTabPath,
+        )
+          ? group.activeTabPath
+          : tabPath,
+        tabs,
+      };
+    }),
+  );
 }
 
 export function splitEditorGroup(
@@ -221,6 +241,52 @@ function updateGroup(
     groups: layout.groups.map((group) =>
       group.id === groupId ? update(group) : group,
     ),
+  };
+}
+
+function normalizeEditorLayout(
+  layout: DocumentEditorLayout,
+): DocumentEditorLayout {
+  const groups = layout.groups
+    .filter((group) => group.tabs.length > 0)
+    .map((group) => {
+      const activeTabPath = group.tabs.some(
+        (tab) => tab.absolutePath === group.activeTabPath,
+      )
+        ? group.activeTabPath
+        : group.tabs[0].absolutePath;
+
+      return { ...group, activeTabPath };
+    });
+
+  if (groups.length === 0) {
+    const fallbackGroup = layout.groups[0] ?? {
+      activeTabPath: null,
+      id: 'group-1',
+      tabs: [],
+    };
+
+    return {
+      activeGroupId: fallbackGroup.id,
+      groups: [{ ...fallbackGroup, activeTabPath: null, tabs: [] }],
+      orientation: 'single',
+    };
+  }
+
+  const activeGroupId = groups.some((group) => group.id === layout.activeGroupId)
+    ? layout.activeGroupId
+    : groups[0].id;
+
+  return {
+    ...layout,
+    activeGroupId,
+    groups,
+    orientation:
+      groups.length === 1
+        ? 'single'
+        : layout.orientation === 'single'
+          ? 'horizontal'
+          : layout.orientation,
   };
 }
 

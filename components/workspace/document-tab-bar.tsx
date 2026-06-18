@@ -61,10 +61,10 @@ export function DocumentTabBar({
 
   return (
     <div
-      className="flex h-9 shrink-0 items-end border-b bg-background"
+      className="flex h-8 shrink-0 items-stretch border-b bg-background"
       data-testid={`document-tab-bar-${group.id}`}
     >
-      <div className="flex min-w-0 flex-1 items-end overflow-hidden">
+      <div className="flex min-w-0 flex-1 items-stretch overflow-hidden">
         {visibleTabs.map((tab) => (
           <DocumentTabItem
             group={group}
@@ -86,7 +86,7 @@ export function DocumentTabBar({
           <DropdownMenuTrigger asChild>
             <button
               aria-label="显示更多打开的文档"
-              className="mb-1 mr-1 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="mr-1 inline-flex w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
               type="button"
             >
               <ChevronDown size={15} />
@@ -129,7 +129,7 @@ function DocumentTabItem({
         <div
           aria-selected={active}
           className={cn(
-            'group flex h-8 max-w-56 min-w-28 cursor-default items-center gap-1 border-r px-2 text-sm outline-none',
+            'group flex h-full max-w-56 min-w-28 cursor-default items-center border-r pl-2 pr-1 text-sm outline-none',
             active
               ? 'bg-background text-foreground'
               : 'bg-muted/35 text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -145,11 +145,11 @@ function DocumentTabItem({
             }
           }}
         >
-          <span className="truncate">{tab.title}</span>
+          <span className="min-w-0 flex-1 truncate">{tab.title}</span>
           <button
             aria-label={`关闭标签页 ${tab.title}`}
             className={cn(
-              'ml-1 inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:bg-background hover:text-foreground group-hover:opacity-100',
+              'ml-auto inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 hover:bg-background hover:text-foreground group-hover:opacity-100',
               active && 'opacity-100',
             )}
             type="button"
