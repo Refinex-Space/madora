@@ -11,6 +11,30 @@ vi.mock('next-themes', () => ({
   useTheme: () => ({ resolvedTheme: 'light' }),
 }));
 
+vi.mock('@uiw/react-codemirror', async () => {
+  const React = await import('react');
+
+  return {
+    default: React.forwardRef<
+      HTMLTextAreaElement,
+      {
+        value: string;
+        onChange?: (value: string) => void;
+      }
+    >(function MockCodeMirror({ value, onChange }, ref) {
+      return (
+        <textarea
+          aria-label="Markdown 正文"
+          className="cm-editor"
+          ref={ref}
+          value={value}
+          onChange={(event) => onChange?.(event.currentTarget.value)}
+        />
+      );
+    }),
+  };
+});
+
 vi.mock('@refinex/markora/editor', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('@refinex/markora/editor')>();
@@ -146,5 +170,125 @@ describe('MarkdownEditor', () => {
         extensions: expect.arrayContaining([expect.anything()]),
       }),
     );
+  });
+
+  it('standard 页宽模式使用更宽的正文宽度', () => {
+    render(
+      <MarkdownEditor
+        documentKey="doc-1"
+        markdown="# x"
+        pageWidthMode="standard"
+        onMarkdownChange={() => {}}
+      />,
+    );
+
+    expect(
+      Array.from(document.querySelectorAll('div')).some((element) =>
+        element.className.includes('max-w-[64rem]'),
+      ),
+    ).toBe(true);
+  });
+
+  it('standard 页宽模式通过 markora extension 避免内层滚动条', () => {
+    render(
+      <MarkdownEditor
+        documentKey="doc-1"
+        markdown="# x"
+        pageWidthMode="standard"
+        onMarkdownChange={() => {}}
+      />,
+    );
+
+    expect(markoraMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        extensions: expect.arrayContaining([expect.anything()]),
+      }),
+    );
+  });
+
+  it('把文档顶部 frontmatter 按原始 key/value 展示为元数据区域', () => {
+    render(
+      <MarkdownEditor
+        documentKey="doc-1"
+        markdown={[
+          '---',
+          'createdAt: 2026-06-18T11:35:15.383Z',
+          'refinexDialect: 1',
+          'title: Octarine',
+          'customKey: 自定义值',
+          '---',
+          '',
+          '# Octarine',
+        ].join('\n')}
+        onMarkdownChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId('markdown-frontmatter-panel')).toBeTruthy();
+    expect(screen.getByText('文档元数据')).toBeTruthy();
+    expect(screen.getByText('createdAt')).toBeTruthy();
+    expect(screen.getByText('2026-06-18T11:35:15.383Z')).toBeTruthy();
+    expect(screen.getByText('refinexDialect')).toBeTruthy();
+    expect(screen.getByText('1')).toBeTruthy();
+    expect(screen.getByText('title')).toBeTruthy();
+    expect(screen.getByText('Octarine')).toBeTruthy();
+    expect(screen.getByText('customKey')).toBeTruthy();
+    expect(screen.getByText('自定义值')).toBeTruthy();
+    expect(screen.queryByText('创建时间')).toBeNull();
+    expect(screen.queryByText('方言版本')).toBeNull();
+    expect(screen.queryByText('标题')).toBeNull();
+  });
+
+  it('编辑区只显示正文，不显示原始 frontmatter 文本', () => {
+    render(
+      <MarkdownEditor
+        documentKey="doc-1"
+        markdown={'---\ntitle: Octarine\n---\n\n# Octarine'}
+        onMarkdownChange={() => {}}
+      />,
+    );
+
+    expect(
+      (screen.getByLabelText('Markdown 正文') as HTMLTextAreaElement).value,
+    ).toBe('# Octarine');
+    expect(screen.queryByDisplayValue(/title: Octarine/u)).toBeNull();
+  });
+
+  it('编辑带 frontmatter 的正文时保留原始 metadata 字段', () => {
+    const onMarkdownChange = vi.fn();
+    render(
+      <MarkdownEditor
+        documentKey="doc-1"
+        markdown={'---\ntitle: Octarine\ncustomKey: keep\n---\n\n# Octarine'}
+        onMarkdownChange={onMarkdownChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Markdown 正文'), {
+      target: { value: '# 新正文' },
+    });
+
+    expect(onMarkdownChange).toHaveBeenCalledWith(
+      '---\ntitle: Octarine\ncustomKey: keep\n---\n\n# 新正文\n',
+    );
+  });
+
+  it('没有 frontmatter 时编辑回调保持普通 Markdown', () => {
+    const onMarkdownChange = vi.fn();
+    render(
+      <MarkdownEditor
+        documentKey="doc-1"
+        markdown="# 原正文"
+        onMarkdownChange={onMarkdownChange}
+      />,
+    );
+
+    expect(screen.queryByTestId('markdown-frontmatter-panel')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Markdown 正文'), {
+      target: { value: '# 新正文' },
+    });
+
+    expect(onMarkdownChange).toHaveBeenCalledWith('# 新正文');
   });
 });

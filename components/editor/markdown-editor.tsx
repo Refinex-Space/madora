@@ -21,6 +21,10 @@ import {
   scrollToHeadingIn,
   type DocumentTocSnapshot,
 } from '@/components/editor/markdown-toc';
+import {
+  parseFrontmatter,
+  serializeFrontmatter,
+} from '@/components/editor/markdown-frontmatter';
 import { useWorkspaceAssetUploader } from '@/components/editor/use-workspace-asset-uploader';
 import { WorkspaceAssetProvider } from '@/components/editor/workspace-asset-context';
 import type { PageWidthMode } from '@/components/workspace/workspace-types';
@@ -34,6 +38,8 @@ interface MarkdownEditorProps {
   onMarkdownChange?: (markdown: string) => void;
   workspaceRootPath?: string | null;
 }
+
+const STANDARD_PAGE_WIDTH = '64rem';
 
 export function MarkdownEditor({
   documentKey,
@@ -54,11 +60,35 @@ export function MarkdownEditor({
   const cmTheme = isDark ? githubDark : githubLight;
   const markoraTheme = isDark ? ThemeEnum.DARK : ThemeEnum.LIGHT;
   const uploader = useWorkspaceAssetUploader(workspaceRootPath ?? null);
+  const frontmatterView = React.useMemo(() => {
+    const parsed = parseFrontmatter(markdown);
+    const entries = Object.entries(parsed.metadata);
+
+    if (entries.length === 0) {
+      return {
+        body: markdown,
+        entries,
+        hasFrontmatter: false,
+        metadata: parsed.metadata,
+      };
+    }
+
+    return {
+      body: parsed.body,
+      entries,
+      hasFrontmatter: true,
+      metadata: parsed.metadata,
+    };
+  }, [markdown]);
   const pageWidthExtensions = React.useMemo<Extension[]>(() => {
-    const contentMaxWidth = pageWidthMode === 'wide' ? 'none' : '48rem';
+    const contentMaxWidth =
+      pageWidthMode === 'wide' ? 'none' : STANDARD_PAGE_WIDTH;
 
     return [
       EditorView.theme({
+        '&.cm-markora .cm-scroller': {
+          overflow: 'visible !important',
+        },
         '&.cm-markora .cm-content': {
           maxWidth: contentMaxWidth,
           width: '100%',
@@ -89,6 +119,27 @@ export function MarkdownEditor({
         ),
     });
   }, [onTocSnapshotChange, tocItems]);
+
+  const handleMarkdownChange = React.useCallback(
+    (value: string) => {
+      if (!onMarkdownChange) {
+        return;
+      }
+
+      if (!frontmatterView.hasFrontmatter) {
+        onMarkdownChange(value);
+        return;
+      }
+
+      onMarkdownChange(
+        serializeFrontmatter({
+          body: value,
+          metadata: frontmatterView.metadata,
+        }),
+      );
+    },
+    [frontmatterView, onMarkdownChange],
+  );
 
   const extensions = React.useMemo<Extension[]>(
     () =>
@@ -128,7 +179,7 @@ export function MarkdownEditor({
   );
 
   const maxWidthClass =
-    pageWidthMode === 'wide' ? 'max-w-none' : 'max-w-[48rem]';
+    pageWidthMode === 'wide' ? 'max-w-none' : 'max-w-[64rem]';
 
   return (
     <WorkspaceAssetProvider
@@ -158,13 +209,16 @@ export function MarkdownEditor({
           }
         >
           <div className={`mx-auto w-full ${maxWidthClass} px-6 py-8`}>
+            {frontmatterView.hasFrontmatter ? (
+              <FrontmatterPanel entries={frontmatterView.entries} />
+            ) : null}
             <CodeMirror
               ref={editorRef}
-              value={markdown}
+              value={frontmatterView.body}
               theme={cmTheme}
               extensions={extensions}
               basicSetup={false}
-              onChange={(value) => onMarkdownChange?.(value)}
+              onChange={handleMarkdownChange}
             />
           </div>
         </div>
@@ -187,5 +241,34 @@ export function MarkdownEditor({
         ) : null}
       </div>
     </WorkspaceAssetProvider>
+  );
+}
+
+function FrontmatterPanel({
+  entries,
+}: {
+  entries: Array<[string, string]>;
+}) {
+  return (
+    <section
+      className="mb-6 border-b px-4 py-3"
+      data-testid="markdown-frontmatter-panel"
+    >
+      <div className="mb-3 text-xs font-medium text-muted-foreground">
+        文档元数据
+      </div>
+      <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+        {entries.map(([key, value]) => (
+          <div className="min-w-0" key={key}>
+            <dt className="mb-1 text-xs text-muted-foreground">
+              {key}
+            </dt>
+            <dd className="truncate font-medium text-foreground" title={value}>
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
