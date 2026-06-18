@@ -718,6 +718,7 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
 
   return {
     chooseWorkspaceParentDirectory,
+    clearCurrentDocument: resetDocumentState,
     createDirectory,
     createDocument,
     createWorkspace,

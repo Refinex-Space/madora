@@ -54,6 +54,7 @@ export function MarkdownEditor({
   const editorRef = React.useRef<ReactCodeMirrorRef>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
   const [tocItems, setTocItems] = React.useState<MarkoraTocItem[]>([]);
+  const [activeTocId, setActiveTocId] = React.useState<string | null>(null);
   const [backToTopVisible, setBackToTopVisible] = React.useState(false);
 
   const isDark = resolvedTheme === 'dark';
@@ -100,6 +101,26 @@ export function MarkdownEditor({
     ];
   }, [pageWidthMode]);
 
+  const handleTocChange = React.useCallback((items: MarkoraTocItem[]) => {
+    setTocItems(items);
+
+    const markoraActiveId = items.find((item) => item.active)?.id ?? null;
+    setActiveTocId((currentActiveId) => {
+      if (markoraActiveId) {
+        return markoraActiveId;
+      }
+
+      if (
+        currentActiveId &&
+        items.some((item) => item.id === currentActiveId)
+      ) {
+        return currentActiveId;
+      }
+
+      return null;
+    });
+  }, []);
+
   // markora 的 onTocChange 会推带 active 字段的 items；
   // 用 state 存储，effect 负责发布 DocumentTocSnapshot 给右侧 TOC 面板。
   React.useEffect(() => {
@@ -107,18 +128,20 @@ export function MarkdownEditor({
       return;
     }
 
-    const activeId = tocItems.find((item) => item.active)?.id ?? null;
-    const snapshot = buildTocSnapshot(tocItems, activeId);
+    const snapshot = buildTocSnapshot(tocItems, activeTocId);
     onTocSnapshotChange({
       ...snapshot,
-      scrollToHeading: (id: string) =>
+      scrollToHeading: (id: string) => {
+        setActiveTocId(id);
         scrollToHeadingIn(
           editorRef.current?.view ?? null,
           tocItems,
           id,
-        ),
+          scrollContainerRef.current,
+        );
+      },
     });
-  }, [onTocSnapshotChange, tocItems]);
+  }, [activeTocId, onTocSnapshotChange, tocItems]);
 
   const handleMarkdownChange = React.useCallback(
     (value: string) => {
@@ -170,12 +193,12 @@ export function MarkdownEditor({
         },
         toc: {
           // 不渲染 markora 内置 TOC 面板，但 onTocChange 仍会触发。
-          // setTocItems 是 React state setter，安全可在渲染期创建的回调中使用。
+          // handleTocChange 会同步 TOC 列表与当前 active id。
           enabled: false,
-          onTocChange: setTocItems,
+          onTocChange: handleTocChange,
         },
       }),
-    [markoraTheme, pageWidthExtensions, uploader],
+    [handleTocChange, markoraTheme, pageWidthExtensions, uploader],
   );
 
   const maxWidthClass =

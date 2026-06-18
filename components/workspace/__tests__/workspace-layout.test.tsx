@@ -200,6 +200,29 @@ const snapshot: WorkspaceSnapshot = {
   ],
 };
 
+const multiDocumentSnapshot: WorkspaceSnapshot = {
+  rootPath: '/repo',
+  rootName: 'repo',
+  nodes: [
+    {
+      id: 'a',
+      name: 'a.md',
+      kind: 'document',
+      relativePath: 'a.md',
+      absolutePath: '/repo/a.md',
+      title: '文档 A',
+    },
+    {
+      id: 'b',
+      name: 'b.md',
+      kind: 'document',
+      relativePath: 'b.md',
+      absolutePath: '/repo/b.md',
+      title: '文档 B',
+    },
+  ],
+};
+
 const directorySnapshot: WorkspaceSnapshot = {
   rootPath: '/repo',
   rootName: 'repo',
@@ -350,6 +373,65 @@ describe('WorkspaceLayout', () => {
     await user.type(screen.getByPlaceholderText('搜索标题或路径'), '项目');
 
     expect(screen.getByText('项目说明')).toBeTruthy();
+  });
+
+  it('opens documents in tabs and switches from the tab bar', async () => {
+    const user = userEvent.setup();
+    readMarkdownDocumentMock
+      .mockResolvedValueOnce(markdownDocument({
+        path: '/repo/a.md',
+        title: '文档 A',
+      }))
+      .mockResolvedValueOnce(markdownDocument({
+        path: '/repo/b.md',
+        title: '文档 B',
+      }))
+      .mockResolvedValueOnce(markdownDocument({
+        path: '/repo/a.md',
+        title: '文档 A',
+      }));
+
+    render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
+
+    await user.click(screen.getByText('文档 A'));
+    await user.click(screen.getByText('文档 B'));
+
+    expect(await screen.findByRole('tab', { name: /文档 A/ })).toBeTruthy();
+    expect(
+      screen.getByRole('tab', { name: /文档 B/ }).getAttribute('aria-selected'),
+    ).toBe('true');
+
+    await user.click(screen.getByRole('tab', { name: /文档 A/ }));
+
+    expect(readMarkdownDocumentMock).toHaveBeenLastCalledWith(
+      '/repo',
+      '/repo/a.md',
+    );
+  });
+
+  it('splits a tab into a second editor group', async () => {
+    const user = userEvent.setup();
+    readMarkdownDocumentMock
+      .mockResolvedValueOnce(markdownDocument({
+        path: '/repo/a.md',
+        title: '文档 A',
+      }))
+      .mockResolvedValueOnce(markdownDocument({
+        path: '/repo/b.md',
+        title: '文档 B',
+      }));
+
+    render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
+
+    await user.click(screen.getByText('文档 A'));
+
+    await user.pointer({
+      keys: '[MouseRight]',
+      target: await screen.findByRole('tab', { name: /文档 A/ }),
+    });
+    await user.click(await screen.findByRole('menuitem', { name: '向右拆分' }));
+
+    expect(screen.getAllByTestId(/document-editor-group-/u)).toHaveLength(2);
   });
 
   it('shows a polished directory page and opens document cards', async () => {

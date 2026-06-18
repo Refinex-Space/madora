@@ -1,4 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MarkdownEditor } from '@/components/editor/markdown-editor';
@@ -204,6 +210,61 @@ describe('MarkdownEditor', () => {
         extensions: expect.arrayContaining([expect.anything()]),
       }),
     );
+  });
+
+  it('点击 TOC 跳转时立即更新 activeContentId', async () => {
+    let latestSnapshot:
+      | {
+          activeContentId: string | null;
+          scrollToHeading: (id: string) => void;
+        }
+      | null = null;
+    const onTocSnapshotChange = vi.fn((snapshot) => {
+      latestSnapshot = snapshot;
+    });
+
+    render(
+      <MarkdownEditor
+        documentKey="doc-1"
+        markdown={'# 标题\n\n## 背景\n\n## 细节'}
+        onTocSnapshotChange={onTocSnapshotChange}
+        onMarkdownChange={() => {}}
+      />,
+    );
+
+    const markoraConfig = markoraMock.mock.calls.at(-1)?.[0];
+    act(() => {
+      markoraConfig.toc.onTocChange([
+        {
+          active: false,
+          from: 10,
+          id: 'background',
+          level: 2,
+          text: '背景',
+          to: 16,
+        },
+        {
+          active: false,
+          from: 20,
+          id: 'detail',
+          level: 2,
+          text: '细节',
+          to: 26,
+        },
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(latestSnapshot?.activeContentId).toBeNull();
+    });
+
+    act(() => {
+      latestSnapshot?.scrollToHeading('detail');
+    });
+
+    await waitFor(() => {
+      expect(latestSnapshot?.activeContentId).toBe('detail');
+    });
   });
 
   it('把文档顶部 frontmatter 按原始 key/value 展示为元数据区域', () => {

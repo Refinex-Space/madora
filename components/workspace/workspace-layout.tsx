@@ -19,6 +19,22 @@ import { cn } from '@/lib/utils';
 
 import { RightSidePanel, RightToolRail } from './ai-side-panel';
 import { DirectoryPage } from './directory-page';
+import { DocumentTabBar } from './document-tab-bar';
+import {
+  closeAllTabsInGroup,
+  closeOtherTabsInGroup,
+  closeTabInGroup,
+  closeTabsToLeftInGroup,
+  closeTabsToRightInGroup,
+  createInitialEditorLayout,
+  getActiveEditorGroup,
+  getActiveTab,
+  openDocumentInGroup,
+  selectTabInGroup,
+  splitEditorGroup,
+  type DocumentEditorLayout,
+  type EditorSplitDirection,
+} from './document-tabs';
 import { EditorPane } from './editor-pane';
 import { GitDiffView } from './git-diff-view';
 import { GitLogDrawer } from './git-log-drawer';
@@ -59,6 +75,7 @@ import { countMarkdownCharacters } from './workspace-document-insights';
 import { XtermTerminal } from './xterm-terminal';
 import type {
   AppSettings,
+  DocumentLoadState,
   DocumentSaveState,
   GitBranchItem,
   GitCommitEntry,
@@ -67,6 +84,7 @@ import type {
   GitProbe,
   GitStatus,
   PageWidthMode,
+  WorkspaceNode,
   WorkspaceSnapshot,
 } from './workspace-types';
 
@@ -179,10 +197,15 @@ export function WorkspaceLayout({
     documentPath: string | null;
     snapshot: DocumentTocSnapshot | null;
   }>({ documentPath: null, snapshot: null });
+  const [documentEditorLayout, setDocumentEditorLayout] =
+    React.useState<DocumentEditorLayout>(() => createInitialEditorLayout());
   const documentTitle =
     workspace.currentDocument?.title || workspace.currentDocument?.name;
   const pageTitle = documentTitle ?? workspace.currentDirectory?.name;
   const currentDocumentPath = workspace.currentDocument?.absolutePath ?? null;
+  const hasOpenDocumentTabs = documentEditorLayout.groups.some(
+    (group) => group.tabs.length > 0,
+  );
   const tocSnapshot =
     tocSnapshotState.documentPath === currentDocumentPath
       ? tocSnapshotState.snapshot
@@ -838,6 +861,133 @@ export function WorkspaceLayout({
     workspaceRootPath,
   ]);
 
+  const openDocumentNode = React.useCallback(
+    (node: WorkspaceNode) => {
+      if (node.kind !== 'document') {
+        return;
+      }
+
+      setDocumentEditorLayout((current) => openDocumentInGroup(current, node));
+      void workspace.openDocument(node);
+    },
+    [workspace],
+  );
+
+  const handleCreateDocument = React.useCallback(
+    async (parentPath = '') => {
+      const created = await workspace.createDocument(parentPath);
+
+      if (created) {
+        setDocumentEditorLayout((current) =>
+          openDocumentInGroup(current, created),
+        );
+      }
+
+      return created;
+    },
+    [workspace],
+  );
+
+  const openActiveDocumentForLayout = React.useCallback(
+    (layout: DocumentEditorLayout) => {
+      const activeTab = getActiveTab(getActiveEditorGroup(layout));
+
+      if (!activeTab) {
+        workspace.clearCurrentDocument();
+        return;
+      }
+
+      if (activeTab.absolutePath === currentDocumentPath) {
+        return;
+      }
+
+      const node = findWorkspaceDocumentByPath(
+        workspace.snapshot?.nodes ?? [],
+        activeTab.absolutePath,
+      );
+
+      if (node) {
+        void workspace.openDocument(node);
+      }
+    },
+    [currentDocumentPath, workspace],
+  );
+
+  const applyDocumentEditorLayout = React.useCallback(
+    (nextLayout: DocumentEditorLayout) => {
+      setDocumentEditorLayout(nextLayout);
+      openActiveDocumentForLayout(nextLayout);
+    },
+    [openActiveDocumentForLayout],
+  );
+
+  const handleSelectDocumentTab = React.useCallback(
+    (groupId: string, tabPath: string) => {
+      applyDocumentEditorLayout(
+        selectTabInGroup(documentEditorLayout, groupId, tabPath),
+      );
+    },
+    [applyDocumentEditorLayout, documentEditorLayout],
+  );
+
+  const handleCloseDocumentTab = React.useCallback(
+    (groupId: string, tabPath: string) => {
+      applyDocumentEditorLayout(
+        closeTabInGroup(documentEditorLayout, groupId, tabPath),
+      );
+    },
+    [applyDocumentEditorLayout, documentEditorLayout],
+  );
+
+  const handleCloseOtherDocumentTabs = React.useCallback(
+    (groupId: string, tabPath: string) => {
+      applyDocumentEditorLayout(
+        closeOtherTabsInGroup(documentEditorLayout, groupId, tabPath),
+      );
+    },
+    [applyDocumentEditorLayout, documentEditorLayout],
+  );
+
+  const handleCloseAllDocumentTabs = React.useCallback(
+    (groupId: string) => {
+      applyDocumentEditorLayout(
+        closeAllTabsInGroup(documentEditorLayout, groupId),
+      );
+    },
+    [applyDocumentEditorLayout, documentEditorLayout],
+  );
+
+  const handleCloseDocumentTabsToLeft = React.useCallback(
+    (groupId: string, tabPath: string) => {
+      applyDocumentEditorLayout(
+        closeTabsToLeftInGroup(documentEditorLayout, groupId, tabPath),
+      );
+    },
+    [applyDocumentEditorLayout, documentEditorLayout],
+  );
+
+  const handleCloseDocumentTabsToRight = React.useCallback(
+    (groupId: string, tabPath: string) => {
+      applyDocumentEditorLayout(
+        closeTabsToRightInGroup(documentEditorLayout, groupId, tabPath),
+      );
+    },
+    [applyDocumentEditorLayout, documentEditorLayout],
+  );
+
+  const handleSplitDocumentTab = React.useCallback(
+    (
+      groupId: string,
+      tabPath: string,
+      direction: EditorSplitDirection,
+    ) => {
+      applyDocumentEditorLayout(
+        splitEditorGroup(documentEditorLayout, groupId, tabPath, direction),
+      );
+    },
+    [applyDocumentEditorLayout, documentEditorLayout],
+  );
+
   const openWorkspacePanel = React.useCallback(() => {
     if (leftPanelMode === 'workspace') {
       workspace.setSidebarCollapsed(!workspace.isSidebarCollapsed);
@@ -963,9 +1113,14 @@ export function WorkspaceLayout({
         </nav>
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
+            <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
             {leftPanelMode === 'workspace' ? (
-              <WorkspaceSidebar width={leftSidebarWidth} workspace={workspace} />
+              <WorkspaceSidebar
+                width={leftSidebarWidth}
+                workspace={workspace}
+                onCreateDocument={handleCreateDocument}
+                onSelectDocument={openDocumentNode}
+              />
             ) : workspace.isSidebarCollapsed ? null : (
               <div className="h-full shrink-0" style={{ width: leftSidebarWidth }}>
                 <GitPanel
@@ -1015,6 +1170,29 @@ export function WorkspaceLayout({
                   isLoading={gitLoading && Boolean(gitSelectedPath)}
                   label={gitDiffLabel}
                 />
+              ) : workspace.currentDocument ||
+                (!workspace.currentDirectory && hasOpenDocumentTabs) ? (
+                <DocumentEditorSurface
+                  currentDocumentPath={currentDocumentPath}
+                  documentEditorLayout={documentEditorLayout}
+                  documentLoadError={workspace.documentLoadError}
+                  documentLoadState={workspace.documentLoadState}
+                  documentVersion={workspace.documentVersion}
+                  draftMarkdown={workspace.draftDocument?.markdown ?? null}
+                  pageWidthMode={pageWidthMode}
+                  workspaceRootPath={workspace.snapshot?.rootPath ?? null}
+                  onCloseAllTabs={handleCloseAllDocumentTabs}
+                  onCloseOtherTabs={handleCloseOtherDocumentTabs}
+                  onCloseTab={handleCloseDocumentTab}
+                  onCloseTabsToLeft={handleCloseDocumentTabsToLeft}
+                  onCloseTabsToRight={handleCloseDocumentTabsToRight}
+                  onMarkdownChange={workspace.updateMarkdown}
+                  onRetryDocument={workspace.retryCurrentDocument}
+                  onSaveRequested={() => void workspace.saveCurrentDocumentNow()}
+                  onSelectTab={handleSelectDocumentTab}
+                  onSplitTab={handleSplitDocumentTab}
+                  onTocSnapshotChange={handleTocSnapshotChange}
+                />
               ) : (
                 <EditorPane
                   currentDirectory={workspace.currentDirectory}
@@ -1025,7 +1203,7 @@ export function WorkspaceLayout({
                         key={workspace.currentDirectory.absolutePath}
                         directory={workspace.currentDirectory}
                         workspaceRootPath={workspace.snapshot?.rootPath ?? ''}
-                        onOpenDocument={(node) => void workspace.openDocument(node)}
+                        onOpenDocument={openDocumentNode}
                         onSelectDirectory={(node) =>
                           void workspace.selectDirectory(node)
                         }
@@ -1037,28 +1215,14 @@ export function WorkspaceLayout({
                   hasWorkspace={workspace.snapshot !== null}
                   isWorkspaceEmpty={isWorkspaceEmpty}
                   onCreateDirectory={() => void workspace.createDirectory('')}
-                  onCreateDocument={() => void workspace.createDocument('')}
+                  onCreateDocument={() => void handleCreateDocument('')}
                   onImportMarkdown={() =>
                     void workspace.importMarkdownDocuments('')
                   }
                   onOpenWorkspace={workspace.openWorkspace}
                   onRetryDocument={workspace.retryCurrentDocument}
                 >
-                  {workspace.currentDocument &&
-                  workspace.draftDocument &&
-                  workspace.documentLoadState === 'loaded' ? (
-                    <MarkdownEditor
-                      documentKey={`${workspace.documentVersion}`}
-                      pageWidthMode={pageWidthMode}
-                      markdown={workspace.draftDocument.markdown}
-                      workspaceRootPath={workspace.snapshot?.rootPath ?? null}
-                      onSaveRequested={() =>
-                        void workspace.saveCurrentDocumentNow()
-                      }
-                      onTocSnapshotChange={handleTocSnapshotChange}
-                      onMarkdownChange={workspace.updateMarkdown}
-                    />
-                  ) : null}
+                  {null}
                 </EditorPane>
               )}
             </section>
@@ -1268,6 +1432,219 @@ function WindowsTitlebarControls() {
   );
 }
 
+function DocumentEditorSurface({
+  currentDocumentPath,
+  documentEditorLayout,
+  documentLoadError,
+  documentLoadState,
+  documentVersion,
+  draftMarkdown,
+  pageWidthMode,
+  workspaceRootPath,
+  onCloseAllTabs,
+  onCloseOtherTabs,
+  onCloseTab,
+  onCloseTabsToLeft,
+  onCloseTabsToRight,
+  onMarkdownChange,
+  onRetryDocument,
+  onSaveRequested,
+  onSelectTab,
+  onSplitTab,
+  onTocSnapshotChange,
+}: {
+  currentDocumentPath: string | null;
+  documentEditorLayout: DocumentEditorLayout;
+  documentLoadError: string | null;
+  documentLoadState: DocumentLoadState;
+  documentVersion: number;
+  draftMarkdown: string | null;
+  pageWidthMode: PageWidthMode;
+  workspaceRootPath: string | null;
+  onCloseAllTabs: (groupId: string) => void;
+  onCloseOtherTabs: (groupId: string, tabPath: string) => void;
+  onCloseTab: (groupId: string, tabPath: string) => void;
+  onCloseTabsToLeft: (groupId: string, tabPath: string) => void;
+  onCloseTabsToRight: (groupId: string, tabPath: string) => void;
+  onMarkdownChange: (markdown: string) => void;
+  onRetryDocument: () => void;
+  onSaveRequested: () => void;
+  onSelectTab: (groupId: string, tabPath: string) => void;
+  onSplitTab: (
+    groupId: string,
+    tabPath: string,
+    direction: EditorSplitDirection,
+  ) => void;
+  onTocSnapshotChange: (snapshot: DocumentTocSnapshot) => void;
+}) {
+  const splitClassName =
+    documentEditorLayout.orientation === 'vertical' ? 'flex-col' : 'flex-row';
+
+  return (
+    <div
+      className={cn('flex h-full min-h-0 min-w-0', splitClassName)}
+      data-testid="document-editor-surface"
+    >
+      {documentEditorLayout.groups.map((group, index) => {
+        const activeTab = getActiveTab(group);
+        const isActiveGroup = group.id === documentEditorLayout.activeGroupId;
+        const shouldRenderEditor =
+          isActiveGroup && activeTab?.absolutePath === currentDocumentPath;
+
+        return (
+          <div
+            className={cn(
+              'flex min-h-0 min-w-0 flex-1 flex-col bg-background',
+              documentEditorLayout.orientation === 'horizontal' &&
+                index > 0 &&
+                'border-l',
+              documentEditorLayout.orientation === 'vertical' &&
+                index > 0 &&
+                'border-t',
+            )}
+            data-testid={`document-editor-group-${group.id}`}
+            key={group.id}
+          >
+            <DocumentTabBar
+              group={group}
+              onCloseAllTabs={onCloseAllTabs}
+              onCloseOtherTabs={onCloseOtherTabs}
+              onCloseTab={onCloseTab}
+              onCloseTabsToLeft={onCloseTabsToLeft}
+              onCloseTabsToRight={onCloseTabsToRight}
+              onSelectTab={onSelectTab}
+              onSplitTab={onSplitTab}
+            />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {renderDocumentEditorGroupContent({
+                activeTab,
+                currentDocumentPath,
+                documentLoadError,
+                documentLoadState,
+                documentVersion,
+                draftMarkdown,
+                groupId: group.id,
+                pageWidthMode,
+                shouldRenderEditor,
+                workspaceRootPath,
+                onMarkdownChange,
+                onRetryDocument,
+                onSaveRequested,
+                onSelectTab,
+                onTocSnapshotChange,
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderDocumentEditorGroupContent({
+  activeTab,
+  currentDocumentPath,
+  documentLoadError,
+  documentLoadState,
+  documentVersion,
+  draftMarkdown,
+  groupId,
+  pageWidthMode,
+  shouldRenderEditor,
+  workspaceRootPath,
+  onMarkdownChange,
+  onRetryDocument,
+  onSaveRequested,
+  onSelectTab,
+  onTocSnapshotChange,
+}: {
+  activeTab: ReturnType<typeof getActiveTab>;
+  currentDocumentPath: string | null;
+  documentLoadError: string | null;
+  documentLoadState: DocumentLoadState;
+  documentVersion: number;
+  draftMarkdown: string | null;
+  groupId: string;
+  pageWidthMode: PageWidthMode;
+  shouldRenderEditor: boolean;
+  workspaceRootPath: string | null;
+  onMarkdownChange: (markdown: string) => void;
+  onRetryDocument: () => void;
+  onSaveRequested: () => void;
+  onSelectTab: (groupId: string, tabPath: string) => void;
+  onTocSnapshotChange: (snapshot: DocumentTocSnapshot) => void;
+}) {
+  if (!activeTab) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        没有打开的标签页
+      </div>
+    );
+  }
+
+  if (!shouldRenderEditor) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-center">
+        <button
+          className="max-w-xs truncate rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          type="button"
+          onClick={() => onSelectTab(groupId, activeTab.absolutePath)}
+        >
+          打开 {activeTab.title}
+        </button>
+      </div>
+    );
+  }
+
+  if (documentLoadState === 'loading') {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        正在打开文档...
+      </div>
+    );
+  }
+
+  if (documentLoadState === 'error') {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-center">
+        <div className="max-w-sm space-y-3">
+          <h1 className="text-xl font-semibold">无法打开文档</h1>
+          <p className="text-sm text-muted-foreground">
+            {documentLoadError ?? '无法读取文档内容'}
+          </p>
+          <button
+            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+            type="button"
+            onClick={onRetryDocument}
+          >
+            重试
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    documentLoadState !== 'loaded' ||
+    draftMarkdown === null ||
+    activeTab.absolutePath !== currentDocumentPath
+  ) {
+    return null;
+  }
+
+  return (
+    <MarkdownEditor
+      documentKey={`${documentVersion}`}
+      markdown={draftMarkdown}
+      pageWidthMode={pageWidthMode}
+      workspaceRootPath={workspaceRootPath}
+      onMarkdownChange={onMarkdownChange}
+      onSaveRequested={onSaveRequested}
+      onTocSnapshotChange={onTocSnapshotChange}
+    />
+  );
+}
+
 function WorkspaceHorizontalResizeHandle({
   'aria-label': ariaLabel,
   max,
@@ -1421,6 +1798,30 @@ function subscribeStoredPanelWidth(
 
 function clampPanelWidth(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function findWorkspaceDocumentByPath(
+  nodes: WorkspaceNode[],
+  absolutePath: string,
+): WorkspaceNode | null {
+  for (const node of nodes) {
+    if (node.absolutePath === absolutePath && node.kind === 'document') {
+      return node;
+    }
+
+    if (node.kind === 'directory') {
+      const child = findWorkspaceDocumentByPath(
+        node.children ?? [],
+        absolutePath,
+      );
+
+      if (child) {
+        return child;
+      }
+    }
+  }
+
+  return null;
 }
 
 function readStoredPanelWidth(
