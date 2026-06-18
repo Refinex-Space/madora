@@ -126,7 +126,7 @@ const WORKSPACE_PANEL_WIDTH_STORAGE_KEYS = {
 const DEFAULT_APP_SETTINGS: AppSettings = {
   schemaVersion: 1,
   storage: { defaultProvider: 'local' },
-  appearance: { pageWidthMode: 'standard' },
+  appearance: { pageWidthMode: 'wide' },
 };
 
 export function WorkspaceLayout({

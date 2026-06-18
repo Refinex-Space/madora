@@ -318,12 +318,12 @@ describe('WorkspaceLayout', () => {
     readAppSettingsMock.mockResolvedValue({
       schemaVersion: 1,
       storage: { defaultProvider: 'local' },
-      appearance: { pageWidthMode: 'standard' },
+      appearance: { pageWidthMode: 'wide' },
     });
     saveAppSettingsMock.mockResolvedValue({
       schemaVersion: 1,
       storage: { defaultProvider: 'local' },
-      appearance: { pageWidthMode: 'standard' },
+      appearance: { pageWidthMode: 'wide' },
     });
   });
 
@@ -901,7 +901,7 @@ describe('WorkspaceLayout', () => {
     expect(saveAppSettingsMock).toHaveBeenCalledWith({
       schemaVersion: 1,
       storage: { defaultProvider: 'local' },
-      appearance: { pageWidthMode: 'standard' },
+      appearance: { pageWidthMode: 'wide' },
     });
   });
 
@@ -940,7 +940,7 @@ describe('WorkspaceLayout', () => {
     expect(setThemeMock).toHaveBeenCalledWith('dark');
   });
 
-  it('passes persisted page width mode to the workspace editor', async () => {
+  it('passes default wide page width mode to the workspace editor', async () => {
     const user = userEvent.setup();
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
       configurable: true,
@@ -984,7 +984,7 @@ describe('WorkspaceLayout', () => {
       (await screen.findByTestId('markdown-editor')).getAttribute(
         'data-page-width-mode',
       ),
-    ).toBe('standard');
+    ).toBe('wide');
 
     await user.click(screen.getByRole('button', { name: '打开设置菜单' }));
     await user.click(screen.getByText('设置...'));

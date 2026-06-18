@@ -7,6 +7,7 @@ import CodeMirror, {
   type Extension,
   type ReactCodeMirrorRef,
 } from '@uiw/react-codemirror';
+import { EditorView } from '@codemirror/view';
 import { githubDark, githubLight } from '@uiw/codemirror-theme-github';
 import {
   markora,
@@ -37,7 +38,7 @@ interface MarkdownEditorProps {
 export function MarkdownEditor({
   documentKey,
   markdown,
-  pageWidthMode = 'standard',
+  pageWidthMode = 'wide',
   onSaveRequested,
   onTocSnapshotChange,
   onMarkdownChange,
@@ -53,6 +54,21 @@ export function MarkdownEditor({
   const cmTheme = isDark ? githubDark : githubLight;
   const markoraTheme = isDark ? ThemeEnum.DARK : ThemeEnum.LIGHT;
   const uploader = useWorkspaceAssetUploader(workspaceRootPath ?? null);
+  const pageWidthExtensions = React.useMemo<Extension[]>(() => {
+    const contentMaxWidth = pageWidthMode === 'wide' ? 'none' : '48rem';
+
+    return [
+      EditorView.theme({
+        '&.cm-markora .cm-content': {
+          maxWidth: contentMaxWidth,
+          width: '100%',
+        },
+      }),
+      EditorView.contentAttributes.of({
+        style: `max-width: ${contentMaxWidth}; width: 100%;`,
+      }),
+    ];
+  }, [pageWidthMode]);
 
   // markora 的 onTocChange 会推带 active 字段的 items；
   // 用 state 存储，effect 负责发布 DocumentTocSnapshot 给右侧 TOC 面板。
@@ -81,6 +97,7 @@ export function MarkdownEditor({
         locale: 'zh-CN',
         baseStyles: true,
         plugins: allPlugins,
+        extensions: pageWidthExtensions,
         disableViewPlugin: false,
         defaultKeybindings: true,
         history: true,
@@ -107,7 +124,7 @@ export function MarkdownEditor({
           onTocChange: setTocItems,
         },
       }),
-    [markoraTheme, uploader],
+    [markoraTheme, pageWidthExtensions, uploader],
   );
 
   const maxWidthClass =
@@ -119,7 +136,8 @@ export function MarkdownEditor({
       rootPath={workspaceRootPath ?? null}
     >
       <div
-        className="relative flex h-full min-h-0 flex-col"
+        className={`workspace-editor-page-${pageWidthMode} relative flex h-full min-h-0 flex-col`}
+        data-page-width-mode={pageWidthMode}
         data-testid="markdown-editor-root"
         key={documentKey}
         onKeyDown={(event) => {
