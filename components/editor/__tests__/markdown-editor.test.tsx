@@ -133,7 +133,7 @@ describe('MarkdownEditor', () => {
     ).toBe('wide');
   });
 
-  it('渲染 wide 页宽模式添加 Codex 风格宽屏正文容器', () => {
+  it('渲染 wide 页宽模式不再添加外层限宽容器', () => {
     render(
       <MarkdownEditor
         documentKey="doc-1"
@@ -142,11 +142,14 @@ describe('MarkdownEditor', () => {
         onMarkdownChange={() => {}}
       />,
     );
-    const wideWrapper = document.querySelector('.max-w-\\[88rem\\]');
-    expect(wideWrapper).toBeTruthy();
+    // 重构后限宽下沉到 markora 内容层，外层不再有 max-w-* wrapper。
+    expect(document.querySelector('.max-w-\\[88rem\\]')).toBeNull();
+    expect(
+      screen.getByTestId('markdown-editor-root').className,
+    ).toContain('workspace-editor-page-wide');
   });
 
-  it('去除文档面板顶部、右侧和底部内边距，只保留左侧阅读留白', () => {
+  it('编辑器外壳不再使用外层滚动容器与限宽内层', () => {
     render(
       <MarkdownEditor
         documentKey="doc-1"
@@ -156,16 +159,10 @@ describe('MarkdownEditor', () => {
       />,
     );
 
-    const documentWrapper = document.querySelector(
-      '.workspace-editor-scrollarea > div',
-    );
-
-    expect(documentWrapper?.className).toContain('pl-10');
-    expect(documentWrapper?.className).toContain('pt-0');
-    expect(documentWrapper?.className).toContain('pr-0');
-    expect(documentWrapper?.className).toContain('pb-0');
-    expect(documentWrapper?.className).not.toContain('px-10');
-    expect(documentWrapper?.className).not.toContain('py-10');
+    // 重构后 CodeMirror 自身负责滚动，外层 scrollarea + mx-auto 限宽层已移除。
+    expect(
+      document.querySelector('.workspace-editor-scrollarea'),
+    ).toBeNull();
   });
 
   it('渲染 wide 页宽模式标记 markora 内容层可全宽', () => {
@@ -183,7 +180,7 @@ describe('MarkdownEditor', () => {
     );
   });
 
-  it('wide 页宽模式通过 markora extension 覆盖正文宽度', () => {
+  it('wide 页宽模式启用内置目录且不限宽', () => {
     render(
       <MarkdownEditor
         documentKey="doc-1"
@@ -193,14 +190,16 @@ describe('MarkdownEditor', () => {
       />,
     );
 
-    expect(markoraMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        extensions: expect.arrayContaining([expect.anything()]),
-      }),
-    );
+    const config = markoraMock.mock.calls.at(-1)?.[0];
+    expect(config.toc).toEqual({
+      enabled: true,
+      storageKey: 'refinex-wiki:toc',
+    });
+    // wide 模式不下沉限宽，extensions 为空数组。
+    expect(config.extensions).toEqual([]);
   });
 
-  it('standard 页宽模式使用更宽的正文宽度', () => {
+  it('standard 页宽模式通过 markora extension 下沉限宽', () => {
     render(
       <MarkdownEditor
         documentKey="doc-1"
@@ -210,11 +209,12 @@ describe('MarkdownEditor', () => {
       />,
     );
 
+    // 重构后限宽下沉到 .cm-content，外层不再有 max-w-[64rem] 容器。
     expect(
-      Array.from(document.querySelectorAll('div')).some((element) =>
-        element.className.includes('max-w-[64rem]'),
-      ),
-    ).toBe(true);
+      document.querySelector('.max-w-\\[64rem\\]'),
+    ).toBeNull();
+    const config = markoraMock.mock.calls.at(-1)?.[0];
+    expect(config.extensions.length).toBeGreaterThan(0);
   });
 
   it('standard 页宽模式通过 markora extension 避免内层滚动条', () => {

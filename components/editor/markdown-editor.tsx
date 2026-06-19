@@ -9,18 +9,9 @@ import CodeMirror, {
 } from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
 import { githubDark, githubLight } from '@uiw/codemirror-theme-github';
-import {
-  markora,
-  ThemeEnum,
-  type MarkoraTocItem,
-} from '@refinex/markora/editor';
+import { markora, ThemeEnum } from '@refinex/markora/editor';
 import { allPlugins } from '@refinex/markora/plugins';
 
-import {
-  buildTocSnapshot,
-  scrollToHeadingIn,
-  type DocumentTocSnapshot,
-} from '@/components/editor/markdown-toc';
 import {
   parseFrontmatter,
   serializeFrontmatter,
@@ -34,7 +25,6 @@ interface MarkdownEditorProps {
   markdown: string;
   pageWidthMode?: PageWidthMode;
   onSaveRequested?: () => void;
-  onTocSnapshotChange?: (snapshot: DocumentTocSnapshot) => void;
   onMarkdownChange?: (markdown: string) => void;
   workspaceRootPath?: string | null;
 }
@@ -46,15 +36,11 @@ export function MarkdownEditor({
   markdown,
   pageWidthMode = 'wide',
   onSaveRequested,
-  onTocSnapshotChange,
   onMarkdownChange,
   workspaceRootPath = null,
 }: MarkdownEditorProps) {
   const { resolvedTheme } = useTheme();
   const editorRef = React.useRef<ReactCodeMirrorRef>(null);
-  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
-  const [tocItems, setTocItems] = React.useState<MarkoraTocItem[]>([]);
-  const [activeTocId, setActiveTocId] = React.useState<string | null>(null);
   const [backToTopVisible, setBackToTopVisible] = React.useState(false);
 
   const isDark = resolvedTheme === 'dark';
@@ -82,66 +68,21 @@ export function MarkdownEditor({
     };
   }, [markdown]);
   const pageWidthExtensions = React.useMemo<Extension[]>(() => {
-    const contentMaxWidth =
-      pageWidthMode === 'wide' ? 'none' : STANDARD_PAGE_WIDTH;
+    if (pageWidthMode === 'wide') {
+      return [];
+    }
 
     return [
       EditorView.theme({
-        '&.cm-markora .cm-scroller': {
-          overflow: 'visible !important',
-        },
+        // 限宽下沉到内容区并居中；.cm-markora 撑满，内置 TOC 浮层贴卡片右侧。
         '&.cm-markora .cm-content': {
-          maxWidth: contentMaxWidth,
+          maxWidth: STANDARD_PAGE_WIDTH,
           width: '100%',
+          marginInline: 'auto',
         },
-      }),
-      EditorView.contentAttributes.of({
-        style: `max-width: ${contentMaxWidth}; width: 100%;`,
       }),
     ];
   }, [pageWidthMode]);
-
-  const handleTocChange = React.useCallback((items: MarkoraTocItem[]) => {
-    setTocItems(items);
-
-    const markoraActiveId = items.find((item) => item.active)?.id ?? null;
-    setActiveTocId((currentActiveId) => {
-      if (markoraActiveId) {
-        return markoraActiveId;
-      }
-
-      if (
-        currentActiveId &&
-        items.some((item) => item.id === currentActiveId)
-      ) {
-        return currentActiveId;
-      }
-
-      return null;
-    });
-  }, []);
-
-  // markora 的 onTocChange 会推带 active 字段的 items；
-  // 用 state 存储，effect 负责发布 DocumentTocSnapshot 给右侧 TOC 面板。
-  React.useEffect(() => {
-    if (!onTocSnapshotChange) {
-      return;
-    }
-
-    const snapshot = buildTocSnapshot(tocItems, activeTocId);
-    onTocSnapshotChange({
-      ...snapshot,
-      scrollToHeading: (id: string) => {
-        setActiveTocId(id);
-        scrollToHeadingIn(
-          editorRef.current?.view ?? null,
-          tocItems,
-          id,
-          scrollContainerRef.current,
-        );
-      },
-    });
-  }, [activeTocId, onTocSnapshotChange, tocItems]);
 
   const handleMarkdownChange = React.useCallback(
     (value: string) => {
@@ -163,6 +104,39 @@ export function MarkdownEditor({
     },
     [frontmatterView, onMarkdownChange],
   );
+
+  // 回到顶部按钮的可见性监听绑定到 CodeMirror scrollDOM。
+  // react-codemirror 首次渲染时 view 可能尚未就绪，用 rAF 轮询兜底。
+  React.useEffect(() => {
+    let frame = 0;
+    let cleanup: (() => void) | null = null;
+    let attempts = 0;
+
+    const attach = () => {
+      const scroller = editorRef.current?.view?.scrollDOM ?? null;
+      if (scroller) {
+        const handleScroll = () => {
+          setBackToTopVisible(scroller.scrollTop > 240);
+        };
+        scroller.addEventListener('scroll', handleScroll, { passive: true });
+        cleanup = () => scroller.removeEventListener('scroll', handleScroll);
+        return;
+      }
+
+      if (attempts++ < 30) {
+        frame = requestAnimationFrame(attach);
+      }
+    };
+
+    attach();
+
+    return () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+      }
+      cleanup?.();
+    };
+  }, []);
 
   const extensions = React.useMemo<Extension[]>(
     () =>
@@ -192,17 +166,12 @@ export function MarkdownEditor({
           },
         },
         toc: {
-          // 不渲染 markora 内置 TOC 面板，但 onTocChange 仍会触发。
-          // handleTocChange 会同步 TOC 列表与当前 active id。
-          enabled: false,
-          onTocChange: handleTocChange,
+          enabled: true,
+          storageKey: 'refinex-wiki:toc',
         },
       }),
-    [handleTocChange, markoraTheme, pageWidthExtensions, uploader],
+    [markoraTheme, pageWidthExtensions, uploader],
   );
-
-  const maxWidthClass =
-    pageWidthMode === 'wide' ? 'max-w-[88rem]' : 'max-w-[64rem]';
 
   return (
     <WorkspaceAssetProvider
@@ -224,29 +193,19 @@ export function MarkdownEditor({
           }
         }}
       >
-        <div
-          className="workspace-editor-shell workspace-editor-scrollarea min-h-0 flex-1 overflow-auto"
-          ref={scrollContainerRef}
-          onScroll={(event) =>
-            setBackToTopVisible(event.currentTarget.scrollTop > 240)
-          }
-        >
-          <div
-            className={`mx-auto w-full ${maxWidthClass} pl-10 pr-0 pt-0 pb-0 lg:pl-16`}
-          >
-            {frontmatterView.hasFrontmatter ? (
-              <FrontmatterPanel entries={frontmatterView.entries} />
-            ) : null}
-            <CodeMirror
-              ref={editorRef}
-              value={frontmatterView.body}
-              theme={cmTheme}
-              extensions={extensions}
-              basicSetup={false}
-              onChange={handleMarkdownChange}
-            />
-          </div>
-        </div>
+        {frontmatterView.hasFrontmatter ? (
+          <FrontmatterPanel entries={frontmatterView.entries} />
+        ) : null}
+        <CodeMirror
+          className="h-full w-full"
+          height="100%"
+          ref={editorRef}
+          value={frontmatterView.body}
+          theme={cmTheme}
+          extensions={extensions}
+          basicSetup={false}
+          onChange={handleMarkdownChange}
+        />
 
         {backToTopVisible ? (
           <button
@@ -254,11 +213,11 @@ export function MarkdownEditor({
             className="absolute right-4 bottom-4 z-40 flex size-8 items-center justify-center rounded-md border bg-background/95 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
             type="button"
             onClick={() => {
-              scrollContainerRef.current?.scrollTo({
-                behavior: 'smooth',
-                top: 0,
-              });
-              setBackToTopVisible(false);
+              const scroller = editorRef.current?.view?.scrollDOM ?? null;
+              if (scroller) {
+                scroller.scrollTo({ behavior: 'smooth', top: 0 });
+                setBackToTopVisible(false);
+              }
             }}
           >
             <ArrowUp size={15} />
