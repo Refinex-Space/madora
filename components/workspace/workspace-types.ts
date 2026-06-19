@@ -2,7 +2,7 @@ import type { AiProviderSettings } from './ai-provider/provider-types';
 
 export type WorkspaceNodeKind = 'directory' | 'document';
 
-export type RightPanelMode = 'ai' | 'toc' | 'meta' | null;
+export type RightPanelMode = 'ai' | 'meta' | null;
 
 export interface WorkspaceNode {
   id: string;

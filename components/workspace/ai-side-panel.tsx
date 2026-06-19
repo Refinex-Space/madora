@@ -1,10 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { Info, ListTree, Palette, Settings } from 'lucide-react';
+import { Info, Palette, Settings } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
-import type { DocumentTocSnapshot } from '@/components/editor/markdown-toc';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +19,6 @@ import {
 import { cn } from '@/lib/utils';
 
 import { DocumentMetaPanel } from './document-meta-panel';
-import { DocumentTocPanel } from './document-toc-panel';
 import { AiPanelContent } from './ai-panel/ai-panel-content';
 import { WorkspaceSettingsDialog } from './workspace-settings-dialog';
 import type {
@@ -39,7 +37,6 @@ interface RightSidePanelProps {
   documentPanelData: DocumentPanelData | null;
   mode: RightPanelMode;
   settingsVersion: number;
-  tocSnapshot: DocumentTocSnapshot | null;
   width: number;
   workspaceRootPath: string | null;
   onOpenSettings: () => void;
@@ -63,7 +60,6 @@ export function RightSidePanel({
   documentPanelData,
   mode,
   settingsVersion,
-  tocSnapshot,
   width,
   workspaceRootPath,
   onOpenSettings,
@@ -85,11 +81,6 @@ export function RightSidePanel({
           settingsVersion={settingsVersion}
           workspaceRootPath={workspaceRootPath}
           onOpenSettings={onOpenSettings}
-        />
-      ) : mode === 'toc' ? (
-        <DocumentTocPanel
-          currentDocument={currentDocument}
-          snapshot={tocSnapshot}
         />
       ) : (
         <DocumentMetaPanel
@@ -143,16 +134,6 @@ export function RightToolRail({
             mask: "url('/icons/ai-panel.svg') center / contain no-repeat",
           }}
         />
-      </button>
-
-      <button
-        aria-label={mode === 'toc' ? '折叠目录面板' : '展开目录面板'}
-        className={rightToolButtonClassName(mode === 'toc')}
-        data-testid="toc-panel-icon-button"
-        type="button"
-        onClick={() => onModeChange(nextMode('toc'))}
-      >
-        <ListTree size={17} />
       </button>
 
       <button
@@ -226,8 +207,6 @@ function getRightPanelTestId(mode: Exclude<RightPanelMode, null>) {
   switch (mode) {
     case 'ai':
       return 'ai-panel-island';
-    case 'toc':
-      return 'document-toc-panel';
     case 'meta':
       return 'document-meta-panel';
   }
