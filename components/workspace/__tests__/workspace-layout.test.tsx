@@ -7,6 +7,7 @@ import {
   createWorkspaceDirectory,
   createWorkspaceRoot,
   detectAiAccounts,
+  ensureWorkspace,
   gitBranches,
   gitCommit,
   gitCommitFileDiff,
@@ -30,6 +31,8 @@ import {
   readAppSettings,
   readMarkdownDocument,
   readWorkspaceAssetData,
+  recordRecentDocument,
+  recordWorkspaceHistory,
   resolveWorkspaceAsset,
   saveAppSettings,
   selectWorkspaceAssetDownloadPath,
@@ -108,6 +111,7 @@ vi.mock('../workspace-api', async (importOriginal) => {
     createWorkspaceDirectory: vi.fn(),
     createWorkspaceRoot: vi.fn(),
     detectAiAccounts: vi.fn(),
+    ensureWorkspace: vi.fn(),
     gitBranches: vi.fn(),
     gitCommit: vi.fn(),
     gitCommitFileDiff: vi.fn(),
@@ -130,6 +134,7 @@ vi.mock('../workspace-api', async (importOriginal) => {
     loadWorkspaceTree: vi.fn(),
     readMarkdownDocument: vi.fn(),
     readWorkspaceAssetData: vi.fn(),
+    recordRecentDocument: vi.fn(),
     resolveWorkspaceAsset: vi.fn(),
     readAppSettings: vi.fn(),
     saveAppSettings: vi.fn(),
@@ -155,6 +160,7 @@ const createMarkdownDocumentMock = vi.mocked(createMarkdownDocument);
 const createWorkspaceDirectoryMock = vi.mocked(createWorkspaceDirectory);
 const createWorkspaceRootMock = vi.mocked(createWorkspaceRoot);
 const detectAiAccountsMock = vi.mocked(detectAiAccounts);
+const ensureWorkspaceMock = vi.mocked(ensureWorkspace);
 const gitBranchesMock = vi.mocked(gitBranches);
 const gitCommitMock = vi.mocked(gitCommit);
 const gitCommitFileDiffMock = vi.mocked(gitCommitFileDiff);
@@ -178,6 +184,7 @@ const loadWorkspaceTreeMock = vi.mocked(loadWorkspaceTree);
 const readAppSettingsMock = vi.mocked(readAppSettings);
 const readMarkdownDocumentMock = vi.mocked(readMarkdownDocument);
 const readWorkspaceAssetDataMock = vi.mocked(readWorkspaceAssetData);
+const recordRecentDocumentMock = vi.mocked(recordRecentDocument);
 const resolveWorkspaceAssetMock = vi.mocked(resolveWorkspaceAsset);
 const saveAppSettingsMock = vi.mocked(saveAppSettings);
 const selectWorkspaceAssetDownloadPathMock = vi.mocked(
@@ -405,6 +412,7 @@ describe('WorkspaceLayout', () => {
     createWorkspaceDirectoryMock.mockReset();
     createWorkspaceRootMock.mockReset();
     detectAiAccountsMock.mockReset();
+    ensureWorkspaceMock.mockReset();
     gitBranchesMock.mockReset();
     gitCommitMock.mockReset();
     gitCommitFileDiffMock.mockReset();
@@ -428,6 +436,7 @@ describe('WorkspaceLayout', () => {
     readAppSettingsMock.mockReset();
     readMarkdownDocumentMock.mockReset();
     readWorkspaceAssetDataMock.mockReset();
+    recordRecentDocumentMock.mockReset();
     resolveWorkspaceAssetMock.mockReset();
     saveAppSettingsMock.mockReset();
     selectWorkspaceAssetDownloadPathMock.mockReset();
@@ -473,6 +482,13 @@ describe('WorkspaceLayout', () => {
     terminalWriteMock.mockResolvedValue(undefined);
     readAppSettingsMock.mockResolvedValue(defaultAppSettings);
     saveAppSettingsMock.mockResolvedValue(defaultAppSettings);
+    ensureWorkspaceMock.mockResolvedValue({
+      schemaVersion: 1,
+      recentDocumentPaths: [],
+      expandedPaths: [],
+      sortOrder: {},
+    });
+    recordRecentDocumentMock.mockResolvedValue([]);
   });
 
   it('shows empty workspace action before selecting folder', () => {
@@ -1580,6 +1596,28 @@ describe('WorkspaceLayout', () => {
       '/repo/doc-6.md',
     );
     expect(await screen.findByTestId('markdown-editor')).toBeTruthy();
+  });
+
+  it('restores recent documents from persisted metadata on cold start', async () => {
+    // getRecentWorkspacePath 优先读 workspace history（而非裸 localStorage key）
+    recordWorkspaceHistory(manyDocumentSnapshot);
+    loadWorkspaceTreeMock.mockResolvedValue(manyDocumentSnapshot);
+    ensureWorkspaceMock.mockResolvedValue({
+      schemaVersion: 1,
+      recentDocumentPaths: ['/repo/doc-6.md', '/repo/doc-5.md'],
+      expandedPaths: [],
+      sortOrder: {},
+    });
+
+    render(<WorkspaceLayout initialSnapshot={null} />);
+
+    const recentList = await screen.findByTestId(
+      'workspace-recent-documents-list',
+    );
+
+    // metadata 的 doc-6、doc-5 被解析展示，验证初始加载 effect 生效
+    expect(within(recentList).getByText('文档 6')).toBeTruthy();
+    expect(within(recentList).getByText('文档 5')).toBeTruthy();
   });
 
   it('shows workspace guide in the top workspace entry when there is no history', async () => {

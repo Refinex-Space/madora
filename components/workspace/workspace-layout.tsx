@@ -73,6 +73,7 @@ import {
   listenTerminalExit,
   closeAppWindow,
   readAppSettings,
+  recordRecentDocument,
   readMarkdownDocument,
   minimizeAppWindow,
   setAppWindowTitle,
@@ -178,6 +179,14 @@ const GLOBAL_SEARCH_READ_CONCURRENCY = 6;
 const DOUBLE_SHIFT_THRESHOLD_MS = 450;
 const RECENT_DOCUMENT_LIMIT = 5;
 
+function toRecentDocument(node: WorkspaceNode): RecentWorkspaceDocument {
+  return {
+    absolutePath: node.absolutePath,
+    relativePath: node.relativePath || node.name,
+    title: node.title || node.name.replace(/\.(md|mdx)$/i, ''),
+  };
+}
+
 export function WorkspaceLayout({
   initialSnapshot = null,
 }: WorkspaceLayoutProps) {
@@ -273,6 +282,39 @@ export function WorkspaceLayout({
       ),
     [recentDocuments, workspace.snapshot?.nodes],
   );
+  React.useEffect(() => {
+    if (
+      !workspace.initialRecentDocumentPaths.length ||
+      !workspace.snapshot
+    ) {
+      return;
+    }
+
+    const docs = workspace.initialRecentDocumentPaths
+      .map((path) =>
+        findWorkspaceDocumentByPath(workspace.snapshot!.nodes, path),
+      )
+      .filter((node): node is WorkspaceNode => node?.kind === 'document')
+      .map(toRecentDocument);
+
+    if (docs.length === 0) {
+      return;
+    }
+
+    // 用微任务延迟 setState，避免 effect 内同步触发级联渲染
+    // author: refinex
+    const timer = window.setTimeout(() => {
+      setRecentDocuments((current) => {
+        // 合并：初始列表在前，补充本次会话内新打开但未持久化的条目
+        const seen = new Set(docs.map((doc) => doc.absolutePath));
+        const extras = current.filter((doc) => !seen.has(doc.absolutePath));
+
+        return [...docs, ...extras].slice(0, RECENT_DOCUMENT_LIMIT);
+      });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [workspace.initialRecentDocumentPaths, workspace.snapshot]);
   const isWorkspaceEmpty =
     workspace.snapshot !== null && workspace.snapshot.nodes.length === 0;
   const documentCharacterCount = React.useMemo(
@@ -1054,22 +1096,31 @@ export function WorkspaceLayout({
     workspaceRootPath,
   ]);
 
-  const rememberRecentDocument = React.useCallback((node: WorkspaceNode) => {
-    if (node.kind !== 'document') {
-      return;
-    }
+  const rememberRecentDocument = React.useCallback(
+    (node: WorkspaceNode) => {
+      if (node.kind !== 'document') {
+        return;
+      }
 
-    const entry: RecentWorkspaceDocument = {
-      absolutePath: node.absolutePath,
-      relativePath: node.relativePath || node.name,
-      title: node.title || node.name.replace(/\.(md|mdx)$/i, ''),
-    };
+      const entry = toRecentDocument(node);
 
-    setRecentDocuments((current) => [
-      entry,
-      ...current.filter((item) => item.absolutePath !== entry.absolutePath),
-    ].slice(0, RECENT_DOCUMENT_LIMIT));
-  }, []);
+      setRecentDocuments((current) => [
+        entry,
+        ...current.filter((item) => item.absolutePath !== entry.absolutePath),
+      ].slice(0, RECENT_DOCUMENT_LIMIT));
+
+      if (isTauriRuntime && workspaceRootPath) {
+        void recordRecentDocument(workspaceRootPath, node.absolutePath).catch(
+          (error) => {
+            // 持久化失败不阻断打开流程，仅记录
+            // author: refinex
+            console.warn('记录最近文档失败', error);
+          },
+        );
+      }
+    },
+    [isTauriRuntime, workspaceRootPath],
+  );
 
   const rememberRecentDocumentByPath = React.useCallback(
     (documentPath: string) => {
