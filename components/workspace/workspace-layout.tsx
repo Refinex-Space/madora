@@ -1961,8 +1961,9 @@ function WorkspaceMainHeader({
 }) {
   return (
     <header
-      className="relative flex h-11 shrink-0 items-center gap-1 border-b border-border/70 px-3"
+      className="relative flex h-11 shrink-0 items-center gap-1 px-3"
       data-tauri-drag-region="deep"
+      data-testid="workspace-main-header"
     >
       <button
         aria-label="搜索文档"

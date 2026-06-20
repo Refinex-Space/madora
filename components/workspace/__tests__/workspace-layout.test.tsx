@@ -1997,6 +1997,9 @@ describe('WorkspaceLayout', () => {
 
     expect(screen.queryByTestId('workspace-titlebar')).toBeNull();
     expect(screen.queryByTestId('windows-titlebar-controls')).toBeNull();
+    expect(screen.getByTestId('workspace-main-header').className).not.toContain(
+      'border-b',
+    );
     expect(screen.queryByText('未选择文档')).toBeNull();
     expect(screen.getByPlaceholderText('搜索')).toBeTruthy();
   });
