@@ -1517,11 +1517,15 @@ export function WorkspaceLayout({
               />
             )}
 
-            <section
-              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-background shadow-[0_1px_3px_rgba(15,23,42,0.05),0_18px_42px_-28px_rgba(15,23,42,0.45)]"
-              data-chrome="codex-main-surface"
-              data-testid="workspace-editor-block"
+            <div
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+              data-testid="workspace-editor-column"
             >
+              <section
+                className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-background shadow-[0_1px_3px_rgba(15,23,42,0.05),0_18px_42px_-28px_rgba(15,23,42,0.45)]"
+                data-chrome="codex-main-surface"
+                data-testid="workspace-editor-block"
+              >
               <WorkspaceMainHeader
                 gitLogOpen={gitLogOpen}
                 leftPanelMode={leftPanelMode}
@@ -1651,85 +1655,86 @@ export function WorkspaceLayout({
                   workspace.documentLoadState === 'loaded'
                 }
               />
-            </section>
-          {gitLogOpen ? (
-            <WorkspaceHorizontalResizeHandle
-              aria-label="调整 Git 日志高度"
-              max={GIT_LOG_HEIGHT.max}
-              min={GIT_LOG_HEIGHT.min}
-              value={gitLogHeight}
-              onResize={setGitLogHeight}
-            />
-          ) : null}
-          {terminalOpen ? (
-            <WorkspaceHorizontalResizeHandle
-              aria-label="调整终端高度"
-              max={GIT_LOG_HEIGHT.max}
-              min={GIT_LOG_HEIGHT.min}
-              value={terminalHeight}
-              onResize={setTerminalHeight}
-            />
-          ) : null}
-          <GitLogDrawer
-            branches={gitLogBranches}
-            branchWidth={gitLogBranchWidth}
-            commits={gitLogCommits}
-            detailsHeight={gitLogDetailHeight}
-            detailsWidth={gitLogDetailWidth}
-            error={gitLogError}
-            files={gitLogFiles}
-            height={gitLogHeight}
-            isLoading={gitLogLoading}
-            open={gitLogOpen}
-            selectedCommitHash={gitLogSelectedHash}
-            onClose={() => setBottomPanelMode(null)}
-            onRefresh={refreshGitLog}
-            onResizeBranchWidth={setGitLogBranchWidth}
-            onResizeDetailsHeight={setGitLogDetailHeight}
-            onResizeDetailsWidth={setGitLogDetailWidth}
-            onSelectCommit={(hash) => void loadGitLogCommitFiles(hash)}
-            onSelectFile={(file) => void handleGitLogSelectFile(file)}
-          />
-          {shouldRenderTerminalPanel ? (
-            <div
-              className={cn(
-                'min-h-0 shrink-0',
-                !terminalOpen && 'hidden',
-              )}
-            >
-              <TerminalPanel
-                activeTabId={terminalActiveTabId}
-                error={terminalError}
-                height={terminalHeight}
-                isTauriRuntime={isTauriRuntime}
-                rootPath={workspaceRootPath}
-                tabs={terminalTabs}
+              </section>
+              {gitLogOpen ? (
+                <WorkspaceHorizontalResizeHandle
+                  aria-label="调整 Git 日志高度"
+                  max={GIT_LOG_HEIGHT.max}
+                  min={GIT_LOG_HEIGHT.min}
+                  value={gitLogHeight}
+                  onResize={setGitLogHeight}
+                />
+              ) : null}
+              {terminalOpen ? (
+                <WorkspaceHorizontalResizeHandle
+                  aria-label="调整终端高度"
+                  max={GIT_LOG_HEIGHT.max}
+                  min={GIT_LOG_HEIGHT.min}
+                  value={terminalHeight}
+                  onResize={setTerminalHeight}
+                />
+              ) : null}
+              <GitLogDrawer
+                branches={gitLogBranches}
+                branchWidth={gitLogBranchWidth}
+                commits={gitLogCommits}
+                detailsHeight={gitLogDetailHeight}
+                detailsWidth={gitLogDetailWidth}
+                error={gitLogError}
+                files={gitLogFiles}
+                height={gitLogHeight}
+                isLoading={gitLogLoading}
+                open={gitLogOpen}
+                selectedCommitHash={gitLogSelectedHash}
                 onClose={() => setBottomPanelMode(null)}
-                onCloseTab={handleTerminalCloseTab}
-                onNewTab={() => void createTerminalTab()}
-                onSelectTab={setTerminalActiveTabId}
-              >
-                {terminalTabs.map((tab) => (
-                  <div
-                    className={cn(
-                      'h-full min-h-0',
-                      tab.id !== terminalActiveTabId && 'hidden',
-                    )}
-                    key={tab.id}
+                onRefresh={refreshGitLog}
+                onResizeBranchWidth={setGitLogBranchWidth}
+                onResizeDetailsHeight={setGitLogDetailHeight}
+                onResizeDetailsWidth={setGitLogDetailWidth}
+                onSelectCommit={(hash) => void loadGitLogCommitFiles(hash)}
+                onSelectFile={(file) => void handleGitLogSelectFile(file)}
+              />
+              {shouldRenderTerminalPanel ? (
+                <div
+                  className={cn(
+                    'min-h-0 w-full min-w-0 max-w-full shrink-0 overflow-hidden',
+                    !terminalOpen && 'hidden',
+                  )}
+                >
+                  <TerminalPanel
+                    activeTabId={terminalActiveTabId}
+                    error={terminalError}
+                    height={terminalHeight}
+                    isTauriRuntime={isTauriRuntime}
+                    rootPath={workspaceRootPath}
+                    tabs={terminalTabs}
+                    onClose={() => setBottomPanelMode(null)}
+                    onCloseTab={handleTerminalCloseTab}
+                    onNewTab={() => void createTerminalTab()}
+                    onSelectTab={setTerminalActiveTabId}
                   >
-                    <XtermTerminal
-                      isActive={terminalOpen && tab.id === terminalActiveTabId}
-                      output={terminalOutputs[tab.id] ?? ''}
-                      sessionId={tab.id}
-                      themeMode={terminalThemeMode}
-                      onData={handleTerminalData}
-                      onResize={handleTerminalResize}
-                    />
-                  </div>
-                ))}
-              </TerminalPanel>
+                    {terminalTabs.map((tab) => (
+                      <div
+                        className={cn(
+                          'h-full min-h-0',
+                          tab.id !== terminalActiveTabId && 'hidden',
+                        )}
+                        key={tab.id}
+                      >
+                        <XtermTerminal
+                          isActive={terminalOpen && tab.id === terminalActiveTabId}
+                          output={terminalOutputs[tab.id] ?? ''}
+                          sessionId={tab.id}
+                          themeMode={terminalThemeMode}
+                          onData={handleTerminalData}
+                          onResize={handleTerminalResize}
+                        />
+                      </div>
+                    ))}
+                  </TerminalPanel>
+                </div>
+              ) : null}
             </div>
-          ) : null}
         </div>
       </div>
     </main>

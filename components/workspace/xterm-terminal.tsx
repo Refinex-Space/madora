@@ -125,7 +125,7 @@ export function XtermTerminal({
 
   return (
     <div
-      className="terminal-surface h-full min-h-0 bg-background px-3 py-2"
+      className="terminal-surface h-full min-h-0 w-full min-w-0 max-w-full overflow-hidden bg-background px-3 py-2"
       data-testid={`xterm-terminal-${sessionId}`}
       ref={containerRef}
     />

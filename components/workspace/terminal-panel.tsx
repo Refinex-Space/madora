@@ -45,11 +45,11 @@ export function TerminalPanel({
 
   return (
     <section
-      className="flex shrink-0 flex-col overflow-hidden rounded-lg border bg-background shadow-sm"
+      className="flex w-full min-w-0 max-w-full shrink-0 flex-col overflow-hidden rounded-lg border bg-background shadow-sm"
       data-testid="terminal-panel"
       style={{ height }}
     >
-      <header className="flex h-10 shrink-0 items-center justify-between border-b px-3">
+      <header className="flex h-10 min-w-0 shrink-0 items-center justify-between border-b px-3">
         <div className="flex min-w-0 items-center gap-2">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <SquareTerminal size={16} />
@@ -122,7 +122,7 @@ export function TerminalPanel({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 bg-background">
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
         {!isTauriRuntime ? (
           <TerminalEmptyState text="终端仅在桌面应用中可用。" />
         ) : !rootPath ? (

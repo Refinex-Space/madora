@@ -2241,8 +2241,19 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByRole('button', { name: '打开终端' }));
 
     const terminalPanel = await screen.findByTestId('terminal-panel');
+    const editorColumn = screen.getByTestId('workspace-editor-column');
+    const editorBlock = screen.getByTestId('workspace-editor-block');
 
     expect(terminalPanel).toBeTruthy();
+    expect(editorColumn.contains(editorBlock)).toBe(true);
+    expect(editorColumn.contains(terminalPanel)).toBe(true);
+    expect(
+      editorBlock.compareDocumentPosition(terminalPanel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(terminalPanel.className).toContain('w-full');
+    expect(terminalPanel.className).toContain('min-w-0');
+    expect(terminalPanel.className).toContain('max-w-full');
     expect(within(terminalPanel).getByText('终端')).toBeTruthy();
     expect(within(terminalPanel).queryByText('repo')).toBeNull();
     expect(await screen.findByRole('tab', { name: /本地/ })).toBeTruthy();
