@@ -52,14 +52,67 @@ vi.mock('@uiw/react-codemirror', async () => {
           },
         },
       }));
+      const editorView = {
+        dispatch: dispatchMock,
+        focus: focusMock,
+        scrollDOM: {
+          addEventListener: addScrollListenerMock,
+          removeEventListener: removeScrollListenerMock,
+          scrollTo: scrollToMock,
+          scrollTop: 0,
+        },
+      };
+      const runMardoraMouseDownHandlers = (target: Element) =>
+        mardoraMock
+          .mock.calls.at(-1)?.[0]
+          ?.extensions?.some((extension: unknown) => {
+            const maybeHandlers = extension as {
+              domEventHandlers?: Record<
+                string,
+                (event: Event, view: unknown) => boolean
+              >;
+            };
+            const handler = maybeHandlers.domEventHandlers?.mousedown;
+
+            if (!handler) {
+              return false;
+            }
+
+            const event = new MouseEvent('mousedown', { bubbles: true });
+            Object.defineProperty(event, 'target', {
+              configurable: true,
+              value: target,
+            });
+
+            return handler(event, editorView);
+          }) ?? false;
+      const previewTarget = document.createElement('figure');
+      previewTarget.className =
+        'cm-mardora-image-figure cm-mardora-media-preview';
+      const resizeHandleTarget = document.createElement('span');
+      resizeHandleTarget.className =
+        'cm-mardora-image-resize-handle cm-mardora-image-resize-handle-right';
+      previewTarget.appendChild(resizeHandleTarget);
+      const handledPreviewMouseDown =
+        runMardoraMouseDownHandlers(previewTarget);
+      const handledResizeHandleMouseDown =
+        runMardoraMouseDownHandlers(resizeHandleTarget);
 
       return (
-        <textarea
-          aria-label="Markdown 正文"
-          className={`cm-editor ${className ?? ''}`}
-          value={value}
-          onChange={(event) => onChange?.(event.currentTarget.value)}
-        />
+        <div>
+          <textarea
+            aria-label="Markdown 正文"
+            className={`cm-editor ${className ?? ''}`}
+            value={value}
+            onChange={(event) => onChange?.(event.currentTarget.value)}
+          />
+          <div data-testid="mardora-preview-mousedown-handled">
+            {String(handledPreviewMouseDown)}
+          </div>
+          <div data-testid="mardora-resize-mousedown-handled">
+            {String(handledResizeHandleMouseDown)}
+          </div>
+        </div>
       );
     }),
   };
@@ -241,8 +294,8 @@ describe('MarkdownEditor', () => {
     const config = mardoraMock.mock.calls.at(-1)?.[0];
     expect(config.toc.enabled).toBe(false);
     expect(config.toc.onTocChange).toEqual(expect.any(Function));
-    // wide 模式不下沉限宽，extensions 为空数组。
-    expect(config.extensions).toEqual([]);
+    // wide 模式不下沉限宽，只保留鼠标选择稳定性保护扩展。
+    expect(config.extensions).toHaveLength(1);
   });
 
   it('渲染 Notion 风格目录横条和 hover 面板', () => {
@@ -292,6 +345,22 @@ describe('MarkdownEditor', () => {
     );
     expect(screen.getByRole('button', { name: '跳转到 构建并做 dry-run' }))
       .toBeTruthy();
+  });
+
+  it('拦截 Mardora 预览 DOM 的鼠标选择避免 CodeMirror scanTile 崩溃', () => {
+    render(
+      <MarkdownEditor
+        documentKey="doc-1"
+        markdown="![cover](refinex-asset://asset-img)"
+        pageWidthMode="wide"
+        onMarkdownChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId('mardora-preview-mousedown-handled').textContent)
+      .toBe('true');
+    expect(screen.getByTestId('mardora-resize-mousedown-handled').textContent)
+      .toBe('false');
   });
 
   it('点击自定义目录项跳转到对应标题', () => {

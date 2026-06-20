@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Madora macOS App Icon</title>
+  <desc id="desc">A macOS-style white rounded-square app icon with the complete original dark logo centered on the tile.</desc>
+
+  <defs>
+    <linearGradient id="tileFill" x1="512" y1="86" x2="512" y2="938" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.58" stop-color="#FCFCFC"/>
+      <stop offset="1" stop-color="#F3F3F3"/>
+    </linearGradient>
+
+    <linearGradient id="tileStroke" x1="512" y1="86" x2="512" y2="938" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DADADA"/>
+    </linearGradient>
+
+    <linearGradient id="markFill" x1="512" y1="292" x2="512" y2="734" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2F2F2F"/>
+      <stop offset="1" stop-color="#101010"/>
+    </linearGradient>
+
+    <filter id="tileShadow" x="-15%" y="-12%" width="130%" height="132%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="36" stdDeviation="46" flood-color="#000000" flood-opacity="0.16"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000000" flood-opacity="0.08"/>
+    </filter>
+
+    <filter id="markShadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+
+  <!-- macOS rounded-square white background -->
+  <g filter="url(#tileShadow)">
+    <rect x="88" y="86" width="848" height="848" rx="188" fill="url(#tileFill)"/>
+    <rect x="88.75" y="86.75" width="846.5" height="846.5" rx="187.25" stroke="url(#tileStroke)" stroke-width="1.5"/>
+  </g>
+
+  <!-- Complete original logo, uniformly scaled and centered.
+       Original logo viewBox: 0 0 1024 1024.
+       Original mark bbox approximately: x=138..915, y=182..831.
+       This transform keeps all three original paths visible. -->
+  <g filter="url(#markShadow)" transform="translate(154 168) scale(0.68)">
+    <g fill="url(#markFill)">
+      <path d="M138 182H333C308 188 299 221 312 255L486 674L414 828L172 267C161 241 151 212 138 182Z"/>
+      <path d="M402 182H607C581 188 573 220 587 254L750 669L674 831L437 262C426 236 417 209 402 182Z"/>
+      <path d="M769 182H915C876 212 846 252 829 307C828 262 808 218 769 182Z"/>
+    </g>
+  </g>
+</svg>

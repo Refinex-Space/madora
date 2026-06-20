@@ -36,8 +36,16 @@ export default function RootLayout({
         <div className="app-splash" aria-label="Madora is loading">
           <main className="app-splash__content">
             <Image
-              className="app-splash__logo"
+              className="app-splash__logo block dark:hidden"
               src="/brand/madora-logo-dark.svg"
+              alt=""
+              width={32}
+              height={32}
+              priority
+            />
+            <Image
+              className="app-splash__logo hidden dark:block"
+              src="/brand/madora-logo-light.svg"
               alt=""
               width={32}
               height={32}

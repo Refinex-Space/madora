@@ -77,10 +77,13 @@ describe('theme provider source contract', () => {
     const tauriIcoPath = join(process.cwd(), 'src-tauri/icons/icon.ico');
     const madoraLogoPath = join(
       process.cwd(),
-      'public/brand/madora-logo-dark.svg',
+      'public/brand/madora-logo-dark-app.svg.svg',
     );
 
-    expect(readFileSync(madoraLogoPath, 'utf8')).toContain('fill="#111111"');
+    const madoraLogoSource = readFileSync(madoraLogoPath, 'utf8');
+    expect(madoraLogoSource).toContain('macOS-style white rounded-square app icon');
+    expect(madoraLogoSource).toContain('id="tileFill"');
+    expect(madoraLogoSource).toContain('id="markFill"');
     expect(Buffer.compare(readFileSync(faviconPath), readFileSync(tauriIcoPath))).toBe(
       0,
     );

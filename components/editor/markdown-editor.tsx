@@ -36,6 +36,33 @@ interface MarkdownEditorProps {
 }
 
 const STANDARD_PAGE_WIDTH = '64rem';
+const MARDORA_MOUSE_SELECTION_GUARD_SELECTOR = '.cm-mardora-media-preview';
+const MARDORA_MOUSE_SELECTION_INTERACTIVE_SELECTOR = [
+  '.cm-mardora-media-preview-button',
+  '.cm-mardora-image-toolbar',
+  '.cm-mardora-image-resize-handle',
+].join(',');
+
+const mardoraMouseSelectionGuard = EditorView.domEventHandlers({
+  mousedown(event) {
+    const target = event.target;
+
+    if (!(target instanceof Element)) {
+      return false;
+    }
+
+    if (!target.closest(MARDORA_MOUSE_SELECTION_GUARD_SELECTOR)) {
+      return false;
+    }
+
+    if (target.closest(MARDORA_MOUSE_SELECTION_INTERACTIVE_SELECTOR)) {
+      return false;
+    }
+
+    event.preventDefault();
+    return true;
+  },
+});
 
 export function MarkdownEditor({
   documentKey,
@@ -183,7 +210,7 @@ export function MarkdownEditor({
         locale: 'zh-CN',
         baseStyles: true,
         plugins: allPlugins,
-        extensions: pageWidthExtensions,
+        extensions: [mardoraMouseSelectionGuard, ...pageWidthExtensions],
         disableViewPlugin: false,
         defaultKeybindings: true,
         history: true,

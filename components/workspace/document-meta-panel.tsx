@@ -9,10 +9,18 @@ import {
   FileAudio,
   FileImage,
   FileText,
+  Fullscreen,
   Hash,
   Image as ImageIcon,
 } from 'lucide-react';
 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 import {
@@ -278,6 +286,8 @@ function DocumentResourceList({
   const [previews, setPreviews] = React.useState<Record<string, string>>({});
   const [error, setError] = React.useState<string | null>(null);
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null);
+  const [previewResource, setPreviewResource] =
+    React.useState<ResourcePreview | null>(null);
 
   React.useEffect(() => {
     const remotePreviews = Object.fromEntries(
@@ -341,11 +351,7 @@ function DocumentResourceList({
 
   const handleDownload = React.useCallback(
     async (reference: DocumentResourceReference) => {
-      if (reference.source === 'remote') {
-        return;
-      }
-
-      if (!workspaceRootPath) {
+      if (reference.source === 'local' && !workspaceRootPath) {
         setError('打开工作区后才能下载资源。');
         return;
       }
@@ -354,7 +360,10 @@ function DocumentResourceList({
       setDownloadingId(reference.id);
 
       try {
-        const data = await readWorkspaceAssetData(workspaceRootPath, reference.id);
+        const data =
+          reference.source === 'local'
+            ? await readWorkspaceAssetData(workspaceRootPath!, reference.id)
+            : await readRemoteResourceData(reference);
         const targetPath = await selectWorkspaceAssetDownloadPath(
           data.name,
           data.mediaType,
@@ -377,36 +386,89 @@ function DocumentResourceList({
   }
 
   return (
-    <div className="space-y-2">
-      {error ? (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      ) : null}
+    <>
+      <div className="space-y-2">
+        {error ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {error}
+          </div>
+        ) : null}
 
-      {references.map((reference) => (
-        <DocumentResourceItem
-          asset={assets[reference.id]}
-          downloading={downloadingId === reference.id}
-          key={reference.id}
-          previewUrl={previews[reference.id]}
-          reference={reference}
-          onDownload={() => void handleDownload(reference)}
-        />
-      ))}
-    </div>
+        {references.map((reference) => {
+          const asset = assets[reference.id];
+          const displayName = asset?.name ?? getResourceNameFromReference(reference);
+          const previewUrl = previews[reference.id];
+
+          return (
+            <DocumentResourceItem
+              asset={asset}
+              downloading={downloadingId === reference.id}
+              key={reference.id}
+              previewUrl={previewUrl}
+              reference={reference}
+              onDownload={() => void handleDownload(reference)}
+              onPreview={
+                previewUrl
+                  ? () => setPreviewResource({
+                      name: displayName,
+                      url: previewUrl,
+                    })
+                  : undefined
+              }
+            />
+          );
+        })}
+      </div>
+
+      <Dialog
+        open={Boolean(previewResource)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewResource(null);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[min(760px,calc(100vh-40px))] w-[min(920px,calc(100vw-40px))] max-w-none grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0 sm:max-w-none">
+          <DialogHeader className="border-b px-4 py-3">
+            <DialogTitle className="truncate text-sm">
+              {previewResource ? `查看资源 ${previewResource.name}` : '查看资源'}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              以大图方式预览当前资源。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 bg-muted/40 p-4">
+            {previewResource ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                alt={previewResource.name}
+                className="mx-auto max-h-[min(640px,calc(100vh-160px))] max-w-full rounded-lg object-contain shadow-sm"
+                src={previewResource.url}
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
+}
+
+interface ResourcePreview {
+  name: string;
+  url: string;
 }
 
 function DocumentResourceItem({
   asset,
   downloading,
+  onPreview,
   previewUrl,
   reference,
   onDownload,
 }: {
   asset?: ResolvedWorkspaceAsset;
   downloading: boolean;
+  onPreview?: () => void;
   previewUrl?: string;
   reference: DocumentResourceReference;
   onDownload: () => void;
@@ -416,7 +478,7 @@ function DocumentResourceItem({
   const sourceLabel = reference.source === 'remote' ? '远程链接' : '本地资源';
 
   return (
-    <div className="group flex gap-3 rounded-lg border bg-background p-2 transition-colors hover:border-[#3574f0]/40 hover:bg-muted/30">
+    <div className="group relative flex gap-3 rounded-lg border bg-background p-2 transition-colors hover:border-[#3574f0]/40 hover:bg-muted/30 focus-within:border-[#3574f0]/40 focus-within:bg-muted/30">
       <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted text-muted-foreground">
         {previewUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -435,10 +497,21 @@ function DocumentResourceItem({
               {asset ? ` · ${formatBytes(asset.size)}` : ` · ${sourceLabel}`}
             </p>
           </div>
-          {reference.source === 'local' ? (
+          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            {onPreview ? (
+              <button
+                aria-label={`查看资源 ${displayName}`}
+                className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:bg-background focus-visible:text-foreground"
+                title="查看"
+                type="button"
+                onClick={onPreview}
+              >
+                <Fullscreen size={15} />
+              </button>
+            ) : null}
             <button
               aria-label={`下载资源 ${displayName}`}
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:bg-background focus-visible:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               disabled={downloading}
               title="下载"
               type="button"
@@ -446,7 +519,7 @@ function DocumentResourceItem({
             >
               <Download size={15} />
             </button>
-          ) : null}
+          </div>
         </div>
         <p className="mt-1 truncate text-[11px] text-muted-foreground/80">
           {reference.url}
@@ -471,6 +544,37 @@ function getResourceNameFromReference(reference: DocumentResourceReference) {
   } catch {
     return reference.id;
   }
+}
+
+async function readRemoteResourceData(reference: DocumentResourceReference) {
+  const response = await fetch(reference.url);
+
+  if (!response.ok) {
+    throw new Error('远程资源下载失败。');
+  }
+
+  const mediaType =
+    response.headers.get('Content-Type')?.split(';')[0]?.trim() ||
+    getResourceTypeFromNode(reference.nodeType);
+  const buffer = await response.arrayBuffer();
+
+  return {
+    base64Data: arrayBufferToBase64(buffer),
+    id: reference.id,
+    mediaType,
+    name: getResourceNameFromReference(reference),
+  };
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+
+  return window.btoa(binary);
 }
 
 function DocumentMetaEmptyState({ text }: { text: string }) {

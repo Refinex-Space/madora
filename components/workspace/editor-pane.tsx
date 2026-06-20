@@ -151,9 +151,16 @@ function DocumentEmptyState({
       <div className="flex w-full max-w-[520px] flex-col items-center">
         <Image
           alt=""
-          className="mb-5 size-8 opacity-90"
+          className="mb-5 size-8 opacity-90 dark:hidden"
           height={32}
           src="/brand/madora-logo-dark.svg"
+          width={32}
+        />
+        <Image
+          alt=""
+          className="mb-5 hidden size-8 opacity-90 dark:block"
+          height={32}
+          src="/brand/madora-logo-light.svg"
           width={32}
         />
         <h1 className="text-2xl font-medium tracking-normal text-foreground">

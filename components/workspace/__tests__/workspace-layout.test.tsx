@@ -1154,7 +1154,15 @@ describe('WorkspaceLayout', () => {
       mediaType: 'image/png',
       name: 'cover.png',
     });
-    selectWorkspaceAssetDownloadPathMock.mockResolvedValue('/Downloads/cover.png');
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3]), {
+        headers: { 'Content-Type': 'image/png' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    selectWorkspaceAssetDownloadPathMock
+      .mockResolvedValueOnce('/Downloads/cover.png')
+      .mockResolvedValueOnce('/Downloads/base.png');
     writeExportFileMock.mockResolvedValue('/Downloads/cover.png');
 
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
@@ -1207,6 +1215,22 @@ describe('WorkspaceLayout', () => {
     expect(await screen.findByText('cover.png')).toBeTruthy();
     expect(await screen.findByText('base.png')).toBeTruthy();
 
+    await user.hover(screen.getByText('cover.png'));
+    await user.click(screen.getByRole('button', { name: '查看资源 cover.png' }));
+
+    const previewDialog = await screen.findByRole('dialog', {
+      name: '查看资源 cover.png',
+    });
+
+    expect(within(previewDialog).getByRole('img', { name: 'cover.png' }))
+      .toBeTruthy();
+    await user.click(within(previewDialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: '查看资源 cover.png' }),
+      ).toBeNull();
+    });
+
     await user.click(screen.getByRole('button', { name: '下载资源 cover.png' }));
 
     await waitFor(() => {
@@ -1217,6 +1241,20 @@ describe('WorkspaceLayout', () => {
       expect(writeExportFileMock).toHaveBeenCalledWith(
         '/Downloads/cover.png',
         'cG5n',
+      );
+    });
+
+    await user.click(screen.getByRole('button', { name: '下载资源 base.png' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('https://octarine.app/img/og/base.png');
+      expect(selectWorkspaceAssetDownloadPathMock).toHaveBeenCalledWith(
+        'base.png',
+        'image/png',
+      );
+      expect(writeExportFileMock).toHaveBeenCalledWith(
+        '/Downloads/base.png',
+        'AQID',
       );
     });
   });
@@ -1538,8 +1576,15 @@ describe('WorkspaceLayout', () => {
 
     const emptyState = screen.getByTestId('workspace-document-empty-state');
 
-    expect(within(emptyState).getByAltText('').getAttribute('src')).toBe(
-      '/brand/madora-logo-dark.svg',
+    expect(
+      within(emptyState)
+        .getAllByAltText('')
+        .map((image) => image.getAttribute('src')),
+    ).toEqual(
+      expect.arrayContaining([
+        '/brand/madora-logo-dark.svg',
+        '/brand/madora-logo-light.svg',
+      ]),
     );
     expect(
       within(emptyState).getByRole('heading', {
