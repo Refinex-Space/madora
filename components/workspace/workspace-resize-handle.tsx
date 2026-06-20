@@ -31,6 +31,8 @@ export function WorkspaceResizeHandle({
     startPointerX: number;
     startWidth: number;
   } | null>(null);
+  const pendingWidthRef = React.useRef<number | null>(null);
+  const animationFrameRef = React.useRef<number | null>(null);
   const [isDragging, setIsDragging] = React.useState(false);
 
   React.useEffect(() => {
@@ -53,10 +55,40 @@ export function WorkspaceResizeHandle({
           ? event.clientX - dragState.startPointerX
           : dragState.startPointerX - event.clientX;
 
-      onResize(clampWidth(dragState.startWidth + delta, min, max));
+      pendingWidthRef.current = clampWidth(
+        dragState.startWidth + delta,
+        min,
+        max,
+      );
+
+      if (animationFrameRef.current !== null) {
+        return;
+      }
+
+      animationFrameRef.current = window.requestAnimationFrame(() => {
+        animationFrameRef.current = null;
+
+        if (pendingWidthRef.current === null) {
+          return;
+        }
+
+        const pendingWidth = pendingWidthRef.current;
+        pendingWidthRef.current = null;
+        onResize(pendingWidth);
+      });
     };
 
     const handlePointerUp = () => {
+      if (animationFrameRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+
+      if (pendingWidthRef.current !== null) {
+        onResize(pendingWidthRef.current);
+        pendingWidthRef.current = null;
+      }
+
       dragStateRef.current = null;
       setIsDragging(false);
     };
@@ -69,6 +101,11 @@ export function WorkspaceResizeHandle({
     return () => {
       document.body.style.cursor = previousCursor;
       document.body.style.userSelect = previousUserSelect;
+      if (animationFrameRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      pendingWidthRef.current = null;
       document.removeEventListener('pointermove', handlePointerMove);
       document.removeEventListener('pointerup', handlePointerUp);
     };
@@ -116,7 +153,7 @@ export function WorkspaceResizeHandle({
       aria-valuemin={min}
       aria-valuenow={value}
       className={cn(
-        'group flex h-full w-2 shrink-0 cursor-col-resize items-center justify-center outline-none',
+        'group relative z-10 flex h-full w-2 shrink-0 cursor-col-resize items-center justify-center outline-none',
         className,
       )}
       data-dragging={isDragging ? 'true' : 'false'}

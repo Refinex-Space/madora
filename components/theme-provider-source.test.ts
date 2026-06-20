@@ -15,6 +15,7 @@ const workspaceLayoutPath = join(
   process.cwd(),
   'components/workspace/workspace-layout.tsx',
 );
+const globalsCssPath = join(process.cwd(), 'app/globals.css');
 
 describe('theme provider source contract', () => {
   it('configures next-themes to drive Tailwind dark classes without changing the default light theme', () => {
@@ -77,15 +78,42 @@ describe('theme provider source contract', () => {
     const tauriIcoPath = join(process.cwd(), 'src-tauri/icons/icon.ico');
     const madoraLogoPath = join(
       process.cwd(),
-      'public/brand/madora-logo-dark.svg',
+      'public/brand/madora-logo-dark-app.svg.svg',
     );
 
-    expect(readFileSync(madoraLogoPath, 'utf8')).toContain('fill="#111111"');
+    const madoraLogoSource = readFileSync(madoraLogoPath, 'utf8');
+    expect(madoraLogoSource).toContain('macOS-style white rounded-square app icon');
+    expect(madoraLogoSource).toContain('id="tileFill"');
+    expect(madoraLogoSource).toContain('id="markFill"');
     expect(Buffer.compare(readFileSync(faviconPath), readFileSync(tauriIcoPath))).toBe(
       0,
     );
     for (const iconPath of tauriConfig.bundle.icon as string[]) {
       expect(existsSync(join(process.cwd(), 'src-tauri', iconPath))).toBe(true);
+    }
+  });
+
+  it('loads Geist fonts from local public assets instead of Google Fonts at runtime', () => {
+    const layoutSource = readFileSync(layoutPath, 'utf8');
+    const globalsSource = readFileSync(globalsCssPath, 'utf8');
+    const localFontFiles = [
+      'public/fonts/geist/geist-latin.woff2',
+      'public/fonts/geist/geist-latin-ext.woff2',
+      'public/fonts/geist-mono/geist-mono-latin.woff2',
+      'public/fonts/geist-mono/geist-mono-latin-ext.woff2',
+    ];
+
+    expect(layoutSource).not.toContain('next/font/google');
+    expect(layoutSource).not.toContain('Geist(');
+    expect(layoutSource).not.toContain('Geist_Mono(');
+    expect(globalsSource).toContain("font-family: 'Geist'");
+    expect(globalsSource).toContain("font-family: 'Geist Mono'");
+    expect(globalsSource).toContain("url('/fonts/geist/geist-latin.woff2')");
+    expect(globalsSource).toContain(
+      "url('/fonts/geist-mono/geist-mono-latin.woff2')",
+    );
+    for (const fontFile of localFontFiles) {
+      expect(existsSync(join(process.cwd(), fontFile))).toBe(true);
     }
   });
 });

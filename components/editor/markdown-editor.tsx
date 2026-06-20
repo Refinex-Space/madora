@@ -11,11 +11,11 @@ import { EditorView } from '@codemirror/view';
 import { githubDark, githubLight } from '@uiw/codemirror-theme-github';
 import {
   EditorSelection,
-  markora,
+  mardora,
   ThemeEnum,
-  type MarkoraTocItem,
-} from '@refinex/markora/editor';
-import { allPlugins } from '@refinex/markora/plugins';
+  type MardoraTocItem,
+} from 'mardora/editor';
+import { allPlugins } from 'mardora/plugins';
 
 import {
   parseFrontmatter,
@@ -36,6 +36,37 @@ interface MarkdownEditorProps {
 }
 
 const STANDARD_PAGE_WIDTH = '64rem';
+const MARDORA_MOUSE_SELECTION_GUARD_SELECTOR = [
+  '.cm-mardora-media-preview',
+  '.cm-mardora-media-preview-button',
+  '.cm-mardora-image-toolbar',
+  '.cm-mardora-image-tool-button',
+  '.cm-mardora-image-resize-handle',
+].join(',');
+
+function guardMardoraMouseSelection(event: MouseEvent | PointerEvent) {
+  const target = event.target;
+
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  if (!target.closest(MARDORA_MOUSE_SELECTION_GUARD_SELECTOR)) {
+    return false;
+  }
+
+  event.preventDefault();
+  return true;
+}
+
+const mardoraMouseSelectionGuard = EditorView.domEventHandlers({
+  mousedown(event) {
+    return guardMardoraMouseSelection(event);
+  },
+  pointerdown(event) {
+    return guardMardoraMouseSelection(event);
+  },
+});
 
 export function MarkdownEditor({
   documentKey,
@@ -49,11 +80,11 @@ export function MarkdownEditor({
   const editorRef = React.useRef<ReactCodeMirrorRef>(null);
   const activeTocItemRef = React.useRef<HTMLButtonElement | null>(null);
   const [backToTopVisible, setBackToTopVisible] = React.useState(false);
-  const [tocItems, setTocItems] = React.useState<MarkoraTocItem[]>([]);
+  const [tocItems, setTocItems] = React.useState<MardoraTocItem[]>([]);
 
   const isDark = resolvedTheme === 'dark';
   const cmTheme = isDark ? githubDark : githubLight;
-  const markoraTheme = isDark ? ThemeEnum.DARK : ThemeEnum.LIGHT;
+  const mardoraTheme = isDark ? ThemeEnum.DARK : ThemeEnum.LIGHT;
   const uploader = useWorkspaceAssetUploader(workspaceRootPath ?? null);
   const frontmatterView = React.useMemo(() => {
     const parsed = parseFrontmatter(markdown);
@@ -80,8 +111,8 @@ export function MarkdownEditor({
 
     return [
       EditorView.theme({
-        // 限宽下沉到内容区并居中；.cm-markora 撑满，内置 TOC 浮层贴卡片右侧。
-        '&.cm-markora .cm-content': {
+        // 限宽下沉到内容区并居中；.cm-mardora 撑满，内置 TOC 浮层贴卡片右侧。
+        '&.cm-mardora .cm-content': {
           maxWidth: STANDARD_PAGE_WIDTH,
           width: '100%',
           marginInline: 'auto',
@@ -111,11 +142,11 @@ export function MarkdownEditor({
     [frontmatterView, onMarkdownChange],
   );
 
-  const handleTocChange = React.useCallback((items: MarkoraTocItem[]) => {
+  const handleTocChange = React.useCallback((items: MardoraTocItem[]) => {
     setTocItems(items);
   }, []);
 
-  const handleSelectTocItem = React.useCallback((item: MarkoraTocItem) => {
+  const handleSelectTocItem = React.useCallback((item: MardoraTocItem) => {
     if (typeof item.from !== 'number') {
       return;
     }
@@ -178,12 +209,12 @@ export function MarkdownEditor({
 
   const extensions = React.useMemo<Extension[]>(
     () =>
-      markora({
-        theme: markoraTheme,
+      mardora({
+        theme: mardoraTheme,
         locale: 'zh-CN',
         baseStyles: true,
         plugins: allPlugins,
-        extensions: pageWidthExtensions,
+        extensions: [mardoraMouseSelectionGuard, ...pageWidthExtensions],
         disableViewPlugin: false,
         defaultKeybindings: true,
         history: true,
@@ -208,7 +239,7 @@ export function MarkdownEditor({
           onTocChange: handleTocChange,
         },
       }),
-    [handleTocChange, markoraTheme, pageWidthExtensions, uploader],
+    [handleTocChange, mardoraTheme, pageWidthExtensions, uploader],
   );
 
   return (
@@ -242,7 +273,7 @@ export function MarkdownEditor({
           onChange={handleMarkdownChange}
         />
 
-        <MarkoraTocOverlay
+        <MardoraTocOverlay
           activeItemRef={activeTocItemRef}
           items={tocItems}
           onSelectItem={handleSelectTocItem}
@@ -269,14 +300,14 @@ export function MarkdownEditor({
   );
 }
 
-function MarkoraTocOverlay({
+function MardoraTocOverlay({
   activeItemRef,
   items,
   onSelectItem,
 }: {
   activeItemRef: React.RefObject<HTMLButtonElement | null>;
-  items: MarkoraTocItem[];
-  onSelectItem: (item: MarkoraTocItem) => void;
+  items: MardoraTocItem[];
+  onSelectItem: (item: MardoraTocItem) => void;
 }) {
   if (items.length === 0) {
     return null;
@@ -285,17 +316,17 @@ function MarkoraTocOverlay({
   return (
     <div
       className="group/toc absolute top-1/2 right-9 z-30 flex -translate-y-1/2 items-center"
-      data-testid="markora-toc-overlay"
+      data-testid="mardora-toc-overlay"
     >
       <span
         aria-hidden="true"
         className="absolute top-1/2 right-0 h-[64vh] w-16 -translate-y-1/2"
-        data-testid="markora-toc-hover-bridge"
+        data-testid="mardora-toc-hover-bridge"
       />
       <div
         aria-hidden="true"
         className="relative flex flex-col items-end gap-1.5 py-2"
-        data-testid="markora-toc-rail"
+        data-testid="mardora-toc-rail"
       >
         {items.map((item) => (
           <span
@@ -304,7 +335,7 @@ function MarkoraTocOverlay({
               getTocRailWidthClassName(item.level),
               item.active && 'bg-foreground',
             )}
-            data-testid={`markora-toc-bar-${item.id}`}
+            data-testid={`mardora-toc-bar-${item.id}`}
             key={item.id}
           />
         ))}
@@ -312,8 +343,8 @@ function MarkoraTocOverlay({
 
       <nav
         aria-label="文档目录"
-        className="markora-toc-panel-scrollarea pointer-events-none absolute top-1/2 right-10 max-h-[58vh] w-72 -translate-y-1/2 overflow-y-auto rounded-lg border border-border/80 bg-background/95 p-4 text-sm opacity-0 shadow-[0_18px_48px_-24px_rgba(15,23,42,0.45),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur transition-opacity duration-150 group-hover/toc:pointer-events-auto group-hover/toc:opacity-100 group-focus-within/toc:pointer-events-auto group-focus-within/toc:opacity-100"
-        data-testid="markora-toc-panel"
+        className="mardora-toc-panel-scrollarea pointer-events-none absolute top-1/2 right-10 max-h-[58vh] w-72 -translate-y-1/2 overflow-y-auto rounded-lg border border-border/80 bg-background/95 p-4 text-sm opacity-0 shadow-[0_18px_48px_-24px_rgba(15,23,42,0.45),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur transition-opacity duration-150 group-hover/toc:pointer-events-auto group-hover/toc:opacity-100 group-focus-within/toc:pointer-events-auto group-focus-within/toc:opacity-100"
+        data-testid="mardora-toc-panel"
       >
         <div className="flex flex-col gap-1">
           {items.map((item) => (
@@ -338,7 +369,7 @@ function MarkoraTocOverlay({
   );
 }
 
-function getTocRailWidthClassName(level: MarkoraTocItem['level']) {
+function getTocRailWidthClassName(level: MardoraTocItem['level']) {
   switch (level) {
     case 2:
       return 'w-6';
@@ -353,7 +384,7 @@ function getTocRailWidthClassName(level: MarkoraTocItem['level']) {
   }
 }
 
-function getTocPanelIndentClassName(level: MarkoraTocItem['level']) {
+function getTocPanelIndentClassName(level: MardoraTocItem['level']) {
   switch (level) {
     case 2:
       return 'pl-2';

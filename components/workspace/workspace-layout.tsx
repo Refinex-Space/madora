@@ -3,11 +3,15 @@
 import * as React from 'react';
 import { useTheme } from 'next-themes';
 import {
+  Airplay,
   Check,
   GitBranch,
   GitGraph,
   Minus,
+  Moon,
+  Palette,
   Search,
+  Sun,
   SquareTerminal,
   Square,
   X,
@@ -15,6 +19,19 @@ import {
 
 import { MarkdownEditor } from '@/components/editor/markdown-editor';
 import { parseFrontmatter } from '@/components/editor/markdown-frontmatter';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 import {
@@ -23,6 +40,13 @@ import {
   type DocumentPanelData,
 } from './ai-side-panel';
 import { DirectoryPage } from './directory-page';
+import { DailyNoteCalendar } from './daily-note-calendar';
+import {
+  createDateFromDailyDate,
+  formatDailyDate,
+  formatDailyMonth,
+  getDailyContentDates,
+} from './daily-notes';
 import { DocumentTabBar } from './document-tab-bar';
 import {
   closeAllTabsInGroup,
@@ -68,6 +92,7 @@ import {
   gitStage,
   gitStatus,
   gitUnstage,
+  listDailyNotesForMonth,
   listenTerminalData,
   listenTerminalError,
   listenTerminalExit,
@@ -76,6 +101,7 @@ import {
   recordRecentDocument,
   readMarkdownDocument,
   minimizeAppWindow,
+  openDailyNote,
   setAppWindowTitle,
   toggleMaximizeAppWindow,
   terminalKill,
@@ -98,6 +124,7 @@ import { XtermTerminal } from './xterm-terminal';
 import type {
   DocumentLoadState,
   DocumentSaveState,
+  DailyNoteEntry,
   GitBranchItem,
   GitCommitEntry,
   GitCommitFile,
@@ -117,6 +144,7 @@ interface WorkspaceLayoutProps {
 type LeftPanelMode = 'workspace' | 'git';
 type BottomPanelMode = 'git-log' | 'terminal' | null;
 type GlobalSearchIndexStatus = 'error' | 'idle' | 'indexing' | 'ready';
+type ThemeMode = 'dark' | 'light' | 'system';
 
 interface GlobalSearchState {
   index: WorkspaceSearchIndex | null;
@@ -255,6 +283,16 @@ export function WorkspaceLayout({
       rootPath: null,
       status: 'idle',
     });
+  const [dailyCalendarMonth, setDailyCalendarMonth] = React.useState(
+    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+  );
+  const [selectedDailyDate, setSelectedDailyDate] = React.useState(() =>
+    formatDailyDate(new Date()),
+  );
+  const [dailyNoteEntries, setDailyNoteEntries] = React.useState<
+    DailyNoteEntry[]
+  >([]);
+  const [dailyNotesLoading, setDailyNotesLoading] = React.useState(false);
   const documentTitle =
     workspace.currentDocument?.title || workspace.currentDocument?.name;
   const pageTitle = documentTitle ?? workspace.currentDirectory?.name;
@@ -271,6 +309,10 @@ export function WorkspaceLayout({
       : workspace.currentDocument;
   const hasOpenDocumentTabs = documentEditorLayout.groups.some(
     (group) => group.tabs.length > 0,
+  );
+  const dailyContentDates = React.useMemo(
+    () => getDailyContentDates(dailyNoteEntries),
+    [dailyNoteEntries],
   );
   const visibleRecentDocuments = React.useMemo(
     () =>
@@ -445,6 +487,37 @@ export function WorkspaceLayout({
       };
     });
   }, [globalSearchState.rootPath, workspaceRootPath]);
+  const loadDailyNotesForMonth = React.useCallback(
+    async (month: Date) => {
+      if (!workspaceRootPath) {
+        setDailyNoteEntries([]);
+        return;
+      }
+
+      setDailyNotesLoading(true);
+
+      try {
+        const result = await listDailyNotesForMonth(
+          workspaceRootPath,
+          formatDailyMonth(month),
+        );
+        setDailyNoteEntries(result.entries);
+      } catch {
+        setDailyNoteEntries([]);
+      } finally {
+        setDailyNotesLoading(false);
+      }
+    },
+    [workspaceRootPath],
+  );
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadDailyNotesForMonth(dailyCalendarMonth);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [dailyCalendarMonth, loadDailyNotesForMonth]);
 
   React.useEffect(() => {
     void setAppWindowTitle(pageTitle ?? 'Madora');
@@ -1269,6 +1342,28 @@ export function WorkspaceLayout({
     [rememberRecentDocument, workspace],
   );
 
+  const handleOpenDailyNote = React.useCallback(
+    async (date: string) => {
+      if (!workspaceRootPath) {
+        return;
+      }
+
+      const nextMonth = createDateFromDailyDate(date);
+
+      setSelectedDailyDate(date);
+      setDailyCalendarMonth(
+        new Date(nextMonth.getFullYear(), nextMonth.getMonth(), 1),
+      );
+
+      const opened = await openDailyNote(workspaceRootPath, date);
+
+      await workspace.refreshWorkspaceTree();
+      await openDocumentNode(opened.node);
+      void loadDailyNotesForMonth(nextMonth);
+    },
+    [loadDailyNotesForMonth, openDocumentNode, workspace, workspaceRootPath],
+  );
+
   const openActiveDocumentForLayout = React.useCallback(
     (layout: DocumentEditorLayout) => {
       const activeTab = getActiveTab(getActiveEditorGroup(layout));
@@ -1428,9 +1523,13 @@ export function WorkspaceLayout({
     });
   }, []);
 
+  const toggleLeftSidebar = React.useCallback(() => {
+    workspace.setSidebarCollapsed(!workspace.isSidebarCollapsed);
+  }, [workspace]);
+
   return (
     <main
-      className="flex h-screen w-full overflow-hidden bg-sidebar text-foreground antialiased"
+      className="relative flex h-screen w-full overflow-hidden bg-sidebar text-foreground antialiased"
       data-chrome="codex-workspace"
       data-testid="workspace-shell"
     >
@@ -1444,6 +1543,11 @@ export function WorkspaceLayout({
         </div>
       ) : null}
 
+      <SidebarChromeToggle
+        collapsed={workspace.isSidebarCollapsed}
+        onToggle={toggleLeftSidebar}
+      />
+
       <WorkspaceGlobalSearchDialog
         indexStatus={activeGlobalSearchStatus}
         open={globalSearchOpen}
@@ -1455,15 +1559,34 @@ export function WorkspaceLayout({
       />
 
       <div
-        className="flex min-h-0 flex-1"
+        className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
         data-testid="workspace-main-blocks"
       >
         <div className="flex min-w-0 flex-1 overflow-hidden">
             {leftPanelMode === 'workspace' ? (
               <WorkspaceSidebar
+                dailyCalendar={
+                  workspace.snapshot ? (
+                    <DailyNoteCalendar
+                      contentDates={dailyContentDates}
+                      isLoading={dailyNotesLoading}
+                      month={dailyCalendarMonth}
+                      selectedDate={selectedDailyDate}
+                      onMonthChange={(month) =>
+                        setDailyCalendarMonth(
+                          new Date(month.getFullYear(), month.getMonth(), 1),
+                        )
+                      }
+                      onSelectDate={(date) => void handleOpenDailyNote(date)}
+                    />
+                  ) : null
+                }
                 width={leftSidebarWidth}
                 workspace={workspace}
                 onCreateDocument={handleCreateDocument}
+                onOpenDailyNote={() =>
+                  void handleOpenDailyNote(formatDailyDate(new Date()))
+                }
                 onOpenSettings={() => openSettingsDialog('appearance')}
                 onSelectDocument={openDocumentNode}
               />
@@ -1493,231 +1616,245 @@ export function WorkspaceLayout({
               </div>
             )}
 
-            {workspace.isSidebarCollapsed ? null : (
+            {leftPanelMode === 'workspace' || !workspace.isSidebarCollapsed ? (
               <WorkspaceResizeHandle
                 aria-label="调整左侧目录宽度"
-                className="-mx-2"
+                className={cn(
+                  '-mx-2 transition-opacity duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]',
+                  workspace.isSidebarCollapsed
+                    ? 'pointer-events-none opacity-0'
+                    : 'opacity-100',
+                )}
                 direction="left"
                 max={LEFT_PANEL_WIDTH.max}
                 min={LEFT_PANEL_WIDTH.min}
                 value={leftSidebarWidth}
                 onResize={handleLeftSidebarResize}
               />
-            )}
+            ) : null}
 
-            <section
-              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-background shadow-[0_1px_3px_rgba(15,23,42,0.05),0_18px_42px_-28px_rgba(15,23,42,0.45)]"
-              data-chrome="codex-main-surface"
-              data-testid="workspace-editor-block"
+            <div
+              className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-background shadow-[0_1px_3px_rgba(15,23,42,0.05),0_18px_42px_-28px_rgba(15,23,42,0.45)]"
+              data-testid="workspace-editor-column"
             >
-              <WorkspaceMainHeader
-                gitLogOpen={gitLogOpen}
-                leftPanelMode={leftPanelMode}
-                terminalOpen={terminalOpen}
-                onOpenGlobalSearch={openGlobalSearch}
-                onOpenGitPanel={openGitPanel}
-                onToggleGitLog={toggleGitLogDrawer}
-                onToggleTerminal={toggleTerminalPanel}
+              <section
+                className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
+                data-chrome="codex-main-surface"
+                data-testid="workspace-editor-block"
               >
-                <RightToolRail
-                  mode={workspace.rightPanelMode}
-                  orientation="header"
-                  settingsInitialSectionId={settingsInitialSectionId}
-                  settingsOpen={settingsOpen}
-                  showSettingsButton={false}
-                  workspaceRootPath={workspace.snapshot?.rootPath ?? null}
-                  onModeChange={workspace.setRightPanelMode}
-                  onOpenSettings={() => openSettingsDialog('appearance')}
-                  onSettingsOpenChange={setSettingsOpen}
-                  onSettingsSaved={(settings) => {
-                    setPageWidthMode(settings.appearance.pageWidthMode);
-                    setSettingsVersion((current) => current + 1);
-                  }}
-                />
-              </WorkspaceMainHeader>
+                <WorkspaceMainHeader
+                  gitLogOpen={gitLogOpen}
+                  leftPanelMode={leftPanelMode}
+                  terminalOpen={terminalOpen}
+                  onOpenGlobalSearch={openGlobalSearch}
+                  onOpenGitPanel={openGitPanel}
+                  onToggleGitLog={toggleGitLogDrawer}
+                  onToggleTerminal={toggleTerminalPanel}
+                >
+                  <RightToolRail
+                    mode={workspace.rightPanelMode}
+                    orientation="header"
+                    settingsInitialSectionId={settingsInitialSectionId}
+                    settingsOpen={settingsOpen}
+                    showSettingsButton={false}
+                    workspaceRootPath={workspace.snapshot?.rootPath ?? null}
+                    onModeChange={workspace.setRightPanelMode}
+                    onOpenSettings={() => openSettingsDialog('appearance')}
+                    onSettingsOpenChange={setSettingsOpen}
+                    onSettingsSaved={(settings) => {
+                      setPageWidthMode(settings.appearance.pageWidthMode);
+                      setSettingsVersion((current) => current + 1);
+                    }}
+                  />
+                </WorkspaceMainHeader>
 
-              <div className="flex min-h-0 flex-1 overflow-hidden">
-                <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-                  {leftPanelMode === 'git' ? (
-                    <GitDiffView
-                      diff={gitDiffState}
-                      error={gitError}
-                      isLoading={gitLoading && Boolean(gitSelectedPath)}
-                      label={gitDiffLabel}
+                <div className="flex min-h-0 flex-1 overflow-hidden">
+                  <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                    {leftPanelMode === 'git' ? (
+                      <GitDiffView
+                        diff={gitDiffState}
+                        error={gitError}
+                        isLoading={gitLoading && Boolean(gitSelectedPath)}
+                        label={gitDiffLabel}
+                      />
+                    ) : workspace.currentDocument ||
+                      (!workspace.currentDirectory && hasOpenDocumentTabs) ? (
+                      <DocumentEditorSurface
+                        activeDocumentPath={activePanelDocumentPath}
+                        currentDocumentPath={currentDocumentPath}
+                        documentEditorLayout={documentEditorLayout}
+                        documentLoadError={workspace.documentLoadError}
+                        documentLoadState={workspace.documentLoadState}
+                        documentVersion={workspace.documentVersion}
+                        draftMarkdown={workspace.draftDocument?.markdown ?? null}
+                        editorSessions={editorSessions}
+                        pageWidthMode={pageWidthMode}
+                        workspaceRootPath={workspace.snapshot?.rootPath ?? null}
+                        onActivateGroup={activateDocumentEditorGroup}
+                        onCloseAllTabs={handleCloseAllDocumentTabs}
+                        onCloseOtherTabs={handleCloseOtherDocumentTabs}
+                        onCloseTab={handleCloseDocumentTab}
+                        onCloseTabsToLeft={handleCloseDocumentTabsToLeft}
+                        onCloseTabsToRight={handleCloseDocumentTabsToRight}
+                        onMarkdownChange={handleEditorMarkdownChange}
+                        onRetryDocument={workspace.retryCurrentDocument}
+                        onSaveRequested={() =>
+                          void workspace.saveCurrentDocumentNow()
+                        }
+                        onSelectTab={handleSelectDocumentTab}
+                        onSplitTab={handleSplitDocumentTab}
+                      />
+                    ) : (
+                      <EditorPane
+                        currentDirectory={workspace.currentDirectory}
+                        currentDocument={workspace.currentDocument}
+                        directoryContent={
+                          workspace.currentDirectory ? (
+                            <DirectoryPage
+                              key={workspace.currentDirectory.absolutePath}
+                              directory={workspace.currentDirectory}
+                              workspaceRootPath={
+                                workspace.snapshot?.rootPath ?? ''
+                              }
+                              onOpenDocument={openDocumentNode}
+                              onSelectDirectory={(node) =>
+                                void workspace.selectDirectory(node)
+                              }
+                            />
+                          ) : null
+                        }
+                        documentLoadError={workspace.documentLoadError}
+                        documentLoadState={workspace.documentLoadState}
+                        hasWorkspace={workspace.snapshot !== null}
+                        isWorkspaceEmpty={isWorkspaceEmpty}
+                        onCreateDirectory={() => void workspace.createDirectory('')}
+                        onCreateDocument={() => void handleCreateDocument('')}
+                        onImportMarkdown={() =>
+                          void workspace.importMarkdownDocuments('')
+                        }
+                        onOpenRecentDocument={handleOpenRecentDocument}
+                        onOpenWorkspace={workspace.openWorkspace}
+                        onRetryDocument={workspace.retryCurrentDocument}
+                        recentDocuments={visibleRecentDocuments}
+                      >
+                        {null}
+                      </EditorPane>
+                    )}
+                  </div>
+
+                  {workspace.rightPanelMode ? (
+                    <WorkspaceResizeHandle
+                      aria-label="调整右侧面板宽度"
+                      className="-mx-2"
+                      direction="right"
+                      max={RIGHT_PANEL_WIDTH.max}
+                      min={RIGHT_PANEL_WIDTH.min}
+                      value={rightPanelWidth}
+                      onResize={handleRightPanelResize}
                     />
-                  ) : workspace.currentDocument ||
-                    (!workspace.currentDirectory && hasOpenDocumentTabs) ? (
-                    <DocumentEditorSurface
-                      activeDocumentPath={activePanelDocumentPath}
-                      currentDocumentPath={currentDocumentPath}
-                      documentEditorLayout={documentEditorLayout}
-                      documentLoadError={workspace.documentLoadError}
-                      documentLoadState={workspace.documentLoadState}
-                      documentVersion={workspace.documentVersion}
-                      draftMarkdown={workspace.draftDocument?.markdown ?? null}
-                      editorSessions={editorSessions}
-                      pageWidthMode={pageWidthMode}
-                      workspaceRootPath={workspace.snapshot?.rootPath ?? null}
-                      onActivateGroup={activateDocumentEditorGroup}
-                      onCloseAllTabs={handleCloseAllDocumentTabs}
-                      onCloseOtherTabs={handleCloseOtherDocumentTabs}
-                      onCloseTab={handleCloseDocumentTab}
-                      onCloseTabsToLeft={handleCloseDocumentTabsToLeft}
-                      onCloseTabsToRight={handleCloseDocumentTabsToRight}
-                      onMarkdownChange={handleEditorMarkdownChange}
-                      onRetryDocument={workspace.retryCurrentDocument}
-                      onSaveRequested={() => void workspace.saveCurrentDocumentNow()}
-                      onSelectTab={handleSelectDocumentTab}
-                      onSplitTab={handleSplitDocumentTab}
-                    />
-                  ) : (
-                    <EditorPane
-                      currentDirectory={workspace.currentDirectory}
-                      currentDocument={workspace.currentDocument}
-                      directoryContent={
-                        workspace.currentDirectory ? (
-                          <DirectoryPage
-                            key={workspace.currentDirectory.absolutePath}
-                            directory={workspace.currentDirectory}
-                            workspaceRootPath={workspace.snapshot?.rootPath ?? ''}
-                            onOpenDocument={openDocumentNode}
-                            onSelectDirectory={(node) =>
-                              void workspace.selectDirectory(node)
-                            }
-                          />
-                        ) : null
-                      }
-                      documentLoadError={workspace.documentLoadError}
-                      documentLoadState={workspace.documentLoadState}
-                      hasWorkspace={workspace.snapshot !== null}
-                      isWorkspaceEmpty={isWorkspaceEmpty}
-                      onCreateDirectory={() => void workspace.createDirectory('')}
-                      onCreateDocument={() => void handleCreateDocument('')}
-                      onImportMarkdown={() =>
-                        void workspace.importMarkdownDocuments('')
-                      }
-                      onOpenRecentDocument={handleOpenRecentDocument}
-                      onOpenWorkspace={workspace.openWorkspace}
-                      onRetryDocument={workspace.retryCurrentDocument}
-                      recentDocuments={visibleRecentDocuments}
-                    >
-                      {null}
-                    </EditorPane>
-                  )}
+                  ) : null}
+
+                  <RightSidePanel
+                    currentDocument={activePanelDocument}
+                    documentPanelData={documentPanelData}
+                    mode={workspace.rightPanelMode}
+                    settingsVersion={settingsVersion}
+                    width={rightPanelWidth}
+                    workspaceRootPath={workspaceRootPath}
+                    onOpenSettings={() => openSettingsDialog('ai')}
+                  />
                 </div>
 
-                {workspace.rightPanelMode ? (
-                  <WorkspaceResizeHandle
-                    aria-label="调整右侧面板宽度"
-                    className="-mx-2"
-                    direction="right"
-                    max={RIGHT_PANEL_WIDTH.max}
-                    min={RIGHT_PANEL_WIDTH.min}
-                    value={rightPanelWidth}
-                    onResize={handleRightPanelResize}
-                  />
-                ) : null}
-
-                <RightSidePanel
-                  currentDocument={activePanelDocument}
-                  documentPanelData={documentPanelData}
-                  mode={workspace.rightPanelMode}
-                  settingsVersion={settingsVersion}
-                  width={rightPanelWidth}
-                  workspaceRootPath={workspaceRootPath}
-                  onOpenSettings={() => openSettingsDialog('ai')}
+                <WorkspaceStatusBar
+                  characterCount={documentCharacterCount}
+                  lineCount={documentLineCount}
+                  saveError={workspace.saveError}
+                  saveState={workspace.saveState}
+                  visible={
+                    Boolean(workspace.currentDocument) &&
+                    workspace.documentLoadState === 'loaded'
+                  }
                 />
-              </div>
-
-              <WorkspaceStatusBar
-                characterCount={documentCharacterCount}
-                lineCount={documentLineCount}
-                saveError={workspace.saveError}
-                saveState={workspace.saveState}
-                visible={
-                  Boolean(workspace.currentDocument) &&
-                  workspace.documentLoadState === 'loaded'
-                }
-              />
-            </section>
-          {gitLogOpen ? (
-            <WorkspaceHorizontalResizeHandle
-              aria-label="调整 Git 日志高度"
-              max={GIT_LOG_HEIGHT.max}
-              min={GIT_LOG_HEIGHT.min}
-              value={gitLogHeight}
-              onResize={setGitLogHeight}
-            />
-          ) : null}
-          {terminalOpen ? (
-            <WorkspaceHorizontalResizeHandle
-              aria-label="调整终端高度"
-              max={GIT_LOG_HEIGHT.max}
-              min={GIT_LOG_HEIGHT.min}
-              value={terminalHeight}
-              onResize={setTerminalHeight}
-            />
-          ) : null}
-          <GitLogDrawer
-            branches={gitLogBranches}
-            branchWidth={gitLogBranchWidth}
-            commits={gitLogCommits}
-            detailsHeight={gitLogDetailHeight}
-            detailsWidth={gitLogDetailWidth}
-            error={gitLogError}
-            files={gitLogFiles}
-            height={gitLogHeight}
-            isLoading={gitLogLoading}
-            open={gitLogOpen}
-            selectedCommitHash={gitLogSelectedHash}
-            onClose={() => setBottomPanelMode(null)}
-            onRefresh={refreshGitLog}
-            onResizeBranchWidth={setGitLogBranchWidth}
-            onResizeDetailsHeight={setGitLogDetailHeight}
-            onResizeDetailsWidth={setGitLogDetailWidth}
-            onSelectCommit={(hash) => void loadGitLogCommitFiles(hash)}
-            onSelectFile={(file) => void handleGitLogSelectFile(file)}
-          />
-          {shouldRenderTerminalPanel ? (
-            <div
-              className={cn(
-                'min-h-0 shrink-0',
-                !terminalOpen && 'hidden',
-              )}
-            >
-              <TerminalPanel
-                activeTabId={terminalActiveTabId}
-                error={terminalError}
-                height={terminalHeight}
-                isTauriRuntime={isTauriRuntime}
-                rootPath={workspaceRootPath}
-                tabs={terminalTabs}
+              </section>
+              {gitLogOpen ? (
+                <WorkspaceHorizontalResizeHandle
+                  aria-label="调整 Git 日志高度"
+                  max={GIT_LOG_HEIGHT.max}
+                  min={GIT_LOG_HEIGHT.min}
+                  value={gitLogHeight}
+                  onResize={setGitLogHeight}
+                />
+              ) : null}
+              {terminalOpen ? (
+                <WorkspaceHorizontalResizeHandle
+                  aria-label="调整终端高度"
+                  max={GIT_LOG_HEIGHT.max}
+                  min={GIT_LOG_HEIGHT.min}
+                  value={terminalHeight}
+                  onResize={setTerminalHeight}
+                />
+              ) : null}
+              <GitLogDrawer
+                branches={gitLogBranches}
+                branchWidth={gitLogBranchWidth}
+                commits={gitLogCommits}
+                detailsHeight={gitLogDetailHeight}
+                detailsWidth={gitLogDetailWidth}
+                error={gitLogError}
+                files={gitLogFiles}
+                height={gitLogHeight}
+                isLoading={gitLogLoading}
+                open={gitLogOpen}
+                selectedCommitHash={gitLogSelectedHash}
                 onClose={() => setBottomPanelMode(null)}
-                onCloseTab={handleTerminalCloseTab}
-                onNewTab={() => void createTerminalTab()}
-                onSelectTab={setTerminalActiveTabId}
-              >
-                {terminalTabs.map((tab) => (
-                  <div
-                    className={cn(
-                      'h-full min-h-0',
-                      tab.id !== terminalActiveTabId && 'hidden',
-                    )}
-                    key={tab.id}
+                onRefresh={refreshGitLog}
+                onResizeBranchWidth={setGitLogBranchWidth}
+                onResizeDetailsHeight={setGitLogDetailHeight}
+                onResizeDetailsWidth={setGitLogDetailWidth}
+                onSelectCommit={(hash) => void loadGitLogCommitFiles(hash)}
+                onSelectFile={(file) => void handleGitLogSelectFile(file)}
+              />
+              {shouldRenderTerminalPanel ? (
+                <div
+                  className={cn(
+                    'min-h-0 w-full min-w-0 max-w-full shrink-0 overflow-hidden',
+                    !terminalOpen && 'hidden',
+                  )}
+                >
+                  <TerminalPanel
+                    activeTabId={terminalActiveTabId}
+                    error={terminalError}
+                    height={terminalHeight}
+                    isTauriRuntime={isTauriRuntime}
+                    rootPath={workspaceRootPath}
+                    tabs={terminalTabs}
+                    onClose={() => setBottomPanelMode(null)}
+                    onCloseTab={handleTerminalCloseTab}
+                    onNewTab={() => void createTerminalTab()}
+                    onSelectTab={setTerminalActiveTabId}
                   >
-                    <XtermTerminal
-                      isActive={terminalOpen && tab.id === terminalActiveTabId}
-                      output={terminalOutputs[tab.id] ?? ''}
-                      sessionId={tab.id}
-                      themeMode={terminalThemeMode}
-                      onData={handleTerminalData}
-                      onResize={handleTerminalResize}
-                    />
-                  </div>
-                ))}
-              </TerminalPanel>
+                    {terminalTabs.map((tab) => (
+                      <div
+                        className={cn(
+                          'h-full min-h-0',
+                          tab.id !== terminalActiveTabId && 'hidden',
+                        )}
+                        key={tab.id}
+                      >
+                        <XtermTerminal
+                          isActive={terminalOpen && tab.id === terminalActiveTabId}
+                          output={terminalOutputs[tab.id] ?? ''}
+                          sessionId={tab.id}
+                          themeMode={terminalThemeMode}
+                          onData={handleTerminalData}
+                          onResize={handleTerminalResize}
+                        />
+                      </div>
+                    ))}
+                  </TerminalPanel>
+                </div>
+              ) : null}
             </div>
-          ) : null}
         </div>
       </div>
     </main>
@@ -1729,6 +1866,104 @@ function useIsTauriRuntime() {
     subscribeToStaticRuntimeSnapshot,
     getTauriRuntimeSnapshot,
     getServerTauriRuntimeSnapshot,
+  );
+}
+
+function SidebarChromeToggle({
+  collapsed,
+  onToggle,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  const label = collapsed ? '展开侧边栏' : '折叠侧边栏';
+
+  return (
+    <div
+      className="absolute left-[80px] top-0 z-50"
+      data-testid="sidebar-chrome-toggle"
+    >
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              aria-label={label}
+              className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              data-sidebar-toggle-state={collapsed ? 'collapsed' : 'expanded'}
+              type="button"
+              onClick={onToggle}
+            >
+              {collapsed ? <SidebarCollapsedIcon /> : <SidebarExpandedIcon />}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={8}>
+            {label}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
+}
+
+function SidebarExpandedIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-8 w-[35px] shrink-0"
+      fill="none"
+      viewBox="0 0 70 64"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect
+        height="22"
+        rx="5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+        width="24"
+        x="20"
+        y="21"
+      />
+      <path
+        d="M26 27V37"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function SidebarCollapsedIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-[25px] w-[34px] shrink-0"
+      fill="none"
+      viewBox="0 0 68 50"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect
+        height="26"
+        rx="5"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+        width="28"
+        x="24"
+        y="11"
+      />
+      <path
+        d="M45 18V30"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
   );
 }
 
@@ -1827,8 +2062,9 @@ function WorkspaceMainHeader({
 }) {
   return (
     <header
-      className="relative flex h-11 shrink-0 items-center gap-1 border-b border-border/70 px-3"
+      className="relative flex h-11 shrink-0 items-center gap-1 px-3"
       data-tauri-drag-region="deep"
+      data-testid="workspace-main-header"
     >
       <button
         aria-label="搜索文档"
@@ -1841,38 +2077,129 @@ function WorkspaceMainHeader({
         <span className="hidden truncate lg:inline">搜索</span>
       </button>
 
-      <div
-        className="z-10 ml-auto flex items-center gap-0.5"
-        data-testid="right-header-tools"
-      >
-        <button
-          aria-label="打开 Git 面板"
-          className={codexHeaderToolButtonClassName(leftPanelMode === 'git')}
-          type="button"
-          onClick={onOpenGitPanel}
+      <TooltipProvider>
+        <div
+          className="z-10 ml-auto flex items-center gap-0.5"
+          data-testid="right-header-tools"
         >
-          <GitBranch size={16} strokeWidth={1.75} />
-        </button>
-        <button
-          aria-label={terminalOpen ? '关闭终端' : '打开终端'}
-          className={codexHeaderToolButtonClassName(terminalOpen)}
-          type="button"
-          onClick={onToggleTerminal}
-        >
-          <SquareTerminal size={16} strokeWidth={1.75} />
-        </button>
-        <button
-          aria-label={gitLogOpen ? '关闭 Git 日志' : '打开 Git 日志'}
-          className={codexHeaderToolButtonClassName(gitLogOpen)}
-          type="button"
-          onClick={onToggleGitLog}
-        >
-          <GitGraph size={16} strokeWidth={1.75} />
-        </button>
-        {children}
-      </div>
+          <ThemeQuickMenu />
+          <HeaderToolTooltip label="打开 Git 面板">
+            <button
+              aria-label="打开 Git 面板"
+              className={codexHeaderToolButtonClassName(leftPanelMode === 'git')}
+              type="button"
+              onClick={onOpenGitPanel}
+            >
+              <GitBranch size={16} strokeWidth={1.75} />
+            </button>
+          </HeaderToolTooltip>
+          <HeaderToolTooltip label={terminalOpen ? '关闭终端' : '打开终端'}>
+            <button
+              aria-label={terminalOpen ? '关闭终端' : '打开终端'}
+              className={codexHeaderToolButtonClassName(terminalOpen)}
+              type="button"
+              onClick={onToggleTerminal}
+            >
+              <SquareTerminal size={16} strokeWidth={1.75} />
+            </button>
+          </HeaderToolTooltip>
+          <HeaderToolTooltip label={gitLogOpen ? '关闭 Git 日志' : '打开 Git 日志'}>
+            <button
+              aria-label={gitLogOpen ? '关闭 Git 日志' : '打开 Git 日志'}
+              className={codexHeaderToolButtonClassName(gitLogOpen)}
+              type="button"
+              onClick={onToggleGitLog}
+            >
+              <GitGraph size={16} strokeWidth={1.75} />
+            </button>
+          </HeaderToolTooltip>
+          {children}
+        </div>
+      </TooltipProvider>
     </header>
   );
+}
+
+function HeaderToolTooltip({
+  children,
+  label,
+}: {
+  children: React.ReactElement;
+  label: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ThemeQuickMenu() {
+  const { setTheme, theme } = useTheme();
+  const [open, setOpen] = React.useState(false);
+  const selectedTheme = isThemeMode(theme) ? theme : 'system';
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <button
+              aria-label="切换主题"
+              className={codexHeaderToolButtonClassName(open)}
+              type="button"
+            >
+              <Palette size={16} strokeWidth={1.75} />
+            </button>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
+        <TooltipContent side="bottom" sideOffset={8}>
+          切换主题
+        </TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-36">
+        <DropdownMenuRadioGroup
+          value={selectedTheme}
+          onValueChange={(value) => {
+            if (!isThemeMode(value)) {
+              return;
+            }
+
+            setTheme(value);
+            setOpen(false);
+          }}
+        >
+          <ThemeQuickMenuItem icon={<Airplay size={14} />} label="跟随系统" value="system" />
+          <ThemeQuickMenuItem icon={<Sun size={14} />} label="亮色" value="light" />
+          <ThemeQuickMenuItem icon={<Moon size={14} />} label="暗色" value="dark" />
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ThemeQuickMenuItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: ThemeMode;
+}) {
+  return (
+    <DropdownMenuRadioItem value={value}>
+      {icon}
+      <span>{label}</span>
+    </DropdownMenuRadioItem>
+  );
+}
+
+function isThemeMode(value: unknown): value is ThemeMode {
+  return value === 'dark' || value === 'light' || value === 'system';
 }
 
 function codexHeaderToolButtonClassName(active: boolean) {

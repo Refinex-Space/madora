@@ -9,9 +9,13 @@ const splashGatePath = join(
   process.cwd(),
   'components/workspace/app-splash-gate.tsx',
 );
-const madoraLogoPath = join(
+const madoraDarkLogoPath = join(
   process.cwd(),
   'public/brand/madora-logo-dark.svg',
+);
+const madoraLightLogoPath = join(
+  process.cwd(),
+  'public/brand/madora-logo-light.svg',
 );
 
 describe('app splash screen', () => {
@@ -19,11 +23,15 @@ describe('app splash screen', () => {
     const layoutSource = readFileSync(layoutPath, 'utf8');
     const globalsCssSource = readFileSync(globalsCssPath, 'utf8');
 
-    expect(existsSync(madoraLogoPath)).toBe(true);
+    expect(existsSync(madoraDarkLogoPath)).toBe(true);
+    expect(existsSync(madoraLightLogoPath)).toBe(true);
     expect(layoutSource).toContain('AppSplashGate');
     expect(layoutSource).toContain('data-app-splash="active"');
     expect(layoutSource).toContain('className="app-splash"');
     expect(layoutSource).toContain('/brand/madora-logo-dark.svg');
+    expect(layoutSource).toContain('/brand/madora-logo-light.svg');
+    expect(layoutSource).toContain('dark:hidden');
+    expect(layoutSource).toContain('dark:block');
     expect(layoutSource).toContain('先让它存在，再把它做好');
     expect(layoutSource).toContain('Make it exist first. Make it good later.');
     expect(globalsCssSource).toContain('.app-splash');

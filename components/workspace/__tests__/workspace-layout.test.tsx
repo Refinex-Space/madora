@@ -22,12 +22,14 @@ import {
   gitStage,
   gitStatus,
   gitUnstage,
+  listDailyNotesForMonth,
   listAiAgentProfiles,
   listenAiEvents,
   listenTerminalData,
   listenTerminalError,
   listenTerminalExit,
   loadWorkspaceTree,
+  openDailyNote,
   readAppSettings,
   readMarkdownDocument,
   readWorkspaceAssetData,
@@ -60,6 +62,18 @@ import type { WorkspaceSnapshot } from '../workspace-types';
 const { setThemeMock } = vi.hoisted(() => ({
   setThemeMock: vi.fn(),
 }));
+
+class TestResizeObserver implements ResizeObserver {
+  disconnect() {}
+  observe() {}
+  unobserve() {}
+}
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  configurable: true,
+  value: TestResizeObserver,
+  writable: true,
+});
 
 vi.mock('next-themes', () => ({
   useTheme: () => ({
@@ -126,12 +140,14 @@ vi.mock('../workspace-api', async (importOriginal) => {
     gitStage: vi.fn(),
     gitStatus: vi.fn(),
     gitUnstage: vi.fn(),
+    listDailyNotesForMonth: vi.fn(),
     listAiAgentProfiles: vi.fn(),
     listenAiEvents: vi.fn(),
     listenTerminalData: vi.fn(),
     listenTerminalError: vi.fn(),
     listenTerminalExit: vi.fn(),
     loadWorkspaceTree: vi.fn(),
+    openDailyNote: vi.fn(),
     readMarkdownDocument: vi.fn(),
     readWorkspaceAssetData: vi.fn(),
     recordRecentDocument: vi.fn(),
@@ -175,12 +191,14 @@ const gitRevertFileMock = vi.mocked(gitRevertFile);
 const gitStageMock = vi.mocked(gitStage);
 const gitStatusMock = vi.mocked(gitStatus);
 const gitUnstageMock = vi.mocked(gitUnstage);
+const listDailyNotesForMonthMock = vi.mocked(listDailyNotesForMonth);
 const listAiAgentProfilesMock = vi.mocked(listAiAgentProfiles);
 const listenAiEventsMock = vi.mocked(listenAiEvents);
 const listenTerminalDataMock = vi.mocked(listenTerminalData);
 const listenTerminalErrorMock = vi.mocked(listenTerminalError);
 const listenTerminalExitMock = vi.mocked(listenTerminalExit);
 const loadWorkspaceTreeMock = vi.mocked(loadWorkspaceTree);
+const openDailyNoteMock = vi.mocked(openDailyNote);
 const readAppSettingsMock = vi.mocked(readAppSettings);
 const readMarkdownDocumentMock = vi.mocked(readMarkdownDocument);
 const readWorkspaceAssetDataMock = vi.mocked(readWorkspaceAssetData);
@@ -220,6 +238,38 @@ const snapshot: WorkspaceSnapshot = {
     },
   ],
 };
+
+const dailyDirectorySnapshot: WorkspaceSnapshot = {
+  ...snapshot,
+  nodes: [
+    {
+      id: 'Daily',
+      name: 'Daily',
+      kind: 'directory',
+      relativePath: 'Daily',
+      absolutePath: '/repo/Daily',
+      children: [
+        {
+          id: 'Daily/2026',
+          name: '2026',
+          kind: 'directory',
+          relativePath: 'Daily/2026',
+          absolutePath: '/repo/Daily/2026',
+          children: [],
+        },
+      ],
+    },
+    ...snapshot.nodes,
+  ],
+};
+
+function formatTestDailyDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
 
 const multiDocumentSnapshot: WorkspaceSnapshot = {
   rootPath: '/repo',
@@ -427,12 +477,14 @@ describe('WorkspaceLayout', () => {
     gitStageMock.mockReset();
     gitStatusMock.mockReset();
     gitUnstageMock.mockReset();
+    listDailyNotesForMonthMock.mockReset();
     listAiAgentProfilesMock.mockReset();
     listenAiEventsMock.mockReset();
     listenTerminalDataMock.mockReset();
     listenTerminalErrorMock.mockReset();
     listenTerminalExitMock.mockReset();
     loadWorkspaceTreeMock.mockReset();
+    openDailyNoteMock.mockReset();
     readAppSettingsMock.mockReset();
     readMarkdownDocumentMock.mockReset();
     readWorkspaceAssetDataMock.mockReset();
@@ -487,8 +539,16 @@ describe('WorkspaceLayout', () => {
       recentDocumentPaths: [],
       expandedPaths: [],
       sortOrder: {},
+      dailyNotes: {
+        selectedDate: null,
+        entries: {},
+      },
     });
     recordRecentDocumentMock.mockResolvedValue([]);
+    listDailyNotesForMonthMock.mockResolvedValue({
+      month: '2026-06',
+      entries: [],
+    });
   });
 
   it('shows empty workspace action before selecting folder', () => {
@@ -511,9 +571,178 @@ describe('WorkspaceLayout', () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
-    await user.type(screen.getByPlaceholderText('搜索'), '项目');
+    await user.click(screen.getByRole('button', { name: '展开侧边栏搜索' }));
+    await user.type(await screen.findByRole('searchbox', { name: '搜索' }), '项目');
 
     expect(screen.getByText('项目说明')).toBeTruthy();
+  });
+
+  it('expands and restores the sidebar search field naturally', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    expect(screen.queryByRole('searchbox', { name: '搜索' })).toBeNull();
+    expect(screen.getByTestId('workspace-sidebar-search-panel').className).toContain(
+      'opacity-0',
+    );
+
+    await user.click(screen.getByRole('button', { name: '展开侧边栏搜索' }));
+
+    expect(await screen.findByRole('searchbox', { name: '搜索' })).toBeTruthy();
+    expect(screen.getByTestId('workspace-sidebar-search-panel').className).toContain(
+      'opacity-100',
+    );
+
+    await user.click(document.body);
+
+    expect(screen.queryByRole('searchbox', { name: '搜索' })).toBeNull();
+    expect(screen.getByTestId('workspace-sidebar-search-panel').className).toContain(
+      'opacity-0',
+    );
+  });
+
+  it('opens a daily note from the sidebar calendar', async () => {
+    const user = userEvent.setup();
+    const dailyNode = {
+      id: 'Daily/2026/06/2026-06-20.md',
+      name: '2026-06-20.md',
+      kind: 'document' as const,
+      relativePath: 'Daily/2026/06/2026-06-20.md',
+      absolutePath: '/repo/Daily/2026/06/2026-06-20.md',
+      title: '2026-06-20',
+    };
+
+    listDailyNotesForMonthMock.mockResolvedValue({
+      month: '2026-06',
+      entries: [
+        {
+          date: '2026-06-20',
+          documentPath: '/repo/Daily/2026/06/2026-06-20.md',
+          hasContent: true,
+          updatedAt: 1,
+        },
+      ],
+    });
+    openDailyNoteMock.mockResolvedValue({
+      node: dailyNode,
+      content: markdownDocument({
+        path: '/repo/Daily/2026/06/2026-06-20.md',
+        title: '2026-06-20',
+      }),
+    });
+    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
+      path: '/repo/Daily/2026/06/2026-06-20.md',
+      title: '2026-06-20',
+    }));
+    loadWorkspaceTreeMock.mockResolvedValue({
+      ...snapshot,
+      nodes: [...snapshot.nodes, dailyNode],
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    expect(await screen.findByTestId('daily-note-marker-2026-06-20')).toBeTruthy();
+    await user.click(screen.getByTestId('daily-note-day-2026-06-20'));
+
+    await waitFor(() => {
+      expect(openDailyNoteMock).toHaveBeenCalledWith('/repo', '2026-06-20');
+    });
+    expect(readMarkdownDocumentMock).toHaveBeenCalledWith(
+      '/repo',
+      '/repo/Daily/2026/06/2026-06-20.md',
+    );
+    expect(await screen.findByRole('tab', { name: /2026-06-20/ })).toBeTruthy();
+  });
+
+  it('collapses and restores the sidebar calendar from the compact summary', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    const toggle = screen.getByTestId('daily-note-calendar-toggle');
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+    await user.click(toggle);
+
+    expect(
+      screen.getByRole('button', { name: '展开日历' }).getAttribute(
+        'aria-expanded',
+      ),
+    ).toBe('false');
+    expect(
+      window.localStorage.getItem('madora:workspace:daily-calendar-collapsed'),
+    ).toBe('true');
+    expect(screen.getByText(formatTestDailyDate(new Date()))).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '展开日历' }));
+
+    expect(
+      screen.getByRole('button', { name: '收起日历' }).getAttribute(
+        'aria-expanded',
+      ),
+    ).toBe('true');
+    expect(
+      window.localStorage.getItem('madora:workspace:daily-calendar-collapsed'),
+    ).toBe('false');
+  });
+
+  it('restores the collapsed sidebar calendar preference', () => {
+    window.localStorage.setItem(
+      'madora:workspace:daily-calendar-collapsed',
+      'true',
+    );
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    expect(
+      screen.getByTestId('daily-note-calendar-toggle').getAttribute(
+        'aria-expanded',
+      ),
+    ).toBe('false');
+    expect(screen.getByRole('button', { name: '展开日历' })).toBeTruthy();
+  });
+
+  it('opens today from the pinned schedule entry and hides the Daily system folder', async () => {
+    const user = userEvent.setup();
+    const today = formatTestDailyDate(new Date());
+    const dailyNode = {
+      id: `Daily/${today}.md`,
+      name: `${today}.md`,
+      kind: 'document' as const,
+      relativePath: `Daily/${today}.md`,
+      absolutePath: `/repo/Daily/${today}.md`,
+      title: today,
+    };
+
+    openDailyNoteMock.mockResolvedValue({
+      node: dailyNode,
+      content: markdownDocument({
+        path: dailyNode.absolutePath,
+        title: today,
+      }),
+    });
+    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
+      path: dailyNode.absolutePath,
+      title: today,
+    }));
+    loadWorkspaceTreeMock.mockResolvedValue({
+      ...dailyDirectorySnapshot,
+      nodes: [...dailyDirectorySnapshot.nodes, dailyNode],
+    });
+
+    render(<WorkspaceLayout initialSnapshot={dailyDirectorySnapshot} />);
+
+    expect(screen.getByTestId('daily-note-entry').textContent).toContain('日程');
+    expect(screen.queryByTestId('tree-node-Daily')).toBeNull();
+    expect(screen.getByText('项目说明')).toBeTruthy();
+
+    await user.click(screen.getByTestId('daily-note-entry'));
+
+    await waitFor(() => {
+      expect(openDailyNoteMock).toHaveBeenCalledWith('/repo', today);
+    });
+    expect(await screen.findByRole('tab', { name: new RegExp(today) })).toBeTruthy();
   });
 
   it('opens documents in tabs and switches from the tab bar', async () => {
@@ -1006,7 +1235,12 @@ describe('WorkspaceLayout', () => {
 
     await user.click(screen.getByRole('button', { name: '打开 Git 日志' }));
 
-    expect(await screen.findByTestId('git-log-drawer')).toBeTruthy();
+    const gitLogDrawer = await screen.findByTestId('git-log-drawer');
+
+    expect(gitLogDrawer).toBeTruthy();
+    expect(gitLogDrawer.className).not.toContain('rounded-lg');
+    expect(gitLogDrawer.className).not.toContain('shadow-sm');
+    expect(gitLogDrawer.className).toContain('border-t');
     expect(screen.getAllByText('feat: git log drawer').length).toBeGreaterThan(1);
     expect(screen.getByText('git-log-drawer.tsx')).toBeTruthy();
     expect(gitBranchesMock).toHaveBeenCalledWith('/repo');
@@ -1017,7 +1251,7 @@ describe('WorkspaceLayout', () => {
       name: '调整 Git 日志高度',
     });
     expect(
-      within(screen.getByTestId('git-log-drawer')).queryByRole('separator', {
+      within(gitLogDrawer).queryByRole('separator', {
         name: '调整 Git 日志高度',
       }),
     ).toBeNull();
@@ -1137,12 +1371,12 @@ describe('WorkspaceLayout', () => {
       body: [
         '你好 世界',
         '',
-        '![cover](refinex-asset://asset-img)',
+        '![cover](madora-asset://asset-img)',
         '![Octarine](https://octarine.app/img/og/base.png)',
       ].join('\n'),
     }));
     resolveWorkspaceAssetMock.mockResolvedValue({
-      absolutePath: '/repo/.refinex/assets/files/as/asset-img.png',
+      absolutePath: '/repo/.madora/assets/files/as/asset-img.png',
       id: 'asset-img',
       mediaType: 'image/png',
       name: 'cover.png',
@@ -1154,7 +1388,15 @@ describe('WorkspaceLayout', () => {
       mediaType: 'image/png',
       name: 'cover.png',
     });
-    selectWorkspaceAssetDownloadPathMock.mockResolvedValue('/Downloads/cover.png');
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3]), {
+        headers: { 'Content-Type': 'image/png' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    selectWorkspaceAssetDownloadPathMock
+      .mockResolvedValueOnce('/Downloads/cover.png')
+      .mockResolvedValueOnce('/Downloads/base.png');
     writeExportFileMock.mockResolvedValue('/Downloads/cover.png');
 
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
@@ -1207,6 +1449,22 @@ describe('WorkspaceLayout', () => {
     expect(await screen.findByText('cover.png')).toBeTruthy();
     expect(await screen.findByText('base.png')).toBeTruthy();
 
+    await user.hover(screen.getByText('cover.png'));
+    await user.click(screen.getByRole('button', { name: '查看资源 cover.png' }));
+
+    const previewDialog = await screen.findByRole('dialog', {
+      name: '查看资源 cover.png',
+    });
+
+    expect(within(previewDialog).getByRole('img', { name: 'cover.png' }))
+      .toBeTruthy();
+    await user.click(within(previewDialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: '查看资源 cover.png' }),
+      ).toBeNull();
+    });
+
     await user.click(screen.getByRole('button', { name: '下载资源 cover.png' }));
 
     await waitFor(() => {
@@ -1217,6 +1475,20 @@ describe('WorkspaceLayout', () => {
       expect(writeExportFileMock).toHaveBeenCalledWith(
         '/Downloads/cover.png',
         'cG5n',
+      );
+    });
+
+    await user.click(screen.getByRole('button', { name: '下载资源 base.png' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('https://octarine.app/img/og/base.png');
+      expect(selectWorkspaceAssetDownloadPathMock).toHaveBeenCalledWith(
+        'base.png',
+        'image/png',
+      );
+      expect(writeExportFileMock).toHaveBeenCalledWith(
+        '/Downloads/base.png',
+        'AQID',
       );
     });
   });
@@ -1245,6 +1517,21 @@ describe('WorkspaceLayout', () => {
       screen.queryByRole('button', { name: '打开设置菜单' }),
     ).toBeNull();
     expect(screen.getByRole('button', { name: '打开设置' })).toBeTruthy();
+  });
+
+  it('switches app theme from the top-right quick menu', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '切换主题' }));
+
+    expect(screen.getByRole('menuitemradio', { name: '跟随系统' })).toBeTruthy();
+    expect(screen.getByRole('menuitemradio', { name: '亮色' })).toBeTruthy();
+    expect(screen.getByRole('menuitemradio', { name: '暗色' })).toBeTruthy();
+
+    await user.click(screen.getByRole('menuitemradio', { name: '暗色' }));
+
+    expect(setThemeMock).toHaveBeenCalledWith('dark');
   });
 
   it('opens appearance settings from the settings menu by default', async () => {
@@ -1277,9 +1564,9 @@ describe('WorkspaceLayout', () => {
     expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '存储' })).toBeTruthy();
     expect(screen.getByText('本地存储配置')).toBeTruthy();
-    expect(screen.getByDisplayValue('/repo/.refinex/assets')).toBeTruthy();
+    expect(screen.getByDisplayValue('/repo/.madora/assets')).toBeTruthy();
     expect(
-      screen.getByDisplayValue('refinex-asset://{assetId}'),
+      screen.getByDisplayValue('madora-asset://{assetId}'),
     ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '应用' }));
@@ -1450,7 +1737,7 @@ describe('WorkspaceLayout', () => {
 
     await user.type(searchInput, '引用');
 
-    expect(screen.getByDisplayValue('refinex-asset://{assetId}')).toBeTruthy();
+    expect(screen.getByDisplayValue('madora-asset://{assetId}')).toBeTruthy();
     expect(screen.queryByText('资源目录')).toBeNull();
     expect(screen.queryByText('清理策略')).toBeNull();
 
@@ -1501,6 +1788,7 @@ describe('WorkspaceLayout', () => {
 
     const shell = screen.getByTestId('workspace-shell');
     const sidebar = screen.getByTestId('workspace-sidebar');
+    const editorColumn = screen.getByTestId('workspace-editor-column');
     const editorBlock = screen.getByTestId('workspace-editor-block');
     const editorPaneContent = screen.getByTestId('editor-pane-content');
 
@@ -1516,8 +1804,10 @@ describe('WorkspaceLayout', () => {
       ),
     ).toBe(false);
     expect(screen.queryByText('项目')).toBeNull();
-    expect(editorBlock.className).toContain('rounded-xl');
-    expect(editorBlock.className).toContain('shadow-[');
+    expect(editorColumn.className).toContain('rounded-xl');
+    expect(editorColumn.className).toContain('shadow-[');
+    expect(editorBlock.className).not.toContain('rounded-xl');
+    expect(editorBlock.className).not.toContain('shadow-[');
     expect(editorBlock.className).not.toContain('my-2');
     expect(editorBlock.className).not.toContain('mr-2');
     expect(editorPaneContent.className).toContain(
@@ -1538,8 +1828,15 @@ describe('WorkspaceLayout', () => {
 
     const emptyState = screen.getByTestId('workspace-document-empty-state');
 
-    expect(within(emptyState).getByAltText('').getAttribute('src')).toBe(
-      '/brand/madora-logo-dark.svg',
+    expect(
+      within(emptyState)
+        .getAllByAltText('')
+        .map((image) => image.getAttribute('src')),
+    ).toEqual(
+      expect.arrayContaining([
+        '/brand/madora-logo-dark.svg',
+        '/brand/madora-logo-light.svg',
+      ]),
     );
     expect(
       within(emptyState).getByRole('heading', {
@@ -1651,9 +1948,7 @@ describe('WorkspaceLayout', () => {
       '知识库',
     );
     expect((await screen.findAllByText('知识库')).length).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText('/Users/refinex/知识库').length,
-    ).toBeGreaterThan(0);
+    expect(screen.queryByText('/Users/refinex/知识库')).toBeNull();
   });
 
   it('fills workspace parent path from directory picker', async () => {
@@ -1903,7 +2198,7 @@ describe('WorkspaceLayout', () => {
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     expect(screen.queryByRole('button', { name: '切换工作区' })).toBeNull();
-    expect(screen.getByPlaceholderText('搜索')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '展开侧边栏搜索' })).toBeTruthy();
     expect(
       screen
         .getByTestId('workspace-sidebar')
@@ -1917,8 +2212,11 @@ describe('WorkspaceLayout', () => {
 
     expect(screen.queryByTestId('workspace-titlebar')).toBeNull();
     expect(screen.queryByTestId('windows-titlebar-controls')).toBeNull();
+    expect(screen.getByTestId('workspace-main-header').className).not.toContain(
+      'border-b',
+    );
     expect(screen.queryByText('未选择文档')).toBeNull();
-    expect(screen.getByPlaceholderText('搜索')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '展开侧边栏搜索' })).toBeTruthy();
   });
 
   it('renders compact Windows titlebar controls in the Tauri Windows runtime', async () => {
@@ -2095,6 +2393,10 @@ describe('WorkspaceLayout', () => {
 
     expect(leftHandle.className).toContain('w-2');
     expect(leftHandle.className).toContain('-mx-2');
+    expect(leftHandle.className).toContain('z-10');
+    expect(screen.getByTestId('workspace-sidebar').className).not.toContain(
+      'transition-[width]',
+    );
 
     await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
 
@@ -2104,6 +2406,7 @@ describe('WorkspaceLayout', () => {
 
     expect(rightHandle.className).toContain('w-2');
     expect(rightHandle.className).toContain('-mx-2');
+    expect(rightHandle.className).toContain('z-10');
   });
 
   it('keeps the resized left sidebar width', () => {
@@ -2118,6 +2421,53 @@ describe('WorkspaceLayout', () => {
     fireEvent.pointerUp(document, { pointerId: 1 });
 
     expect(screen.getByTestId('workspace-sidebar').style.width).toBe('360px');
+  });
+
+  it('toggles the left sidebar from the macOS chrome area', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    const collapseButton = screen.getByRole('button', { name: '折叠侧边栏' });
+    const toggleContainer = screen.getByTestId('sidebar-chrome-toggle');
+
+    expect(toggleContainer.className).toContain('left-[80px]');
+    expect(toggleContainer.className).toContain('top-0');
+    expect(collapseButton.dataset.sidebarToggleState).toBe('expanded');
+    expect(screen.getByTestId('workspace-sidebar')).toBeTruthy();
+    expect(
+      screen.getByRole('separator', { name: '调整左侧目录宽度' }),
+    ).toBeTruthy();
+
+    await user.click(collapseButton);
+
+    const expandButton = screen.getByRole('button', { name: '展开侧边栏' });
+    const collapsedSidebar = screen.getByTestId('workspace-sidebar');
+    const collapsedHandle = screen.getByRole('separator', {
+      name: '调整左侧目录宽度',
+    });
+
+    expect(screen.getByTestId('sidebar-chrome-toggle')).toBe(toggleContainer);
+    expect(expandButton.dataset.sidebarToggleState).toBe('collapsed');
+    expect(collapsedSidebar.classList).not.toContain('hidden');
+    expect(collapsedSidebar.className).toContain('transition-[width,opacity]');
+    expect(collapsedSidebar.style.width).toBe('0px');
+    expect(
+      screen
+        .getByTestId('workspace-sidebar-content')
+        .getAttribute('aria-hidden'),
+    ).toBe('true');
+    expect(collapsedHandle.className).toContain('opacity-0');
+    expect(collapsedHandle.className).toContain('pointer-events-none');
+
+    await user.click(expandButton);
+
+    expect(screen.getByRole('button', { name: '折叠侧边栏' })).toBeTruthy();
+    expect(screen.getByTestId('workspace-sidebar').style.width).toBe('280px');
+    expect(
+      screen
+        .getByTestId('workspace-sidebar-content')
+        .getAttribute('aria-hidden'),
+    ).toBe('false');
   });
 
   it('uses default widths for the resizable workspace panels', async () => {
@@ -2176,9 +2526,28 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByRole('button', { name: '打开终端' }));
 
     const terminalPanel = await screen.findByTestId('terminal-panel');
+    const mainBlocks = screen.getByTestId('workspace-main-blocks');
+    const editorColumn = screen.getByTestId('workspace-editor-column');
+    const editorBlock = screen.getByTestId('workspace-editor-block');
 
     expect(terminalPanel).toBeTruthy();
-    expect(within(terminalPanel).getByText('终端')).toBeTruthy();
+    expect(mainBlocks.className).toContain('min-w-0');
+    expect(mainBlocks.className).toContain('overflow-hidden');
+    expect(editorColumn.contains(editorBlock)).toBe(true);
+    expect(editorColumn.contains(terminalPanel)).toBe(true);
+    expect(
+      editorBlock.compareDocumentPosition(terminalPanel) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(terminalPanel.className).toContain('w-full');
+    expect(terminalPanel.className).toContain('min-w-0');
+    expect(terminalPanel.className).toContain('max-w-full');
+    expect(terminalPanel.className).not.toContain('rounded-lg');
+    expect(terminalPanel.className).not.toContain('shadow-sm');
+    expect(terminalPanel.className).toContain('border-t');
+    expect(editorColumn.className).toContain('rounded-xl');
+    expect(editorColumn.className).toContain('shadow-[');
+    expect(within(terminalPanel).queryByText('终端')).toBeNull();
     expect(within(terminalPanel).queryByText('repo')).toBeNull();
     expect(await screen.findByRole('tab', { name: /本地/ })).toBeTruthy();
     expect(screen.queryByRole('tab', { name: /本地 2/ })).toBeNull();
@@ -2197,6 +2566,43 @@ describe('WorkspaceLayout', () => {
     expect(rightHeaderTools.contains(gitButton)).toBe(true);
     expect(rightHeaderTools.contains(terminalButton)).toBe(true);
     expect(rightHeaderTools.contains(gitLogButton)).toBe(true);
+  });
+
+  it('shows hover tooltips for the right header tools', async () => {
+    const assertTooltip = async (label: string) => {
+      const user = userEvent.setup();
+      const { unmount } = render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+      const button = screen.getByRole('button', { name: label });
+      await user.hover(button);
+
+      expect((await screen.findAllByText(label)).length).toBeGreaterThan(0);
+
+      unmount();
+    };
+
+    await assertTooltip('切换主题');
+    await assertTooltip('打开 Git 面板');
+    await assertTooltip('打开终端');
+    await assertTooltip('打开 Git 日志');
+  });
+
+  it('updates the terminal tooltip when the bottom terminal is open', async () => {
+    const user = userEvent.setup();
+
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ =
+      {};
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    const openTerminalButton = screen.getByRole('button', { name: '打开终端' });
+    await user.click(openTerminalButton);
+    await screen.findByTestId('terminal-panel');
+    await user.unhover(openTerminalButton);
+
+    const closeTerminalButton = screen.getByRole('button', { name: '关闭终端' });
+    await user.hover(closeTerminalButton);
+
+    expect((await screen.findAllByText('关闭终端')).length).toBeGreaterThan(0);
   });
 
   it('keeps terminal tab instances mounted when switching tabs', async () => {

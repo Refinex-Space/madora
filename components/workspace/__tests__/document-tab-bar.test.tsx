@@ -18,6 +18,34 @@ function group(): DocumentEditorGroup {
 }
 
 describe('DocumentTabBar', () => {
+  it('renders integrated tabs without hard divider lines', () => {
+    render(
+      <DocumentTabBar
+        group={group()}
+        visibleTabLimit={8}
+        onCloseAllTabs={vi.fn()}
+        onCloseOtherTabs={vi.fn()}
+        onCloseTab={vi.fn()}
+        onCloseTabsToLeft={vi.fn()}
+        onCloseTabsToRight={vi.fn()}
+        onSelectTab={vi.fn()}
+        onSplitTab={vi.fn()}
+      />,
+    );
+
+    const tabBar = screen.getByTestId('document-tab-bar-group-1');
+    const activeTab = screen.getByRole('tab', { name: /B/ });
+    const inactiveTab = screen.getByRole('tab', { name: /A/ });
+
+    expect(tabBar.className).not.toContain('border-b');
+    expect(tabBar.className).toContain('px-1.5');
+    expect(activeTab.className).not.toContain('border-r');
+    expect(inactiveTab.className).not.toContain('border-r');
+    expect(activeTab.className).toContain('rounded-md');
+    expect(activeTab.className).toContain('bg-muted/55');
+    expect(inactiveTab.className).toContain('hover:bg-muted/40');
+  });
+
   it('selects and closes tabs', async () => {
     const user = userEvent.setup();
     const onSelectTab = vi.fn();

@@ -1,20 +1,9 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import Image from "next/image";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSplashGate } from "@/components/workspace/app-splash-gate";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Madora",
@@ -29,15 +18,23 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className="h-full antialiased"
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col" data-app-splash="active">
         <div className="app-splash" aria-label="Madora is loading">
           <main className="app-splash__content">
             <Image
-              className="app-splash__logo"
+              className="app-splash__logo block dark:hidden"
               src="/brand/madora-logo-dark.svg"
+              alt=""
+              width={32}
+              height={32}
+              priority
+            />
+            <Image
+              className="app-splash__logo hidden dark:block"
+              src="/brand/madora-logo-light.svg"
               alt=""
               width={32}
               height={32}

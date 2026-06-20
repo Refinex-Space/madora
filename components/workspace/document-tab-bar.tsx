@@ -61,10 +61,10 @@ export function DocumentTabBar({
 
   return (
     <div
-      className="flex h-9 shrink-0 items-stretch border-b border-border/60 bg-background"
+      className="flex h-9 shrink-0 items-center bg-background px-1.5"
       data-testid={`document-tab-bar-${group.id}`}
     >
-      <div className="flex min-w-0 flex-1 items-stretch overflow-hidden">
+      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
         {visibleTabs.map((tab) => (
           <DocumentTabItem
             group={group}
@@ -84,9 +84,9 @@ export function DocumentTabBar({
       {overflowTabs.length > 0 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-          <button
-            aria-label="显示更多打开的文档"
-              className="mr-1 inline-flex w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            <button
+              aria-label="显示更多打开的文档"
+              className="ml-1 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
               type="button"
             >
               <ChevronDown size={15} />
@@ -129,10 +129,10 @@ function DocumentTabItem({
         <div
           aria-selected={active}
           className={cn(
-            'group flex h-full max-w-56 min-w-28 cursor-default items-center border-r pl-2 pr-1 text-sm outline-none',
+            'group flex h-7 max-w-56 min-w-28 cursor-default items-center rounded-md pl-2.5 pr-1 text-sm outline-none transition-colors',
             active
-              ? 'bg-background text-foreground'
-              : 'bg-background text-muted-foreground hover:bg-accent hover:text-foreground',
+              ? 'bg-muted/55 text-foreground'
+              : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
           )}
           role="tab"
           tabIndex={0}

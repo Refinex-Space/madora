@@ -9,6 +9,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const WORKSPACE_PRIVATE_DIR: &str = ".madora";
+
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceSnapshot {
@@ -46,6 +48,25 @@ pub struct WorkspaceMetadata {
     pub recent_document_paths: Vec<String>,
     pub expanded_paths: Vec<String>,
     pub sort_order: serde_json::Map<String, Value>,
+    #[serde(default)]
+    pub daily_notes: WorkspaceDailyNotes,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDailyNotes {
+    #[serde(default)]
+    pub selected_date: Option<String>,
+    #[serde(default)]
+    pub entries: BTreeMap<String, DailyNoteEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyNoteEntry {
+    pub document_path: String,
+    pub has_content: bool,
+    pub updated_at: u128,
 }
 
 const SORT_ORDER_STEP: i64 = 1024;
@@ -124,6 +145,29 @@ pub struct MarkdownDocumentContent {
 pub struct CreatedMarkdownDocument {
     pub node: WorkspaceNode,
     pub content: MarkdownDocumentContent,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyNoteDocument {
+    pub node: WorkspaceNode,
+    pub content: MarkdownDocumentContent,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyNoteMonth {
+    pub month: String,
+    pub entries: Vec<DailyNoteMonthEntry>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyNoteMonthEntry {
+    pub date: String,
+    pub document_path: String,
+    pub has_content: bool,
+    pub updated_at: u128,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -226,6 +270,136 @@ pub fn record_recent_document(
 }
 
 #[tauri::command]
+pub fn open_daily_note(root_path: String, date: String) -> Result<DailyNoteDocument, String> {
+    let root = canonical_workspace_root(&root_path)?;
+    let day = parse_daily_date(&date)?;
+    let date_key = day.format("%Y-%m-%d").to_string();
+    let note_path = daily_note_path(&root, day);
+
+    if let Some(parent) = note_path.parent() {
+        fs::create_dir_all(parent).map_err(|_| "无法创建每日笔记目录".to_string())?;
+    }
+
+    if !note_path.exists() {
+        write_text_atomic(&note_path, &daily_note_template(day))
+            .map_err(|_| "无法创建每日笔记".to_string())?;
+    }
+
+    let content = fs::read_to_string(&note_path)
+        .map_err(|_| "无法读取每日笔记内容，当前仅支持 UTF-8 文档".to_string())?;
+    let modified_at = read_modified_at(&note_path)?;
+    let mut metadata = ensure_workspace_metadata(&root)
+        .map_err(|error| format!("读取工作区元数据失败：{error}"))?;
+
+    metadata.daily_notes.selected_date = Some(date_key.clone());
+    metadata.daily_notes.entries.insert(
+        date_key.clone(),
+        DailyNoteEntry {
+            document_path: note_path.to_string_lossy().to_string(),
+            has_content: daily_note_has_content(&content, &date_key),
+            updated_at: modified_at,
+        },
+    );
+    write_workspace_metadata(&root, &metadata)
+        .map_err(|error| format!("保存每日笔记索引失败：{error}"))?;
+
+    let name = note_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("daily.md")
+        .to_string();
+    let node = build_document_node(&root, &note_path, name)
+        .map_err(|error| format!("读取每日笔记节点失败：{error}"))?;
+
+    Ok(DailyNoteDocument {
+        node,
+        content: MarkdownDocumentContent {
+            path: note_path.to_string_lossy().to_string(),
+            content,
+            modified_at,
+        },
+    })
+}
+
+#[tauri::command]
+pub fn list_daily_notes_for_month(
+    root_path: String,
+    month: String,
+) -> Result<DailyNoteMonth, String> {
+    let root = canonical_workspace_root(&root_path)?;
+    let (year, month_number) = parse_daily_month(&month)?;
+    let mut metadata = ensure_workspace_metadata(&root)
+        .map_err(|error| format!("读取工作区元数据失败：{error}"))?;
+    let mut month_entries: BTreeMap<String, DailyNoteEntry> = metadata
+        .daily_notes
+        .entries
+        .iter()
+        .filter(|(date, entry)| {
+            date.starts_with(&month) && PathBuf::from(&entry.document_path).is_file()
+        })
+        .map(|(date, entry)| (date.clone(), entry.clone()))
+        .collect();
+    let month_dir = root
+        .join("Daily")
+        .join(format!("{year:04}"))
+        .join(format!("{month_number:02}"));
+
+    if month_dir.is_dir() {
+        for entry in
+            fs::read_dir(&month_dir).map_err(|error| format!("读取每日笔记目录失败：{error}"))?
+        {
+            let entry = entry.map_err(|error| format!("读取每日笔记目录失败：{error}"))?;
+            let path = entry.path();
+
+            if !is_markdown_document_file(&path) {
+                continue;
+            }
+
+            let Some(date) = daily_date_from_path(&root, &path) else {
+                continue;
+            };
+
+            if !date.starts_with(&month) {
+                continue;
+            }
+
+            let content = fs::read_to_string(&path).unwrap_or_default();
+            let updated_at = read_modified_at(&path)?;
+            month_entries.insert(
+                date.clone(),
+                DailyNoteEntry {
+                    document_path: path.to_string_lossy().to_string(),
+                    has_content: daily_note_has_content(&content, &date),
+                    updated_at,
+                },
+            );
+        }
+    }
+
+    for (date, entry) in &month_entries {
+        metadata
+            .daily_notes
+            .entries
+            .insert(date.clone(), entry.clone());
+    }
+    write_workspace_metadata(&root, &metadata)
+        .map_err(|error| format!("保存每日笔记索引失败：{error}"))?;
+
+    Ok(DailyNoteMonth {
+        month,
+        entries: month_entries
+            .into_iter()
+            .map(|(date, entry)| DailyNoteMonthEntry {
+                date,
+                document_path: entry.document_path,
+                has_content: entry.has_content,
+                updated_at: entry.updated_at,
+            })
+            .collect(),
+    })
+}
+
+#[tauri::command]
 pub fn load_workspace_tree(root_path: String) -> Result<WorkspaceSnapshot, String> {
     let root = canonical_workspace_root(&root_path)?;
     ensure_workspace_metadata(&root).map_err(|error| format!("初始化工作区失败：{error}"))?;
@@ -281,9 +455,13 @@ pub fn save_markdown_document(
         log::warn!("本地资产清理失败：{error}");
     }
 
+    let modified_at = read_modified_at(&document)?;
+    refresh_daily_note_index_for_path(&root, &document, &content, modified_at)
+        .map_err(|error| format!("保存每日笔记索引失败：{error}"))?;
+
     Ok(DocumentContentMeta {
         path: document.to_string_lossy().to_string(),
-        modified_at: read_modified_at(&document)?,
+        modified_at,
     })
 }
 
@@ -325,7 +503,10 @@ pub fn migrate_plate_documents_to_markdown(
     let mut paths = Vec::new();
     collect_plate_document_paths(&root, &mut paths).map_err(|_| "无法扫描旧文档".to_string())?;
 
-    let backup_dir = root.join(".refinex/migrations/backup");
+    let backup_dir = root
+        .join(WORKSPACE_PRIVATE_DIR)
+        .join("migrations")
+        .join("backup");
     fs::create_dir_all(&backup_dir).map_err(|_| "无法创建迁移备份目录".to_string())?;
 
     let mut migrated = Vec::new();
@@ -1163,7 +1344,145 @@ fn default_workspace_metadata() -> WorkspaceMetadata {
         recent_document_paths: Vec::new(),
         expanded_paths: Vec::new(),
         sort_order: serde_json::Map::new(),
+        daily_notes: WorkspaceDailyNotes::default(),
     }
+}
+
+fn parse_daily_date(date: &str) -> Result<chrono::NaiveDate, String> {
+    let bytes = date.as_bytes();
+    let has_strict_shape = bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, value)| matches!(index, 4 | 7) || value.is_ascii_digit());
+
+    if !has_strict_shape {
+        return Err("日期格式无效，请使用 YYYY-MM-DD".to_string());
+    }
+
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|_| "日期格式无效，请使用 YYYY-MM-DD".to_string())
+}
+
+fn parse_daily_month(month: &str) -> Result<(i32, u32), String> {
+    let bytes = month.as_bytes();
+    let has_strict_shape = bytes.len() == 7
+        && bytes[4] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, value)| index == 4 || value.is_ascii_digit());
+
+    if !has_strict_shape {
+        return Err("月份格式无效，请使用 YYYY-MM".to_string());
+    }
+
+    let date = chrono::NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d")
+        .map_err(|_| "月份格式无效，请使用 YYYY-MM".to_string())?;
+    let year = month[0..4]
+        .parse::<i32>()
+        .map_err(|_| "月份格式无效，请使用 YYYY-MM".to_string())?;
+    let month_number = date
+        .format("%m")
+        .to_string()
+        .parse::<u32>()
+        .map_err(|_| "月份格式无效，请使用 YYYY-MM".to_string())?;
+
+    Ok((year, month_number))
+}
+
+fn daily_note_path(root: &Path, day: chrono::NaiveDate) -> PathBuf {
+    root.join("Daily")
+        .join(day.format("%Y").to_string())
+        .join(day.format("%m").to_string())
+        .join(format!("{}.md", day.format("%Y-%m-%d")))
+}
+
+fn daily_note_template(day: chrono::NaiveDate) -> String {
+    let date = day.format("%Y-%m-%d");
+    let now = current_iso_timestamp();
+
+    format!(
+        "---\ntitle: {date}\ncreatedAt: {now}\nupdatedAt: {now}\nrefinexDialect: 1\ndailyDate: {date}\n---\n\n# {date}\n"
+    )
+}
+
+fn daily_note_has_content(raw: &str, date: &str) -> bool {
+    daily_note_body_without_scaffold(raw, date)
+        .lines()
+        .any(|line| !line.trim().is_empty())
+}
+
+fn daily_note_body_without_scaffold<'a>(raw: &'a str, date: &str) -> String {
+    let mut body = raw;
+
+    if let Some(rest) = raw.strip_prefix("---\n") {
+        if let Some(end) = rest.find("\n---") {
+            let after = &rest[end + 4..];
+            body = after.strip_prefix('\n').unwrap_or(after);
+        }
+    }
+
+    let mut removed_heading = false;
+    body.lines()
+        .filter(|line| {
+            if removed_heading {
+                return true;
+            }
+
+            let trimmed = line.trim();
+            if trimmed == format!("# {date}") {
+                removed_heading = true;
+                return false;
+            }
+
+            true
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn daily_date_from_path(root: &Path, path: &Path) -> Option<String> {
+    let relative_path = to_relative_path(root, path);
+    let parts = relative_path.split('/').collect::<Vec<_>>();
+
+    if parts.len() != 4 || parts[0] != "Daily" {
+        return None;
+    }
+
+    let file_date = parts[3].strip_suffix(".md")?;
+
+    if file_date.len() != 10 || parts[1] != &file_date[0..4] || parts[2] != &file_date[5..7] {
+        return None;
+    }
+
+    parse_daily_date(file_date).ok()?;
+
+    Some(file_date.to_string())
+}
+
+fn refresh_daily_note_index_for_path(
+    root: &Path,
+    document: &Path,
+    content: &str,
+    modified_at: u128,
+) -> io::Result<()> {
+    let Some(date) = daily_date_from_path(root, document) else {
+        return Ok(());
+    };
+    let mut metadata = ensure_workspace_metadata(root)?;
+
+    metadata.daily_notes.entries.insert(
+        date.clone(),
+        DailyNoteEntry {
+            document_path: document.to_string_lossy().to_string(),
+            has_content: daily_note_has_content(content, &date),
+            updated_at: modified_at,
+        },
+    );
+    write_workspace_metadata(root, &metadata)
 }
 
 fn read_sort_order(metadata: &WorkspaceMetadata) -> WorkspaceSortOrder {
@@ -1186,7 +1505,7 @@ fn write_sort_order(
 }
 
 fn ensure_workspace_metadata(root: &Path) -> io::Result<WorkspaceMetadata> {
-    let metadata_dir = root.join(".refinex");
+    let metadata_dir = workspace_private_dir(root);
     let metadata_path = metadata_dir.join("workspace.json");
     fs::create_dir_all(&metadata_dir)?;
 
@@ -1251,7 +1570,10 @@ fn write_text_atomic(path: &Path, content: &str) -> io::Result<()> {
 }
 
 fn write_workspace_metadata(root: &Path, metadata: &WorkspaceMetadata) -> io::Result<()> {
-    write_json_pretty(&root.join(".refinex/workspace.json"), metadata)
+    write_json_pretty(
+        &workspace_private_dir(root).join("workspace.json"),
+        metadata,
+    )
 }
 
 fn canonical_workspace_root(root_path: &str) -> Result<PathBuf, String> {
@@ -1279,9 +1601,13 @@ fn canonical_parent_directory(parent_path: &str) -> Result<PathBuf, String> {
 }
 
 fn should_skip_entry(file_name: &str) -> bool {
-    file_name == ".refinex"
+    file_name == WORKSPACE_PRIVATE_DIR
         || file_name == ".git"
         || matches!(file_name, "node_modules" | "target" | "dist" | "build")
+}
+
+fn workspace_private_dir(root: &Path) -> PathBuf {
+    root.join(WORKSPACE_PRIVATE_DIR)
 }
 
 fn is_plate_document_file(path: &Path) -> bool {
@@ -1426,7 +1752,7 @@ fn validate_markdown_document_path(
         return Err("无法访问工作区外的文档".to_string());
     }
 
-    if document.starts_with(root.join(".refinex")) {
+    if is_workspace_private_path(&root, &document) {
         return Err("不能操作工作区元数据".to_string());
     }
 
@@ -1482,7 +1808,7 @@ fn validate_workspace_node_path(
         return Err("无法访问工作区外的路径".to_string());
     }
 
-    if node.starts_with(root.join(".refinex")) {
+    if is_workspace_private_path(&root, &node) {
         return Err("不能操作工作区元数据".to_string());
     }
 
@@ -1513,11 +1839,15 @@ fn resolve_workspace_path_for_move(root: &Path, path: &str) -> Result<PathBuf, S
         return Err("路径必须位于工作区内".to_string());
     }
 
-    if canonical.starts_with(root.join(".refinex")) {
+    if is_workspace_private_path(root, &canonical) {
         return Err("不能操作工作区元数据".to_string());
     }
 
     Ok(canonical)
+}
+
+fn is_workspace_private_path(root: &Path, path: &Path) -> bool {
+    path.starts_with(workspace_private_dir(root))
 }
 
 fn resolve_workspace_node_for_move(
@@ -2062,7 +2392,102 @@ mod tests {
 
         assert_eq!(metadata.schema_version, 1);
         assert_eq!(metadata.recent_document_path, None);
-        assert!(temp_dir.path().join(".refinex/workspace.json").is_file());
+        assert!(temp_dir.path().join(".madora/workspace.json").is_file());
+    }
+
+    #[test]
+    fn default_workspace_metadata_includes_empty_daily_notes() {
+        let metadata = default_workspace_metadata();
+
+        assert_eq!(metadata.daily_notes.selected_date, None);
+        assert!(metadata.daily_notes.entries.is_empty());
+    }
+
+    #[test]
+    fn rejects_invalid_daily_note_date() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let error = open_daily_note(
+            temp_dir.path().to_string_lossy().to_string(),
+            "2026-6-2".to_string(),
+        )
+        .expect_err("非法日期应该失败");
+
+        assert!(error.contains("日期格式无效"));
+    }
+
+    #[test]
+    fn open_daily_note_creates_markdown_file_and_metadata_entry() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let root = temp_dir.path().to_string_lossy().to_string();
+
+        let opened =
+            open_daily_note(root.clone(), "2026-06-20".to_string()).expect("打开每日笔记失败");
+
+        assert_eq!(opened.node.relative_path, "Daily/2026/06/2026-06-20.md");
+        assert!(opened.content.content.contains("dailyDate: 2026-06-20"));
+        assert!(temp_dir
+            .path()
+            .join("Daily/2026/06/2026-06-20.md")
+            .is_file());
+
+        let raw = fs::read_to_string(temp_dir.path().join(".madora/workspace.json"))
+            .expect("读取 workspace.json 失败");
+        let metadata: WorkspaceMetadata =
+            serde_json::from_str(&raw).expect("解析 workspace.json 失败");
+        assert_eq!(
+            metadata.daily_notes.selected_date.as_deref(),
+            Some("2026-06-20")
+        );
+        assert!(metadata.daily_notes.entries.contains_key("2026-06-20"));
+        assert!(!metadata.daily_notes.entries["2026-06-20"].has_content);
+    }
+
+    #[test]
+    fn open_daily_note_preserves_existing_content() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let root_path = temp_dir.path();
+        let note_dir = root_path.join("Daily/2026/06");
+        fs::create_dir_all(&note_dir).expect("创建每日笔记目录失败");
+        fs::write(note_dir.join("2026-06-20.md"), "# 2026-06-20\n\n真实内容\n")
+            .expect("写入每日笔记失败");
+
+        let opened = open_daily_note(
+            root_path.to_string_lossy().to_string(),
+            "2026-06-20".to_string(),
+        )
+        .expect("打开已有每日笔记失败");
+
+        assert!(opened.content.content.contains("真实内容"));
+        assert!(opened.content.content.contains("# 2026-06-20"));
+    }
+
+    #[test]
+    fn list_daily_notes_for_month_reports_only_real_content_markers() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let root = temp_dir.path().to_string_lossy().to_string();
+        let document_path = temp_dir
+            .path()
+            .join("Daily/2026/06/2026-06-20.md")
+            .to_string_lossy()
+            .to_string();
+
+        open_daily_note(root.clone(), "2026-06-20".to_string()).expect("打开空每日笔记失败");
+        save_markdown_document(
+            root.clone(),
+            document_path,
+            "---\ntitle: 2026-06-20\nrefinexDialect: 1\ndailyDate: 2026-06-20\n---\n\n# 2026-06-20\n\n- [ ] 写计划\n"
+                .to_string(),
+            None,
+        )
+        .expect("保存每日笔记失败");
+
+        let month =
+            list_daily_notes_for_month(root, "2026-06".to_string()).expect("读取月索引失败");
+
+        assert_eq!(month.month, "2026-06");
+        assert_eq!(month.entries.len(), 1);
+        assert_eq!(month.entries[0].date, "2026-06-20");
+        assert!(month.entries[0].has_content);
     }
 
     #[test]
@@ -2081,7 +2506,7 @@ mod tests {
 
         assert_eq!(paths, vec![canonical_doc.clone()]);
 
-        let raw = fs::read_to_string(root.join(".refinex/workspace.json"))
+        let raw = fs::read_to_string(root.join(".madora/workspace.json"))
             .expect("读取 workspace.json 失败");
         let value: serde_json::Value =
             serde_json::from_str(&raw).expect("解析 workspace.json 失败");
@@ -2101,8 +2526,11 @@ mod tests {
             .map(|index| root.join(format!("doc-{index}.md")))
             .collect();
         for doc in &docs {
-            fs::write(doc, format!("# Doc {}\n", doc.file_name().unwrap().to_string_lossy()))
-                .expect("写入文档失败");
+            fs::write(
+                doc,
+                format!("# Doc {}\n", doc.file_name().unwrap().to_string_lossy()),
+            )
+            .expect("写入文档失败");
         }
         let canonical: Vec<String> = docs
             .iter()
@@ -2127,13 +2555,7 @@ mod tests {
 
         assert_eq!(paths.len(), 5);
         assert_eq!(paths[0], canonical[0]);
-        assert_eq!(
-            paths
-                .iter()
-                .filter(|p| *p == &canonical[0])
-                .count(),
-            1
-        );
+        assert_eq!(paths.iter().filter(|p| *p == &canonical[0]).count(), 1);
 
         // 记录第 6 个不同文档：截断为 5，最旧的 doc-2 被淘汰
         // 推演：初始 [5,4,3,2,1] → 记 doc-1 后 [1,5,4,3,2] → 记 doc-6 后 [6,1,5,4,3]
@@ -2149,13 +2571,13 @@ mod tests {
     }
 
     #[test]
-    fn ensure_workspace_migrates_legacy_recent_document_path() {
+    fn ensure_workspace_ignores_refinex_metadata_directory() {
         let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
         let root = temp_dir.path();
-        let metadata_dir = root.join(".refinex");
-        fs::create_dir(&metadata_dir).expect("创建元数据目录失败");
+        let refinex_metadata_dir = root.join(".refinex");
+        fs::create_dir(&refinex_metadata_dir).expect("创建旧元数据目录失败");
         fs::write(
-            metadata_dir.join("workspace.json"),
+            refinex_metadata_dir.join("workspace.json"),
             r#"{
   "schemaVersion": 1,
   "recentDocumentPath": "/repo/legacy.md",
@@ -2168,18 +2590,19 @@ mod tests {
         let metadata = ensure_workspace(temp_dir.path().to_string_lossy().to_string())
             .expect("读取工作区元数据失败");
 
-        assert_eq!(metadata.recent_document_paths, vec!["/repo/legacy.md".to_string()]);
+        assert!(metadata.recent_document_paths.is_empty());
         assert_eq!(metadata.recent_document_path, None);
+        assert!(root.join(".madora/workspace.json").is_file());
+        assert!(refinex_metadata_dir.exists());
     }
 
     #[test]
     fn record_recent_document_rebuilds_corrupt_metadata() {
         let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
         let root = temp_dir.path();
-        let metadata_dir = root.join(".refinex");
+        let metadata_dir = root.join(".madora");
         fs::create_dir(&metadata_dir).expect("创建元数据目录失败");
-        fs::write(metadata_dir.join("workspace.json"), "{ broken")
-            .expect("写入损坏元数据失败");
+        fs::write(metadata_dir.join("workspace.json"), "{ broken").expect("写入损坏元数据失败");
         let doc = root.join("note.md");
         fs::write(&doc, "# Note\n").expect("写入文档失败");
         let canonical_doc = doc.canonicalize().unwrap().to_string_lossy().to_string();
@@ -2196,7 +2619,7 @@ mod tests {
     #[test]
     fn corrupt_workspace_metadata_is_backed_up_and_rebuilt() {
         let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
-        let metadata_dir = temp_dir.path().join(".refinex");
+        let metadata_dir = temp_dir.path().join(".madora");
         fs::create_dir(&metadata_dir).expect("创建元数据目录失败");
         fs::write(metadata_dir.join("workspace.json"), "{ broken").expect("写入损坏元数据失败");
 
@@ -2230,7 +2653,7 @@ mod tests {
         assert_eq!(snapshot.root_name, "知识库");
         assert!(temp_dir
             .path()
-            .join("知识库/.refinex/workspace.json")
+            .join("知识库/.madora/workspace.json")
             .is_file());
     }
 
@@ -2378,7 +2801,7 @@ mod tests {
         assert!(temp_dir.path().join("Guide.md").is_file());
         assert!(temp_dir
             .path()
-            .join(".refinex/migrations/backup/Guide.plate.json")
+            .join(".madora/migrations/backup/Guide.plate.json")
             .is_file());
         assert!(fs::read_to_string(temp_dir.path().join("Guide.md"))
             .expect("读取迁移后 Markdown 失败")
@@ -2758,9 +3181,9 @@ mod tests {
         fs::write(temp_dir.path().join("A.md"), "# A\n").expect("写入 A 文档失败");
         std::thread::sleep(std::time::Duration::from_millis(20));
         fs::write(temp_dir.path().join("B.md"), "# B\n").expect("写入 B 文档失败");
-        fs::create_dir_all(temp_dir.path().join(".refinex")).expect("创建元数据目录失败");
+        fs::create_dir_all(temp_dir.path().join(".madora")).expect("创建元数据目录失败");
         fs::write(
-            temp_dir.path().join(".refinex/workspace.json"),
+            temp_dir.path().join(".madora/workspace.json"),
             r#"{
   "schemaVersion": 1,
   "recentDocumentPath": null,
@@ -2978,7 +3401,8 @@ mod tests {
     fn update_markdown_document_title_inserts_h1_when_missing() {
         let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
         let doc_path = temp_dir.path().join("note.md");
-        fs::write(&doc_path, "---\ntitle: 笔记\n---\n\n只有正文没有标题\n").expect("写入 Markdown 失败");
+        fs::write(&doc_path, "---\ntitle: 笔记\n---\n\n只有正文没有标题\n")
+            .expect("写入 Markdown 失败");
 
         update_markdown_document_title(&doc_path, "新笔记").expect("更新标题失败");
 
