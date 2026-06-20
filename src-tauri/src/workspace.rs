@@ -201,6 +201,31 @@ pub fn ensure_workspace(root_path: String) -> Result<WorkspaceMetadata, String> 
 }
 
 #[tauri::command]
+pub fn record_recent_document(
+    root_path: String,
+    document_path: String,
+) -> Result<Vec<String>, String> {
+    let root = canonical_workspace_root(&root_path)?;
+    let document = validate_existing_markdown_document_path(&root_path, &document_path)?;
+    let absolute_path = document.to_string_lossy().to_string();
+
+    let mut metadata = ensure_workspace_metadata(&root)
+        .map_err(|error| format!("读取工作区元数据失败：{error}"))?;
+    normalize_recent_document_paths(&mut metadata);
+
+    let mut paths = metadata.recent_document_paths;
+    paths.retain(|path| path != &absolute_path);
+    paths.insert(0, absolute_path);
+    paths.truncate(5);
+    metadata.recent_document_paths = paths;
+
+    write_workspace_metadata(&root, &metadata)
+        .map_err(|error| format!("保存最近文档失败：{error}"))?;
+
+    Ok(metadata.recent_document_paths)
+}
+
+#[tauri::command]
 pub fn load_workspace_tree(root_path: String) -> Result<WorkspaceSnapshot, String> {
     let root = canonical_workspace_root(&root_path)?;
     ensure_workspace_metadata(&root).map_err(|error| format!("初始化工作区失败：{error}"))?;
@@ -2038,6 +2063,134 @@ mod tests {
         assert_eq!(metadata.schema_version, 1);
         assert_eq!(metadata.recent_document_path, None);
         assert!(temp_dir.path().join(".refinex/workspace.json").is_file());
+    }
+
+    #[test]
+    fn record_recent_document_creates_list_for_new_workspace() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let root = temp_dir.path();
+        let doc = root.join("note.md");
+        fs::write(&doc, "# Note\n").expect("写入文档失败");
+        let canonical_doc = doc.canonicalize().unwrap().to_string_lossy().to_string();
+
+        let paths = record_recent_document(
+            root.to_string_lossy().to_string(),
+            doc.to_string_lossy().to_string(),
+        )
+        .expect("记录最近文档失败");
+
+        assert_eq!(paths, vec![canonical_doc.clone()]);
+
+        let raw = fs::read_to_string(root.join(".refinex/workspace.json"))
+            .expect("读取 workspace.json 失败");
+        let value: serde_json::Value =
+            serde_json::from_str(&raw).expect("解析 workspace.json 失败");
+
+        assert_eq!(
+            value["recentDocumentPaths"],
+            serde_json::json!([canonical_doc])
+        );
+        assert!(value.get("recentDocumentPath").is_none());
+    }
+
+    #[test]
+    fn record_recent_document_promotes_existing_and_truncates_to_five() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let root = temp_dir.path();
+        let docs: Vec<PathBuf> = (1..=6)
+            .map(|index| root.join(format!("doc-{index}.md")))
+            .collect();
+        for doc in &docs {
+            fs::write(doc, format!("# Doc {}\n", doc.file_name().unwrap().to_string_lossy()))
+                .expect("写入文档失败");
+        }
+        let canonical: Vec<String> = docs
+            .iter()
+            .map(|doc| doc.canonicalize().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        // 先按 1..5 顺序记录，doc-5 最后（最新在前语义下 doc-5 在头部）
+        for doc in &docs[0..5] {
+            record_recent_document(
+                root.to_string_lossy().to_string(),
+                doc.to_string_lossy().to_string(),
+            )
+            .expect("记录最近文档失败");
+        }
+
+        // 再次记录 doc-1：应被置顶、去重，长度仍为 5
+        let paths = record_recent_document(
+            root.to_string_lossy().to_string(),
+            docs[0].to_string_lossy().to_string(),
+        )
+        .expect("记录最近文档失败");
+
+        assert_eq!(paths.len(), 5);
+        assert_eq!(paths[0], canonical[0]);
+        assert_eq!(
+            paths
+                .iter()
+                .filter(|p| *p == &canonical[0])
+                .count(),
+            1
+        );
+
+        // 记录第 6 个不同文档：截断为 5，最旧的 doc-2 被淘汰
+        // 推演：初始 [5,4,3,2,1] → 记 doc-1 后 [1,5,4,3,2] → 记 doc-6 后 [6,1,5,4,3]
+        let paths = record_recent_document(
+            root.to_string_lossy().to_string(),
+            docs[5].to_string_lossy().to_string(),
+        )
+        .expect("记录最近文档失败");
+
+        assert_eq!(paths.len(), 5);
+        assert_eq!(paths[0], canonical[5]);
+        assert!(!paths.contains(&canonical[1]));
+    }
+
+    #[test]
+    fn ensure_workspace_migrates_legacy_recent_document_path() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let root = temp_dir.path();
+        let metadata_dir = root.join(".refinex");
+        fs::create_dir(&metadata_dir).expect("创建元数据目录失败");
+        fs::write(
+            metadata_dir.join("workspace.json"),
+            r#"{
+  "schemaVersion": 1,
+  "recentDocumentPath": "/repo/legacy.md",
+  "expandedPaths": [],
+  "sortOrder": {}
+}"#,
+        )
+        .expect("写入旧元数据失败");
+
+        let metadata = ensure_workspace(temp_dir.path().to_string_lossy().to_string())
+            .expect("读取工作区元数据失败");
+
+        assert_eq!(metadata.recent_document_paths, vec!["/repo/legacy.md".to_string()]);
+        assert_eq!(metadata.recent_document_path, None);
+    }
+
+    #[test]
+    fn record_recent_document_rebuilds_corrupt_metadata() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let root = temp_dir.path();
+        let metadata_dir = root.join(".refinex");
+        fs::create_dir(&metadata_dir).expect("创建元数据目录失败");
+        fs::write(metadata_dir.join("workspace.json"), "{ broken")
+            .expect("写入损坏元数据失败");
+        let doc = root.join("note.md");
+        fs::write(&doc, "# Note\n").expect("写入文档失败");
+        let canonical_doc = doc.canonicalize().unwrap().to_string_lossy().to_string();
+
+        let paths = record_recent_document(
+            root.to_string_lossy().to_string(),
+            doc.to_string_lossy().to_string(),
+        )
+        .expect("记录最近文档失败");
+
+        assert_eq!(paths, vec![canonical_doc]);
     }
 
     #[test]

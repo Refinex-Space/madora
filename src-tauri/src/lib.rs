@@ -56,6 +56,7 @@ pub fn run() {
             settings::read_app_settings,
             settings::save_app_settings,
             workspace::ensure_workspace,
+            workspace::record_recent_document,
             workspace::load_workspace_tree,
             workspace::create_workspace_root,
             workspace::read_markdown_document,
