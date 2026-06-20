@@ -14,9 +14,14 @@ import {
 } from 'lucide-react';
 
 import { MarkdownEditor } from '@/components/editor/markdown-editor';
+import { parseFrontmatter } from '@/components/editor/markdown-frontmatter';
 import { cn } from '@/lib/utils';
 
-import { RightSidePanel, RightToolRail } from './ai-side-panel';
+import {
+  RightSidePanel,
+  RightToolRail,
+  type DocumentPanelData,
+} from './ai-side-panel';
 import { DirectoryPage } from './directory-page';
 import { DocumentTabBar } from './document-tab-bar';
 import {
@@ -83,7 +88,10 @@ import {
 } from './workspace-settings';
 import { WorkspaceResizeHandle } from './workspace-resize-handle';
 import { WorkspaceSidebar } from './workspace-sidebar';
-import { countMarkdownCharacters } from './workspace-document-insights';
+import {
+  countMarkdownCharacters,
+  countMarkdownLines,
+} from './workspace-document-insights';
 import { flattenDocuments } from './workspace-tree';
 import { XtermTerminal } from './xterm-terminal';
 import type {
@@ -276,15 +284,17 @@ export function WorkspaceLayout({
         : [],
     [activeGlobalSearchIndex, globalSearchQuery],
   );
-  const documentPanelData = React.useMemo<{
-    markdown: string;
-    metadata: { title: string; createdAt: string; updatedAt: string };
-  } | null>(() => {
+  const documentPanelData = React.useMemo<DocumentPanelData | null>(() => {
     if (!workspace.draftDocument) {
       return null;
     }
 
+    const frontmatter = parseFrontmatter(
+      workspace.draftDocument.markdown,
+    ).metadata;
+
     return {
+      frontmatter,
       markdown: workspace.draftDocument.markdown,
       metadata: {
         title: workspace.draftDocument.metadata.title,
@@ -2331,12 +2341,4 @@ function WorkspaceStatusBar({
       ) : null}
     </div>
   );
-}
-
-function countMarkdownLines(markdown: string | undefined) {
-  if (!markdown) {
-    return 0;
-  }
-
-  return markdown.split(/\r\n|\r|\n/).length;
 }

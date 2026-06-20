@@ -57,12 +57,11 @@ export function MarkdownEditor({
   const uploader = useWorkspaceAssetUploader(workspaceRootPath ?? null);
   const frontmatterView = React.useMemo(() => {
     const parsed = parseFrontmatter(markdown);
-    const entries = Object.entries(parsed.metadata);
+    const hasFrontmatter = Object.keys(parsed.metadata).length > 0;
 
-    if (entries.length === 0) {
+    if (!hasFrontmatter) {
       return {
         body: markdown,
-        entries,
         hasFrontmatter: false,
         metadata: parsed.metadata,
       };
@@ -70,7 +69,6 @@ export function MarkdownEditor({
 
     return {
       body: parsed.body,
-      entries,
       hasFrontmatter: true,
       metadata: parsed.metadata,
     };
@@ -233,9 +231,6 @@ export function MarkdownEditor({
           }
         }}
       >
-        {frontmatterView.hasFrontmatter ? (
-          <FrontmatterPanel entries={frontmatterView.entries} />
-        ) : null}
         <CodeMirror
           className="min-h-0 w-full flex-1"
           height="100%"
@@ -289,7 +284,7 @@ function MarkoraTocOverlay({
 
   return (
     <div
-      className="group/toc absolute top-1/2 right-3 z-30 flex -translate-y-1/2 items-center"
+      className="group/toc absolute top-1/2 right-9 z-30 flex -translate-y-1/2 items-center"
       data-testid="markora-toc-overlay"
     >
       <span
@@ -317,7 +312,7 @@ function MarkoraTocOverlay({
 
       <nav
         aria-label="文档目录"
-        className="markora-toc-panel-scrollarea pointer-events-none absolute top-1/2 right-7 max-h-[58vh] w-72 -translate-y-1/2 overflow-y-auto rounded-lg border border-border/80 bg-background/95 p-4 text-sm opacity-0 shadow-[0_18px_48px_-24px_rgba(15,23,42,0.45),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur transition-opacity duration-150 group-hover/toc:pointer-events-auto group-hover/toc:opacity-100 group-focus-within/toc:pointer-events-auto group-focus-within/toc:opacity-100"
+        className="markora-toc-panel-scrollarea pointer-events-none absolute top-1/2 right-10 max-h-[58vh] w-72 -translate-y-1/2 overflow-y-auto rounded-lg border border-border/80 bg-background/95 p-4 text-sm opacity-0 shadow-[0_18px_48px_-24px_rgba(15,23,42,0.45),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur transition-opacity duration-150 group-hover/toc:pointer-events-auto group-hover/toc:opacity-100 group-focus-within/toc:pointer-events-auto group-focus-within/toc:opacity-100"
         data-testid="markora-toc-panel"
       >
         <div className="flex flex-col gap-1">
@@ -371,33 +366,4 @@ function getTocPanelIndentClassName(level: MarkoraTocItem['level']) {
     case 6:
       return 'pl-14';
   }
-}
-
-function FrontmatterPanel({
-  entries,
-}: {
-  entries: Array<[string, string]>;
-}) {
-  return (
-    <section
-      className="mb-6 border-b px-4 py-3"
-      data-testid="markdown-frontmatter-panel"
-    >
-      <div className="mb-3 text-xs font-medium text-muted-foreground">
-        文档元数据
-      </div>
-      <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-        {entries.map(([key, value]) => (
-          <div className="min-w-0" key={key}>
-            <dt className="mb-1 text-xs text-muted-foreground">
-              {key}
-            </dt>
-            <dd className="truncate font-medium text-foreground" title={value}>
-              {value}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </section>
-  );
 }

@@ -3,10 +3,14 @@ import { LOCAL_ASSET_URL_PREFIX } from './workspace-local-assets';
 export interface DocumentResourceReference {
   id: string;
   nodeType: string;
+  source: 'local' | 'remote';
   url: string;
 }
 
 const ASSET_URL_PATTERN = buildAssetUrlPattern();
+const REMOTE_MARKDOWN_IMAGE_PATTERN = /!\[[^\]]*]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
+const REMOTE_HTML_IMAGE_PATTERN = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
+const LINK_PREVIEW_PATTERN = /<!--\s*octarine-link-preview:([\s\S]*?)-->/g;
 
 export function countMarkdownCharacters(
   markdown: string | undefined,
@@ -16,6 +20,14 @@ export function countMarkdownCharacters(
   }
 
   return Array.from(markdown.replace(/\s+/g, '')).length;
+}
+
+export function countMarkdownLines(markdown: string | undefined): number {
+  if (!markdown) {
+    return 0;
+  }
+
+  return markdown.split(/\r\n|\r|\n/).length;
 }
 
 export function extractResourceReferencesFromMarkdown(
@@ -44,6 +56,20 @@ export function extractResourceReferencesFromMarkdown(
     references.set(id, {
       id,
       nodeType: isImage ? 'image' : 'file',
+      source: 'local',
+      url,
+    });
+  }
+
+  for (const url of extractRemoteImageUrls(markdown)) {
+    if (references.has(url)) {
+      continue;
+    }
+
+    references.set(url, {
+      id: url,
+      nodeType: 'image',
+      source: 'remote',
       url,
     });
   }
@@ -63,4 +89,61 @@ function buildAssetUrlPattern(): RegExp {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extractRemoteImageUrls(markdown: string): string[] {
+  const urls: string[] = [];
+
+  for (const match of markdown.matchAll(REMOTE_MARKDOWN_IMAGE_PATTERN)) {
+    pushRemoteImageUrl(urls, match[1]);
+  }
+
+  for (const match of markdown.matchAll(REMOTE_HTML_IMAGE_PATTERN)) {
+    pushRemoteImageUrl(urls, match[1]);
+  }
+
+  for (const match of markdown.matchAll(LINK_PREVIEW_PATTERN)) {
+    pushRemoteImageUrl(urls, extractLinkPreviewImageUrl(match[1]));
+  }
+
+  return urls;
+}
+
+function pushRemoteImageUrl(
+  urls: string[],
+  rawUrl: string | undefined | null,
+) {
+  const url = normalizeRemoteUrl(rawUrl);
+
+  if (!url || urls.includes(url)) {
+    return;
+  }
+
+  urls.push(url);
+}
+
+function normalizeRemoteUrl(rawUrl: string | undefined | null) {
+  const url = rawUrl?.trim();
+
+  if (!url || !/^https?:\/\//iu.test(url)) {
+    return null;
+  }
+
+  return url;
+}
+
+function extractLinkPreviewImageUrl(rawPayload: string | undefined) {
+  if (!rawPayload) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawPayload.trim()) as { image?: unknown };
+
+    return typeof parsed.image === 'string' ? parsed.image : null;
+  } catch {
+    const imageMatch = rawPayload.match(/"image"\s*:\s*"([^"]+)"/u);
+
+    return imageMatch?.[1] ?? null;
+  }
 }

@@ -175,6 +175,7 @@
   }
 
   .workspace-editor-scrollarea {
+    margin-right: 12px;
     scrollbar-color: color-mix(in oklab, var(--muted-foreground) 26%, transparent) transparent;
     scrollbar-width: thin;
   }
@@ -215,6 +216,7 @@
   }
 
   .workspace-editor-shell .cm-scroller {
+    margin-right: 12px;
     scrollbar-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent) transparent;
     scrollbar-width: thin;
   }

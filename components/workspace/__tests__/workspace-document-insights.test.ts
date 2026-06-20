@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   countMarkdownCharacters,
+  countMarkdownLines,
   extractResourceReferencesFromMarkdown,
 } from '@/components/workspace/workspace-document-insights';
 
@@ -25,6 +26,16 @@ describe('countMarkdownCharacters', () => {
   });
 });
 
+describe('countMarkdownLines', () => {
+  it('统计 Markdown 行数', () => {
+    expect(countMarkdownLines('# 标题\n\n正文')).toBe(3);
+  });
+
+  it('空文档返回 0', () => {
+    expect(countMarkdownLines('')).toBe(0);
+  });
+});
+
 describe('extractResourceReferencesFromMarkdown', () => {
   it('提取 refinex-asset:// 图片引用', () => {
     const markdown =
@@ -34,11 +45,13 @@ describe('extractResourceReferencesFromMarkdown', () => {
     expect(refs[0]).toEqual({
       id: 'abc123',
       nodeType: 'image',
+      source: 'local',
       url: 'refinex-asset://abc123',
     });
     expect(refs[1]).toEqual({
       id: 'def456',
       nodeType: 'image',
+      source: 'local',
       url: 'refinex-asset://def456',
     });
   });
@@ -70,5 +83,50 @@ describe('extractResourceReferencesFromMarkdown', () => {
       '[b](refinex-asset://second)\n![a](refinex-asset://first)';
     const refs = extractResourceReferencesFromMarkdown(markdown);
     expect(refs.map((r) => r.id)).toEqual(['second', 'first']);
+  });
+
+  it('提取 Markdown 远程图片 URL', () => {
+    const refs = extractResourceReferencesFromMarkdown(
+      '![Octarine](https://octarine.app/img/og/base.png)',
+    );
+
+    expect(refs).toEqual([
+      {
+        id: 'https://octarine.app/img/og/base.png',
+        nodeType: 'image',
+        source: 'remote',
+        url: 'https://octarine.app/img/og/base.png',
+      },
+    ]);
+  });
+
+  it('提取 HTML img 远程图片 URL', () => {
+    const refs = extractResourceReferencesFromMarkdown(
+      '<img src="https://example.com/cover.webp" alt="cover">',
+    );
+
+    expect(refs).toEqual([
+      {
+        id: 'https://example.com/cover.webp',
+        nodeType: 'image',
+        source: 'remote',
+        url: 'https://example.com/cover.webp',
+      },
+    ]);
+  });
+
+  it('提取 Markora link preview 注释中的远程图片 URL', () => {
+    const refs = extractResourceReferencesFromMarkdown(
+      '<!--octarine-link-preview:{"image":"https://octarine.app/img/og/base.png"}-->',
+    );
+
+    expect(refs).toEqual([
+      {
+        id: 'https://octarine.app/img/og/base.png',
+        nodeType: 'image',
+        source: 'remote',
+        url: 'https://octarine.app/img/og/base.png',
+      },
+    ]);
   });
 });

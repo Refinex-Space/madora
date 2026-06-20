@@ -341,6 +341,7 @@ describe('MarkdownEditor', () => {
     expect(globalsCssSource).toContain(
       '.workspace-editor-shell .cm-scroller::-webkit-scrollbar',
     );
+    expect(globalsCssSource).toContain('margin-right: 12px;');
     expect(globalsCssSource).toContain(
       '.workspace-editor-scrollarea::-webkit-scrollbar',
     );
@@ -390,7 +391,7 @@ describe('MarkdownEditor', () => {
     );
   });
 
-  it('把文档顶部 frontmatter 按原始 key/value 展示为元数据区域', () => {
+  it('不再把文档顶部 frontmatter 展示在编辑器顶部', () => {
     render(
       <MarkdownEditor
         documentKey="doc-1"
@@ -408,16 +409,11 @@ describe('MarkdownEditor', () => {
       />,
     );
 
-    expect(screen.getByTestId('markdown-frontmatter-panel')).toBeTruthy();
-    expect(screen.getByText('文档元数据')).toBeTruthy();
-    expect(screen.getByText('createdAt')).toBeTruthy();
-    expect(screen.getByText('2026-06-18T11:35:15.383Z')).toBeTruthy();
-    expect(screen.getByText('refinexDialect')).toBeTruthy();
-    expect(screen.getByText('1')).toBeTruthy();
-    expect(screen.getByText('title')).toBeTruthy();
-    expect(screen.getByText('Octarine')).toBeTruthy();
-    expect(screen.getByText('customKey')).toBeTruthy();
-    expect(screen.getByText('自定义值')).toBeTruthy();
+    expect(screen.queryByTestId('markdown-frontmatter-panel')).toBeNull();
+    expect(screen.queryByText('文档元数据')).toBeNull();
+    expect(screen.queryByText('createdAt')).toBeNull();
+    expect(screen.queryByText('refinexDialect')).toBeNull();
+    expect(screen.queryByText('customKey')).toBeNull();
     expect(screen.queryByText('创建时间')).toBeNull();
     expect(screen.queryByText('方言版本')).toBeNull();
     expect(screen.queryByText('标题')).toBeNull();

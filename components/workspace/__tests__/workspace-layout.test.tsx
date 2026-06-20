@@ -1101,7 +1101,12 @@ describe('WorkspaceLayout', () => {
   it('shows document metadata, resources, and downloads a resource from the right rail', async () => {
     const user = userEvent.setup();
     readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
-      body: '你好 世界\n\n![cover](refinex-asset://asset-img)',
+      body: [
+        '你好 世界',
+        '',
+        '![cover](refinex-asset://asset-img)',
+        '![Octarine](https://octarine.app/img/og/base.png)',
+      ].join('\n'),
     }));
     resolveWorkspaceAssetMock.mockResolvedValue({
       absolutePath: '/repo/.refinex/assets/files/as/asset-img.png',
@@ -1127,14 +1132,47 @@ describe('WorkspaceLayout', () => {
     const metaPanel = await screen.findByTestId('document-meta-panel');
 
     expect(metaPanel).toBeTruthy();
-    expect(within(metaPanel).getByText('文档信息')).toBeTruthy();
-    expect(within(metaPanel).getByText('项目说明')).toBeTruthy();
-    expect(within(metaPanel).getByText(/\d+ 字/)).toBeTruthy();
-    expect(within(metaPanel).getByText('1 个')).toBeTruthy();
+    expect(within(metaPanel).queryByText('文档信息')).toBeNull();
+    expect(within(metaPanel).getByRole('button', { name: '元信息' })).toBeTruthy();
+    expect(
+      within(metaPanel).getByRole('button', { name: '元信息' }).parentElement
+        ?.parentElement?.className,
+    ).toContain('py-1');
+    expect(
+      within(metaPanel).getByRole('button', { name: '元信息' }).className,
+    ).toContain('h-6');
+    expect(within(metaPanel).getAllByText('项目说明').length).toBeGreaterThan(
+      0,
+    );
+    expect(within(metaPanel).getByText('词数')).toBeTruthy();
+    expect(within(metaPanel).getByText('行数')).toBeTruthy();
+    expect(within(metaPanel).getByText('字符')).toBeTruthy();
+    expect(within(metaPanel).getByText('编码')).toBeTruthy();
+    expect(within(metaPanel).getByText('UTF-8')).toBeTruthy();
+    expect(within(metaPanel).getByText('2 个')).toBeTruthy();
+    const metaPanelText = metaPanel.textContent ?? '';
+    expect(metaPanelText.indexOf('资源数')).toBeLessThan(
+      metaPanelText.indexOf('词数'),
+    );
+    expect(metaPanelText.indexOf('编码')).toBeLessThan(
+      metaPanelText.indexOf('Frontmatter'),
+    );
+    expect(
+      metaPanel.querySelector('.grid.grid-cols-2.gap-2.rounded-xl'),
+    ).toBeNull();
+    expect(within(metaPanel).getByText('Frontmatter')).toBeTruthy();
+    expect(within(metaPanel).getByText('createdAt')).toBeTruthy();
+    expect(
+      within(metaPanel).getByText('2026-06-01T00:00:00.000Z'),
+    ).toBeTruthy();
+    expect(within(metaPanel).getByText('updatedAt')).toBeTruthy();
+    expect(within(metaPanel).getByText('refinexDialect')).toBeTruthy();
+    expect(within(metaPanel).getByText('title')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: '资源 1' }));
+    await user.click(screen.getByRole('button', { name: '资源 2' }));
 
     expect(await screen.findByText('cover.png')).toBeTruthy();
+    expect(await screen.findByText('base.png')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '下载资源 cover.png' }));
 

@@ -28,6 +28,7 @@ import type {
 } from './workspace-types';
 
 export interface DocumentPanelData {
+  frontmatter: Record<string, string>;
   markdown: string;
   metadata: { title: string; createdAt: string; updatedAt: string };
 }

@@ -28,6 +28,7 @@ describe('buildAiContextPack', () => {
         title: '指南',
       },
       documentPanelData: {
+        frontmatter: {},
         markdown: '# 指南\n\n正文',
         metadata: {
           createdAt: '2026-06-19T00:00:00Z',
@@ -63,6 +64,7 @@ describe('buildAiContextPack', () => {
         relativePath: 'readme.md',
       },
       documentPanelData: {
+        frontmatter: {},
         markdown: '# Readme',
         metadata: { createdAt: '', title: '', updatedAt: '' },
       },
