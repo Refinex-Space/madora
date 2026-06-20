@@ -61,6 +61,18 @@ const { setThemeMock } = vi.hoisted(() => ({
   setThemeMock: vi.fn(),
 }));
 
+class TestResizeObserver implements ResizeObserver {
+  disconnect() {}
+  observe() {}
+  unobserve() {}
+}
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  configurable: true,
+  value: TestResizeObserver,
+  writable: true,
+});
+
 vi.mock('next-themes', () => ({
   useTheme: () => ({
     resolvedTheme: 'light',
@@ -2289,6 +2301,43 @@ describe('WorkspaceLayout', () => {
     expect(rightHeaderTools.contains(gitButton)).toBe(true);
     expect(rightHeaderTools.contains(terminalButton)).toBe(true);
     expect(rightHeaderTools.contains(gitLogButton)).toBe(true);
+  });
+
+  it('shows hover tooltips for the right header tools', async () => {
+    const assertTooltip = async (label: string) => {
+      const user = userEvent.setup();
+      const { unmount } = render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+      const button = screen.getByRole('button', { name: label });
+      await user.hover(button);
+
+      expect((await screen.findAllByText(label)).length).toBeGreaterThan(0);
+
+      unmount();
+    };
+
+    await assertTooltip('切换主题');
+    await assertTooltip('打开 Git 面板');
+    await assertTooltip('打开终端');
+    await assertTooltip('打开 Git 日志');
+  });
+
+  it('updates the terminal tooltip when the bottom terminal is open', async () => {
+    const user = userEvent.setup();
+
+    (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ =
+      {};
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    const openTerminalButton = screen.getByRole('button', { name: '打开终端' });
+    await user.click(openTerminalButton);
+    await screen.findByTestId('terminal-panel');
+    await user.unhover(openTerminalButton);
+
+    const closeTerminalButton = screen.getByRole('button', { name: '关闭终端' });
+    await user.hover(closeTerminalButton);
+
+    expect((await screen.findAllByText('关闭终端')).length).toBeGreaterThan(0);
   });
 
   it('keeps terminal tab instances mounted when switching tabs', async () => {

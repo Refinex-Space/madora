@@ -26,6 +26,12 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 import {
@@ -1862,38 +1868,63 @@ function WorkspaceMainHeader({
         <span className="hidden truncate lg:inline">搜索</span>
       </button>
 
-      <div
-        className="z-10 ml-auto flex items-center gap-0.5"
-        data-testid="right-header-tools"
-      >
-        <ThemeQuickMenu />
-        <button
-          aria-label="打开 Git 面板"
-          className={codexHeaderToolButtonClassName(leftPanelMode === 'git')}
-          type="button"
-          onClick={onOpenGitPanel}
+      <TooltipProvider>
+        <div
+          className="z-10 ml-auto flex items-center gap-0.5"
+          data-testid="right-header-tools"
         >
-          <GitBranch size={16} strokeWidth={1.75} />
-        </button>
-        <button
-          aria-label={terminalOpen ? '关闭终端' : '打开终端'}
-          className={codexHeaderToolButtonClassName(terminalOpen)}
-          type="button"
-          onClick={onToggleTerminal}
-        >
-          <SquareTerminal size={16} strokeWidth={1.75} />
-        </button>
-        <button
-          aria-label={gitLogOpen ? '关闭 Git 日志' : '打开 Git 日志'}
-          className={codexHeaderToolButtonClassName(gitLogOpen)}
-          type="button"
-          onClick={onToggleGitLog}
-        >
-          <GitGraph size={16} strokeWidth={1.75} />
-        </button>
-        {children}
-      </div>
+          <ThemeQuickMenu />
+          <HeaderToolTooltip label="打开 Git 面板">
+            <button
+              aria-label="打开 Git 面板"
+              className={codexHeaderToolButtonClassName(leftPanelMode === 'git')}
+              type="button"
+              onClick={onOpenGitPanel}
+            >
+              <GitBranch size={16} strokeWidth={1.75} />
+            </button>
+          </HeaderToolTooltip>
+          <HeaderToolTooltip label={terminalOpen ? '关闭终端' : '打开终端'}>
+            <button
+              aria-label={terminalOpen ? '关闭终端' : '打开终端'}
+              className={codexHeaderToolButtonClassName(terminalOpen)}
+              type="button"
+              onClick={onToggleTerminal}
+            >
+              <SquareTerminal size={16} strokeWidth={1.75} />
+            </button>
+          </HeaderToolTooltip>
+          <HeaderToolTooltip label={gitLogOpen ? '关闭 Git 日志' : '打开 Git 日志'}>
+            <button
+              aria-label={gitLogOpen ? '关闭 Git 日志' : '打开 Git 日志'}
+              className={codexHeaderToolButtonClassName(gitLogOpen)}
+              type="button"
+              onClick={onToggleGitLog}
+            >
+              <GitGraph size={16} strokeWidth={1.75} />
+            </button>
+          </HeaderToolTooltip>
+          {children}
+        </div>
+      </TooltipProvider>
     </header>
+  );
+}
+
+function HeaderToolTooltip({
+  children,
+  label,
+}: {
+  children: React.ReactElement;
+  label: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={8}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -1904,15 +1935,22 @@ function ThemeQuickMenu() {
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          aria-label="切换主题"
-          className={codexHeaderToolButtonClassName(open)}
-          type="button"
-        >
-          <Palette size={16} strokeWidth={1.75} />
-        </button>
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <button
+              aria-label="切换主题"
+              className={codexHeaderToolButtonClassName(open)}
+              type="button"
+            >
+              <Palette size={16} strokeWidth={1.75} />
+            </button>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
+        <TooltipContent side="bottom" sideOffset={8}>
+          切换主题
+        </TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="end" className="w-36">
         <DropdownMenuRadioGroup
           value={selectedTheme}
