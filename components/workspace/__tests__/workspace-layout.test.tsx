@@ -2095,6 +2095,10 @@ describe('WorkspaceLayout', () => {
 
     expect(leftHandle.className).toContain('w-2');
     expect(leftHandle.className).toContain('-mx-2');
+    expect(leftHandle.className).toContain('z-10');
+    expect(screen.getByTestId('workspace-sidebar').className).not.toContain(
+      'transition-[width]',
+    );
 
     await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
 
@@ -2104,6 +2108,7 @@ describe('WorkspaceLayout', () => {
 
     expect(rightHandle.className).toContain('w-2');
     expect(rightHandle.className).toContain('-mx-2');
+    expect(rightHandle.className).toContain('z-10');
   });
 
   it('keeps the resized left sidebar width', () => {

@@ -30,7 +30,7 @@ export function WorkspaceSidebar({
   return (
     <aside
       className={cn(
-        'flex h-full shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground transition-[width]',
+        'flex h-full shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground',
         workspace.isSidebarCollapsed ? 'hidden' : null,
       )}
       data-chrome="codex-sidebar"
