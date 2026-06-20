@@ -2270,7 +2270,7 @@ describe('WorkspaceLayout', () => {
     expect(terminalPanel.className).toContain('border-t');
     expect(editorColumn.className).toContain('rounded-xl');
     expect(editorColumn.className).toContain('shadow-[');
-    expect(within(terminalPanel).getByText('终端')).toBeTruthy();
+    expect(within(terminalPanel).queryByText('终端')).toBeNull();
     expect(within(terminalPanel).queryByText('repo')).toBeNull();
     expect(await screen.findByRole('tab', { name: /本地/ })).toBeTruthy();
     expect(screen.queryByRole('tab', { name: /本地 2/ })).toBeNull();

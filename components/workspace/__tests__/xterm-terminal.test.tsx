@@ -1,7 +1,11 @@
 import { render, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { XtermTerminal } from '../xterm-terminal';
+
+const globalsCssPath = join(process.cwd(), 'app/globals.css');
 
 const terminalTestState = vi.hoisted(() => ({
   disposeMock: vi.fn(),
@@ -102,6 +106,8 @@ describe('XtermTerminal', () => {
     );
     expect(terminalTestState.writeMock).toHaveBeenCalledWith('world');
     expect(terminalTestState.terminalInstances[0].options.theme).toBeTruthy();
+    expect(terminalTestState.terminalInstances[0].options.cursorStyle).toBe('bar');
+    expect(terminalTestState.terminalInstances[0].options.cursorWidth).toBe(1);
 
     unmount();
     expect(terminalTestState.disposeMock).toHaveBeenCalledTimes(1);
@@ -131,5 +137,40 @@ describe('XtermTerminal', () => {
     expect(terminalTestState.terminalInstances[0].options.screenReaderMode).toBe(
       false,
     );
+  });
+
+  it('overrides xterm default black viewport backgrounds in the terminal surface', () => {
+    const globalsCssSource = readFileSync(globalsCssPath, 'utf8');
+    const terminalViewportRuleIndex = globalsCssSource.indexOf(
+      '.terminal-surface .xterm-viewport',
+    );
+    const lastComponentsLayerIndex = globalsCssSource.lastIndexOf(
+      '@layer components',
+    );
+    const terminalRuleLayerCloseIndex = globalsCssSource
+      .slice(lastComponentsLayerIndex)
+      .indexOf('\n}\n\n.terminal-surface');
+
+    expect(globalsCssSource).toContain(
+      '.terminal-surface .xterm-screen',
+    );
+    expect(terminalRuleLayerCloseIndex).toBeGreaterThan(0);
+    expect(terminalViewportRuleIndex).toBeGreaterThan(
+      lastComponentsLayerIndex + terminalRuleLayerCloseIndex,
+    );
+    expect(globalsCssSource).toContain(
+      '.terminal-surface .xterm-viewport::-webkit-scrollbar-corner',
+    );
+    expect(globalsCssSource).toContain(
+      '.terminal-surface .xterm-scrollable-element > .scrollbar.horizontal',
+    );
+    expect(globalsCssSource).toContain(
+      '.terminal-surface .xterm-scrollable-element > .scrollbar.horizontal > .slider',
+    );
+    expect(globalsCssSource).toContain(
+      '.terminal-surface .xterm-scrollable-element > .scrollbar.vertical > .slider',
+    );
+    expect(globalsCssSource).toContain('--vscode-scrollbar-shadow: transparent;');
+    expect(globalsCssSource).toContain('background-color: var(--terminal-background);');
   });
 });

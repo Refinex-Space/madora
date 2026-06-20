@@ -546,49 +546,89 @@
     height: 0;
   }
 
-  .terminal-surface .xterm {
-    height: 100%;
-  }
+}
 
-  .terminal-surface .xterm-helper-textarea,
-  .terminal-surface .xterm-accessibility,
-  .terminal-surface .xterm-accessibility-tree,
-  .terminal-surface .xterm-message {
-    position: absolute !important;
-    left: -9999px !important;
-    top: 0 !important;
-    width: 1px !important;
-    height: 1px !important;
-    overflow: hidden !important;
-    opacity: 0 !important;
-    color: transparent !important;
-    pointer-events: none !important;
-  }
+.terminal-surface {
+  --terminal-background: var(--background);
+  --vscode-scrollbar-shadow: transparent;
+}
 
-  .terminal-surface .xterm-viewport {
-    background-color: transparent;
-    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 22%, transparent) transparent;
-    scrollbar-width: thin;
-  }
+.terminal-surface .xterm,
+.terminal-surface .xterm-screen {
+  background-color: var(--terminal-background);
+}
 
-  .terminal-surface .xterm-viewport::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
+.terminal-surface .xterm {
+  height: 100%;
+}
 
-  .terminal-surface .xterm-viewport::-webkit-scrollbar-track {
-    background: transparent;
-  }
+.terminal-surface .xterm-helper-textarea,
+.terminal-surface .xterm-accessibility,
+.terminal-surface .xterm-accessibility-tree,
+.terminal-surface .xterm-message {
+  position: absolute !important;
+  left: -9999px !important;
+  top: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  color: transparent !important;
+  pointer-events: none !important;
+}
 
-  .terminal-surface .xterm-viewport::-webkit-scrollbar-thumb {
-    border: 2px solid transparent;
-    border-radius: 999px;
-    background: color-mix(in oklab, var(--muted-foreground) 20%, transparent);
-    background-clip: padding-box;
-  }
+.terminal-surface .xterm-viewport {
+  background-color: var(--terminal-background);
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 22%, transparent) transparent;
+  scrollbar-width: thin;
+}
 
-  .terminal-surface .xterm-viewport:hover::-webkit-scrollbar-thumb {
-    background: color-mix(in oklab, var(--muted-foreground) 34%, transparent);
-    background-clip: padding-box;
-  }
+.terminal-surface .xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.terminal-surface .xterm-viewport::-webkit-scrollbar-track,
+.terminal-surface .xterm-viewport::-webkit-scrollbar-track-piece,
+.terminal-surface .xterm-viewport::-webkit-scrollbar-corner {
+  background: var(--terminal-background);
+}
+
+.terminal-surface .xterm-viewport::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--muted-foreground) 20%, transparent);
+  background-clip: padding-box;
+}
+
+.terminal-surface .xterm-viewport:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted-foreground) 34%, transparent);
+  background-clip: padding-box;
+}
+
+.terminal-surface .xterm-viewport::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.terminal-surface .xterm-scrollable-element > .scrollbar {
+  background: transparent !important;
+}
+
+.terminal-surface .xterm-scrollable-element > .scrollbar.horizontal,
+.terminal-surface .xterm-scrollable-element > .scrollbar.horizontal > .slider {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+.terminal-surface .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--muted-foreground) 20%, transparent) !important;
+}
+
+.terminal-surface .xterm-scrollable-element > .scrollbar.vertical > .slider:hover {
+  background: color-mix(in oklab, var(--muted-foreground) 34%, transparent) !important;
 }

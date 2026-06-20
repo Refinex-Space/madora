@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, SquareTerminal, X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -49,13 +49,9 @@ export function TerminalPanel({
       data-testid="terminal-panel"
       style={{ height }}
     >
-      <header className="flex h-10 min-w-0 shrink-0 items-center justify-between border-b px-3">
+      <header className="flex h-10 min-w-0 shrink-0 items-center justify-between px-3">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <SquareTerminal size={16} />
-            <span>终端</span>
-          </div>
-          <div className="ml-2 flex min-w-0 items-center gap-1" role="tablist">
+          <div className="flex min-w-0 items-center gap-1" role="tablist">
             {tabs.map((tab) => (
               <div
                 aria-selected={tab.id === activeTabId}

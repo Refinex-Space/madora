@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TerminalPanel } from '../terminal-panel';
 
 describe('TerminalPanel', () => {
-  it('renders IDEA-like header and active tab', () => {
+  it('renders a compact tab-only header without a title divider', () => {
     render(
       <TerminalPanel
         activeTabId="term-1"
@@ -28,7 +28,11 @@ describe('TerminalPanel', () => {
       />
     );
 
-    expect(screen.getByText('终端')).toBeTruthy();
+    const terminalPanel = screen.getByTestId('terminal-panel');
+    const header = terminalPanel.querySelector('header');
+
+    expect(screen.queryByText('终端')).toBeNull();
+    expect(header?.className).not.toContain('border-b');
     expect(screen.queryByText('repo')).toBeNull();
     expect(screen.getByRole('tab', { name: /本地/ })).toBeTruthy();
   });

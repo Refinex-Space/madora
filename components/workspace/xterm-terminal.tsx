@@ -37,6 +37,8 @@ export function XtermTerminal({
       allowProposedApi: false,
       convertEol: true,
       cursorBlink: true,
+      cursorStyle: 'bar',
+      cursorWidth: 1,
       fontFamily:
         'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 13,
