@@ -40,7 +40,10 @@ pub enum WorkspaceNodeKind {
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceMetadata {
     pub schema_version: u32,
+    #[serde(default, skip_serializing)]
     pub recent_document_path: Option<String>,
+    #[serde(default)]
+    pub recent_document_paths: Vec<String>,
     pub expanded_paths: Vec<String>,
     pub sort_order: serde_json::Map<String, Value>,
 }
@@ -1132,6 +1135,7 @@ fn default_workspace_metadata() -> WorkspaceMetadata {
     WorkspaceMetadata {
         schema_version: 1,
         recent_document_path: None,
+        recent_document_paths: Vec::new(),
         expanded_paths: Vec::new(),
         sort_order: serde_json::Map::new(),
     }
@@ -1169,7 +1173,10 @@ fn ensure_workspace_metadata(root: &Path) -> io::Result<WorkspaceMetadata> {
 
     let raw = fs::read_to_string(&metadata_path)?;
     match serde_json::from_str::<WorkspaceMetadata>(&raw) {
-        Ok(metadata) if metadata.schema_version == 1 => Ok(metadata),
+        Ok(mut metadata) if metadata.schema_version == 1 => {
+            normalize_recent_document_paths(&mut metadata);
+            Ok(metadata)
+        }
         _ => {
             let backup_path = metadata_dir.join(format!(
                 "workspace.corrupt.{}.json",
@@ -1179,6 +1186,21 @@ fn ensure_workspace_metadata(root: &Path) -> io::Result<WorkspaceMetadata> {
             let metadata = default_workspace_metadata();
             write_json_pretty(&metadata_path, &metadata)?;
             Ok(metadata)
+        }
+    }
+}
+
+/// 把旧的 `recentDocumentPath`（单数）迁移进新的 `recentDocumentPaths`（复数）。
+/// 仅在内存规范化，不写盘——保持 `ensure_workspace` 只读语义。
+// author: refinex
+fn normalize_recent_document_paths(metadata: &mut WorkspaceMetadata) {
+    if !metadata.recent_document_paths.is_empty() {
+        return;
+    }
+
+    if let Some(single) = metadata.recent_document_path.take() {
+        if !single.trim().is_empty() {
+            metadata.recent_document_paths.push(single);
         }
     }
 }
