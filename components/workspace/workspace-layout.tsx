@@ -3,11 +3,15 @@
 import * as React from 'react';
 import { useTheme } from 'next-themes';
 import {
+  Airplay,
   Check,
   GitBranch,
   GitGraph,
   Minus,
+  Moon,
+  Palette,
   Search,
+  Sun,
   SquareTerminal,
   Square,
   X,
@@ -15,6 +19,13 @@ import {
 
 import { MarkdownEditor } from '@/components/editor/markdown-editor';
 import { parseFrontmatter } from '@/components/editor/markdown-frontmatter';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 import {
@@ -117,6 +128,7 @@ interface WorkspaceLayoutProps {
 type LeftPanelMode = 'workspace' | 'git';
 type BottomPanelMode = 'git-log' | 'terminal' | null;
 type GlobalSearchIndexStatus = 'error' | 'idle' | 'indexing' | 'ready';
+type ThemeMode = 'dark' | 'light' | 'system';
 
 interface GlobalSearchState {
   index: WorkspaceSearchIndex | null;
@@ -1845,6 +1857,7 @@ function WorkspaceMainHeader({
         className="z-10 ml-auto flex items-center gap-0.5"
         data-testid="right-header-tools"
       >
+        <ThemeQuickMenu />
         <button
           aria-label="打开 Git 面板"
           className={codexHeaderToolButtonClassName(leftPanelMode === 'git')}
@@ -1873,6 +1886,64 @@ function WorkspaceMainHeader({
       </div>
     </header>
   );
+}
+
+function ThemeQuickMenu() {
+  const { setTheme, theme } = useTheme();
+  const [open, setOpen] = React.useState(false);
+  const selectedTheme = isThemeMode(theme) ? theme : 'system';
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          aria-label="切换主题"
+          className={codexHeaderToolButtonClassName(open)}
+          type="button"
+        >
+          <Palette size={16} strokeWidth={1.75} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-36">
+        <DropdownMenuRadioGroup
+          value={selectedTheme}
+          onValueChange={(value) => {
+            if (!isThemeMode(value)) {
+              return;
+            }
+
+            setTheme(value);
+            setOpen(false);
+          }}
+        >
+          <ThemeQuickMenuItem icon={<Airplay size={14} />} label="跟随系统" value="system" />
+          <ThemeQuickMenuItem icon={<Sun size={14} />} label="亮色" value="light" />
+          <ThemeQuickMenuItem icon={<Moon size={14} />} label="暗色" value="dark" />
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ThemeQuickMenuItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: ThemeMode;
+}) {
+  return (
+    <DropdownMenuRadioItem value={value}>
+      {icon}
+      <span>{label}</span>
+    </DropdownMenuRadioItem>
+  );
+}
+
+function isThemeMode(value: unknown): value is ThemeMode {
+  return value === 'dark' || value === 'light' || value === 'system';
 }
 
 function codexHeaderToolButtonClassName(active: boolean) {

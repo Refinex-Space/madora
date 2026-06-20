@@ -1285,6 +1285,21 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('button', { name: '打开设置' })).toBeTruthy();
   });
 
+  it('switches app theme from the top-right quick menu', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '切换主题' }));
+
+    expect(screen.getByRole('menuitemradio', { name: '跟随系统' })).toBeTruthy();
+    expect(screen.getByRole('menuitemradio', { name: '亮色' })).toBeTruthy();
+    expect(screen.getByRole('menuitemradio', { name: '暗色' })).toBeTruthy();
+
+    await user.click(screen.getByRole('menuitemradio', { name: '暗色' }));
+
+    expect(setThemeMock).toHaveBeenCalledWith('dark');
+  });
+
   it('opens appearance settings from the settings menu by default', async () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
