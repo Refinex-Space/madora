@@ -36,6 +36,7 @@ import {
   readMarkdownSourceFiles,
   readAppSettings,
   readWorkspaceAssetData,
+  recordRecentDocument,
   resolveWorkspaceAsset,
   recordWorkspaceHistory,
   removeWorkspaceHistory,
@@ -530,5 +531,39 @@ describe('workspace-api AI runtime commands', () => {
     await listenAiEvents(onEvent);
 
     expect(listenMock).toHaveBeenCalledWith('ai:event', expect.any(Function));
+  });
+});
+
+describe('workspace-api recent documents', () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+  });
+
+  it('invokes record_recent_document with root and document path', async () => {
+    invokeMock.mockResolvedValueOnce(['/repo/a.md']);
+
+    const paths = await recordRecentDocument('/repo', '/repo/a.md');
+
+    expect(paths).toEqual(['/repo/a.md']);
+    expect(invokeMock).toHaveBeenLastCalledWith('record_recent_document', {
+      rootPath: '/repo',
+      documentPath: '/repo/a.md',
+    });
+  });
+
+  it('invokes ensure_workspace with root path', async () => {
+    invokeMock.mockResolvedValueOnce({
+      schemaVersion: 1,
+      recentDocumentPaths: ['/repo/a.md'],
+      expandedPaths: [],
+      sortOrder: {},
+    });
+
+    const metadata = await ensureWorkspace('/repo');
+
+    expect(metadata.recentDocumentPaths).toEqual(['/repo/a.md']);
+    expect(invokeMock).toHaveBeenLastCalledWith('ensure_workspace', {
+      rootPath: '/repo',
+    });
   });
 });

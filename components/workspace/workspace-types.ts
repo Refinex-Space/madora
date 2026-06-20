@@ -41,7 +41,7 @@ export interface WorkspaceLoadError {
 
 export interface WorkspaceMetadata {
   schemaVersion: 1;
-  recentDocumentPath: string | null;
+  recentDocumentPaths: string[];
   expandedPaths: string[];
   sortOrder: Record<string, unknown>;
 }

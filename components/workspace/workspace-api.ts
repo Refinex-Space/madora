@@ -179,6 +179,18 @@ export async function ensureWorkspace(rootPath: string) {
   return invoke<WorkspaceMetadata>('ensure_workspace', { rootPath });
 }
 
+export async function recordRecentDocument(
+  rootPath: string,
+  documentPath: string,
+) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<string[]>('record_recent_document', {
+    rootPath,
+    documentPath,
+  });
+}
+
 export async function readMarkdownDocument(
   rootPath: string,
   documentPath: string,
