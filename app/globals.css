@@ -311,6 +311,7 @@
   }
 
   .workspace-tree-scrollarea {
+    margin-right: 12px;
     scrollbar-color: color-mix(in oklab, var(--muted-foreground) 20%, transparent) transparent;
     scrollbar-width: thin;
   }
