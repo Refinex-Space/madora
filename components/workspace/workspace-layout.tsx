@@ -3,8 +3,7 @@
 import * as React from 'react';
 import { useTheme } from 'next-themes';
 import {
-  Folder,
-  FolderOpen,
+  Check,
   GitBranch,
   GitGraph,
   Minus,
@@ -14,11 +13,15 @@ import {
   X,
 } from 'lucide-react';
 
-import type { DocumentTocSnapshot } from '@/components/editor/markdown-toc';
 import { MarkdownEditor } from '@/components/editor/markdown-editor';
+import { parseFrontmatter } from '@/components/editor/markdown-frontmatter';
 import { cn } from '@/lib/utils';
 
-import { RightSidePanel, RightToolRail } from './ai-side-panel';
+import {
+  RightSidePanel,
+  RightToolRail,
+  type DocumentPanelData,
+} from './ai-side-panel';
 import { DirectoryPage } from './directory-page';
 import { DocumentTabBar } from './document-tab-bar';
 import {
@@ -36,7 +39,7 @@ import {
   type DocumentEditorLayout,
   type EditorSplitDirection,
 } from './document-tabs';
-import { EditorPane } from './editor-pane';
+import { EditorPane, type RecentWorkspaceDocument } from './editor-pane';
 import { GitDiffView } from './git-diff-view';
 import { GitLogDrawer } from './git-log-drawer';
 import { GitPanel } from './git-panel';
@@ -70,6 +73,7 @@ import {
   listenTerminalExit,
   closeAppWindow,
   readAppSettings,
+  recordRecentDocument,
   readMarkdownDocument,
   minimizeAppWindow,
   setAppWindowTitle,
@@ -79,13 +83,19 @@ import {
   terminalSpawn,
   terminalWrite,
 } from './workspace-api';
+import {
+  DEFAULT_APP_SETTINGS,
+  withDefaultAppSettings,
+} from './workspace-settings';
 import { WorkspaceResizeHandle } from './workspace-resize-handle';
 import { WorkspaceSidebar } from './workspace-sidebar';
-import { countMarkdownCharacters } from './workspace-document-insights';
+import {
+  countMarkdownCharacters,
+  countMarkdownLines,
+} from './workspace-document-insights';
 import { flattenDocuments } from './workspace-tree';
 import { XtermTerminal } from './xterm-terminal';
 import type {
-  AppSettings,
   DocumentLoadState,
   DocumentSaveState,
   GitBranchItem,
@@ -167,12 +177,15 @@ const WORKSPACE_PANEL_WIDTH_STORAGE_KEYS = {
 
 const GLOBAL_SEARCH_READ_CONCURRENCY = 6;
 const DOUBLE_SHIFT_THRESHOLD_MS = 450;
+const RECENT_DOCUMENT_LIMIT = 5;
 
-const DEFAULT_APP_SETTINGS: AppSettings = {
-  schemaVersion: 1,
-  storage: { defaultProvider: 'local' },
-  appearance: { pageWidthMode: 'wide' },
-};
+function toRecentDocument(node: WorkspaceNode): RecentWorkspaceDocument {
+  return {
+    absolutePath: node.absolutePath,
+    relativePath: node.relativePath || node.name,
+    title: node.title || node.name.replace(/\.(md|mdx)$/i, ''),
+  };
+}
 
 export function WorkspaceLayout({
   initialSnapshot = null,
@@ -190,6 +203,10 @@ export function WorkspaceLayout({
     RIGHT_PANEL_WIDTH.min,
     RIGHT_PANEL_WIDTH.max,
   );
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [settingsInitialSectionId, setSettingsInitialSectionId] =
+    React.useState<'appearance' | 'storage' | 'ai'>('appearance');
+  const [settingsVersion, setSettingsVersion] = React.useState(0);
   const [gitLogDetailWidth, setGitLogDetailWidth] = useStoredPanelWidth(
     WORKSPACE_PANEL_WIDTH_STORAGE_KEYS.gitLogDetailWidth,
     GIT_LOG_DETAIL_WIDTH.defaultValue,
@@ -220,9 +237,6 @@ export function WorkspaceLayout({
     GIT_LOG_DETAIL_HEIGHT.min,
     GIT_LOG_DETAIL_HEIGHT.max,
   );
-  const [tocSnapshotsByPath, setTocSnapshotsByPath] = React.useState<
-    Record<string, DocumentTocSnapshot>
-  >({});
   const [editorSessions, setEditorSessions] = React.useState<
     Record<string, DocumentEditorSession>
   >({});
@@ -230,6 +244,9 @@ export function WorkspaceLayout({
     React.useState<string | null>(null);
   const [documentEditorLayout, setDocumentEditorLayout] =
     React.useState<DocumentEditorLayout>(() => createInitialEditorLayout());
+  const [recentDocuments, setRecentDocuments] = React.useState<
+    RecentWorkspaceDocument[]
+  >([]);
   const [globalSearchOpen, setGlobalSearchOpen] = React.useState(false);
   const [globalSearchQuery, setGlobalSearchQuery] = React.useState('');
   const [globalSearchState, setGlobalSearchState] =
@@ -255,13 +272,57 @@ export function WorkspaceLayout({
   const hasOpenDocumentTabs = documentEditorLayout.groups.some(
     (group) => group.tabs.length > 0,
   );
-  const tocSnapshot = activePanelDocumentPath
-    ? tocSnapshotsByPath[activePanelDocumentPath] ?? null
-    : null;
+  const visibleRecentDocuments = React.useMemo(
+    () =>
+      recentDocuments.filter((document) =>
+        findWorkspaceDocumentByPath(
+          workspace.snapshot?.nodes ?? [],
+          document.absolutePath,
+        ),
+      ),
+    [recentDocuments, workspace.snapshot?.nodes],
+  );
+  React.useEffect(() => {
+    if (
+      !workspace.initialRecentDocumentPaths.length ||
+      !workspace.snapshot
+    ) {
+      return;
+    }
+
+    const docs = workspace.initialRecentDocumentPaths
+      .map((path) =>
+        findWorkspaceDocumentByPath(workspace.snapshot!.nodes, path),
+      )
+      .filter((node): node is WorkspaceNode => node?.kind === 'document')
+      .map(toRecentDocument);
+
+    if (docs.length === 0) {
+      return;
+    }
+
+    // 用微任务延迟 setState，避免 effect 内同步触发级联渲染
+    // author: refinex
+    const timer = window.setTimeout(() => {
+      setRecentDocuments((current) => {
+        // 合并：初始列表在前，补充本次会话内新打开但未持久化的条目
+        const seen = new Set(docs.map((doc) => doc.absolutePath));
+        const extras = current.filter((doc) => !seen.has(doc.absolutePath));
+
+        return [...docs, ...extras].slice(0, RECENT_DOCUMENT_LIMIT);
+      });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [workspace.initialRecentDocumentPaths, workspace.snapshot]);
   const isWorkspaceEmpty =
     workspace.snapshot !== null && workspace.snapshot.nodes.length === 0;
   const documentCharacterCount = React.useMemo(
     () => countMarkdownCharacters(workspace.draftDocument?.markdown),
+    [workspace.draftDocument?.markdown],
+  );
+  const documentLineCount = React.useMemo(
+    () => countMarkdownLines(workspace.draftDocument?.markdown),
     [workspace.draftDocument?.markdown],
   );
   const activeGlobalSearchIndex =
@@ -279,15 +340,17 @@ export function WorkspaceLayout({
         : [],
     [activeGlobalSearchIndex, globalSearchQuery],
   );
-  const documentPanelData = React.useMemo<{
-    markdown: string;
-    metadata: { title: string; createdAt: string; updatedAt: string };
-  } | null>(() => {
+  const documentPanelData = React.useMemo<DocumentPanelData | null>(() => {
     if (!workspace.draftDocument) {
       return null;
     }
 
+    const frontmatter = parseFrontmatter(
+      workspace.draftDocument.markdown,
+    ).metadata;
+
     return {
+      frontmatter,
       markdown: workspace.draftDocument.markdown,
       metadata: {
         title: workspace.draftDocument.metadata.title,
@@ -349,6 +412,14 @@ export function WorkspaceLayout({
   const lastShiftKeyTimeRef = React.useRef(0);
   const gitLogOpen = bottomPanelMode === 'git-log';
   const terminalOpen = bottomPanelMode === 'terminal';
+
+  const openSettingsDialog = React.useCallback(
+    (sectionId: 'appearance' | 'storage' | 'ai' = 'appearance') => {
+      setSettingsInitialSectionId(sectionId);
+      setSettingsOpen(true);
+    },
+    [],
+  );
   const shouldRenderTerminalPanel = terminalOpen || terminalTabs.length > 0;
   const openGlobalSearch = React.useCallback(() => {
     setGlobalSearchOpen(true);
@@ -487,7 +558,9 @@ export function WorkspaceLayout({
         const settings = await readAppSettings();
 
         if (!cancelled) {
-          setPageWidthMode(settings.appearance.pageWidthMode);
+          setPageWidthMode(
+            withDefaultAppSettings(settings).appearance.pageWidthMode,
+          );
         }
       } catch {
         if (!cancelled) {
@@ -502,16 +575,6 @@ export function WorkspaceLayout({
       cancelled = true;
     };
   }, [isTauriRuntime]);
-
-  const handleTocSnapshotChange = React.useCallback(
-    (documentPath: string, snapshot: DocumentTocSnapshot) => {
-      setTocSnapshotsByPath((current) => ({
-        ...current,
-        [documentPath]: snapshot,
-      }));
-    },
-    [],
-  );
 
   const handleLeftSidebarResize = React.useCallback((nextWidth: number) => {
     setLeftSidebarWidth(nextWidth);
@@ -1033,6 +1096,46 @@ export function WorkspaceLayout({
     workspaceRootPath,
   ]);
 
+  const rememberRecentDocument = React.useCallback(
+    (node: WorkspaceNode) => {
+      if (node.kind !== 'document') {
+        return;
+      }
+
+      const entry = toRecentDocument(node);
+
+      setRecentDocuments((current) => [
+        entry,
+        ...current.filter((item) => item.absolutePath !== entry.absolutePath),
+      ].slice(0, RECENT_DOCUMENT_LIMIT));
+
+      if (isTauriRuntime && workspaceRootPath) {
+        void recordRecentDocument(workspaceRootPath, node.absolutePath).catch(
+          (error) => {
+            // 持久化失败不阻断打开流程，仅记录
+            // author: refinex
+            console.warn('记录最近文档失败', error);
+          },
+        );
+      }
+    },
+    [isTauriRuntime, workspaceRootPath],
+  );
+
+  const rememberRecentDocumentByPath = React.useCallback(
+    (documentPath: string) => {
+      const node = findWorkspaceDocumentByPath(
+        workspace.snapshot?.nodes ?? [],
+        documentPath,
+      );
+
+      if (node) {
+        rememberRecentDocument(node);
+      }
+    },
+    [rememberRecentDocument, workspace.snapshot?.nodes],
+  );
+
   const cacheEditorSession = React.useCallback(
     (documentPath: string, draft: MarkdownDraft) => {
       setEditorSessions((current) => ({
@@ -1070,13 +1173,14 @@ export function WorkspaceLayout({
         return;
       }
 
+      rememberRecentDocument(node);
       const draft = await workspace.openDocument(node);
 
       if (draft) {
         cacheEditorSession(node.absolutePath, draft);
       }
     },
-    [cacheEditorSession, currentDocumentPath, workspace],
+    [cacheEditorSession, currentDocumentPath, rememberRecentDocument, workspace],
   );
 
   const scheduleDocumentOpen = React.useCallback(
@@ -1104,13 +1208,30 @@ export function WorkspaceLayout({
       clearPendingDocumentOpen();
       setDocumentEditorLayout((current) => openDocumentInGroup(current, node));
       setActiveEditorDocumentPath(node.absolutePath);
+      rememberRecentDocument(node);
       const draft = await workspace.openDocument(node);
 
       if (draft) {
         cacheEditorSession(node.absolutePath, draft);
       }
     },
-    [cacheEditorSession, clearPendingDocumentOpen, workspace],
+    [cacheEditorSession, clearPendingDocumentOpen, rememberRecentDocument, workspace],
+  );
+
+  const handleOpenRecentDocument = React.useCallback(
+    (documentPath: string) => {
+      const node = findWorkspaceDocumentByPath(
+        workspace.snapshot?.nodes ?? [],
+        documentPath,
+      );
+
+      if (!node) {
+        return;
+      }
+
+      void openDocumentNode(node);
+    },
+    [openDocumentNode, workspace.snapshot?.nodes],
   );
 
   const handleSelectGlobalSearchResult = React.useCallback(
@@ -1140,11 +1261,12 @@ export function WorkspaceLayout({
           openDocumentInGroup(current, created),
         );
         setActiveEditorDocumentPath(created.absolutePath);
+        rememberRecentDocument(created);
       }
 
       return created;
     },
-    [workspace],
+    [rememberRecentDocument, workspace],
   );
 
   const openActiveDocumentForLayout = React.useCallback(
@@ -1159,9 +1281,15 @@ export function WorkspaceLayout({
       }
 
       setActiveEditorDocumentPath(activeTab.absolutePath);
+      rememberRecentDocumentByPath(activeTab.absolutePath);
       scheduleDocumentOpen(activeTab.absolutePath);
     },
-    [clearPendingDocumentOpen, scheduleDocumentOpen, workspace],
+    [
+      clearPendingDocumentOpen,
+      rememberRecentDocumentByPath,
+      scheduleDocumentOpen,
+      workspace,
+    ],
   );
 
   const handleEditorMarkdownChange = React.useCallback(
@@ -1179,10 +1307,11 @@ export function WorkspaceLayout({
       });
 
       if (documentPath === currentDocumentPath) {
+        rememberRecentDocumentByPath(documentPath);
         workspace.updateMarkdown(markdown);
       }
     },
-    [currentDocumentPath, workspace],
+    [currentDocumentPath, rememberRecentDocumentByPath, workspace],
   );
 
   const applyDocumentEditorLayout = React.useCallback(
@@ -1269,21 +1398,17 @@ export function WorkspaceLayout({
     [applyDocumentEditorLayout, documentEditorLayout],
   );
 
-  const openWorkspacePanel = React.useCallback(() => {
-    if (leftPanelMode === 'workspace') {
-      workspace.setSidebarCollapsed(!workspace.isSidebarCollapsed);
+  const openGitPanel = React.useCallback(() => {
+    if (leftPanelMode === 'git') {
+      setLeftPanelMode('workspace');
+      workspace.setSidebarCollapsed(false);
       return;
     }
 
-    setLeftPanelMode('workspace');
-    workspace.setSidebarCollapsed(false);
-  }, [leftPanelMode, workspace]);
-
-  const openGitPanel = React.useCallback(() => {
     setLeftPanelMode('git');
     workspace.setSidebarCollapsed(false);
     void refreshGitStatus();
-  }, [refreshGitStatus, workspace]);
+  }, [leftPanelMode, refreshGitStatus, workspace]);
 
   const toggleGitLogDrawer = React.useCallback(() => {
     setBottomPanelMode((current) => {
@@ -1305,39 +1430,17 @@ export function WorkspaceLayout({
 
   return (
     <main
-      className="flex h-screen w-full flex-col gap-1 overflow-hidden bg-muted/50 p-2 text-foreground"
+      className="flex h-screen w-full overflow-hidden bg-sidebar text-foreground antialiased"
+      data-chrome="codex-workspace"
       data-testid="workspace-shell"
     >
-      {isTauriRuntime ? (
+      {isTauriRuntime && isWindowsRuntime ? (
         <div
-          className={cn(
-            'relative -mx-2 -mt-2 flex h-8 shrink-0 items-center text-xs font-semibold text-muted-foreground',
-            isWindowsRuntime
-              ? 'bg-muted/50 pl-3 pr-0'
-              : 'px-20',
-          )}
+          className="absolute right-0 top-0 z-50 flex h-8 shrink-0 items-center bg-transparent"
           data-tauri-drag-region="deep"
           data-testid="workspace-titlebar-drag-region"
         >
-          <span
-            className="min-w-0 max-w-[30%] truncate"
-            data-tauri-drag-region
-          >
-            {pageTitle ?? 'Refinex Wiki'}
-          </span>
-          <button
-            aria-label="搜索文档"
-            className="absolute left-1/2 top-1/2 flex h-6 w-[min(420px,42vw)] -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full border border-black/5 bg-black/[0.04] px-3 text-xs font-medium text-muted-foreground shadow-[inset_0_1px_2px_rgba(0,0,0,0.18),inset_0_-1px_0_rgba(255,255,255,0.6)] transition-colors hover:border-black/10 hover:text-foreground dark:border-white/10 dark:bg-white/[0.06] dark:shadow-[inset_0_1px_2px_rgba(0,0,0,0.45),inset_0_-1px_0_rgba(255,255,255,0.05)]"
-            type="button"
-            onClick={openGlobalSearch}
-          >
-            <Search size={13} />
-            <span className="min-w-0 flex-1 truncate text-left">搜索文档</span>
-            <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">
-              ⌘K
-            </kbd>
-          </button>
-          {isWindowsRuntime ? <WindowsTitlebarControls /> : null}
+          <WindowsTitlebarControls />
         </div>
       ) : null}
 
@@ -1352,79 +1455,16 @@ export function WorkspaceLayout({
       />
 
       <div
-        className="flex min-h-0 flex-1 gap-2"
+        className="flex min-h-0 flex-1"
         data-testid="workspace-main-blocks"
       >
-        <nav
-          className="flex h-full w-8 shrink-0 flex-col items-center gap-2 py-1"
-          data-testid="left-tool-rail"
-        >
-          <button
-            aria-label={
-              leftPanelMode === 'workspace' && !workspace.isSidebarCollapsed
-                ? '折叠目录'
-                : '展开目录'
-            }
-            className={cn(
-              'flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground',
-              leftPanelMode === 'workspace' &&
-                !workspace.isSidebarCollapsed &&
-                'bg-[#3574f0] text-white shadow-sm hover:bg-[#3574f0] hover:text-white',
-            )}
-            type="button"
-            onClick={openWorkspacePanel}
-          >
-            {workspace.isSidebarCollapsed ? (
-              <Folder size={17} />
-            ) : (
-              <FolderOpen size={17} />
-            )}
-          </button>
-          <button
-            aria-label="打开 Git 面板"
-            className={cn(
-              'flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground',
-              leftPanelMode === 'git' &&
-                'bg-[#3574f0] text-white shadow-sm hover:bg-[#3574f0] hover:text-white',
-            )}
-            type="button"
-            onClick={openGitPanel}
-          >
-            <GitBranch size={17} />
-          </button>
-          <button
-            aria-label={terminalOpen ? '关闭终端' : '打开终端'}
-            className={cn(
-              'mt-auto flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground',
-              terminalOpen &&
-                'bg-[#3574f0] text-white shadow-sm hover:bg-[#3574f0] hover:text-white',
-            )}
-            type="button"
-            onClick={toggleTerminalPanel}
-          >
-            <SquareTerminal size={17} />
-          </button>
-          <button
-            aria-label={gitLogOpen ? '关闭 Git 日志' : '打开 Git 日志'}
-            className={cn(
-              'flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground',
-              gitLogOpen &&
-                'bg-[#3574f0] text-white shadow-sm hover:bg-[#3574f0] hover:text-white',
-            )}
-            type="button"
-            onClick={toggleGitLogDrawer}
-          >
-            <GitGraph size={17} />
-          </button>
-        </nav>
-
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
+        <div className="flex min-w-0 flex-1 overflow-hidden">
             {leftPanelMode === 'workspace' ? (
               <WorkspaceSidebar
                 width={leftSidebarWidth}
                 workspace={workspace}
                 onCreateDocument={handleCreateDocument}
+                onOpenSettings={() => openSettingsDialog('appearance')}
                 onSelectDocument={openDocumentNode}
               />
             ) : workspace.isSidebarCollapsed ? null : (
@@ -1466,97 +1506,140 @@ export function WorkspaceLayout({
             )}
 
             <section
-              className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-lg border bg-background shadow-sm"
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-background shadow-[0_1px_3px_rgba(15,23,42,0.05),0_18px_42px_-28px_rgba(15,23,42,0.45)]"
+              data-chrome="codex-main-surface"
               data-testid="workspace-editor-block"
             >
-              {leftPanelMode === 'git' ? (
-                <GitDiffView
-                  diff={gitDiffState}
-                  error={gitError}
-                  isLoading={gitLoading && Boolean(gitSelectedPath)}
-                  label={gitDiffLabel}
-                />
-              ) : workspace.currentDocument ||
-                (!workspace.currentDirectory && hasOpenDocumentTabs) ? (
-                <DocumentEditorSurface
-                  activeDocumentPath={activePanelDocumentPath}
-                  currentDocumentPath={currentDocumentPath}
-                  documentEditorLayout={documentEditorLayout}
-                  documentLoadError={workspace.documentLoadError}
-                  documentLoadState={workspace.documentLoadState}
-                  documentVersion={workspace.documentVersion}
-                  draftMarkdown={workspace.draftDocument?.markdown ?? null}
-                  editorSessions={editorSessions}
-                  pageWidthMode={pageWidthMode}
+              <WorkspaceMainHeader
+                gitLogOpen={gitLogOpen}
+                leftPanelMode={leftPanelMode}
+                terminalOpen={terminalOpen}
+                onOpenGlobalSearch={openGlobalSearch}
+                onOpenGitPanel={openGitPanel}
+                onToggleGitLog={toggleGitLogDrawer}
+                onToggleTerminal={toggleTerminalPanel}
+              >
+                <RightToolRail
+                  mode={workspace.rightPanelMode}
+                  orientation="header"
+                  settingsInitialSectionId={settingsInitialSectionId}
+                  settingsOpen={settingsOpen}
+                  showSettingsButton={false}
                   workspaceRootPath={workspace.snapshot?.rootPath ?? null}
-                  onActivateGroup={activateDocumentEditorGroup}
-                  onCloseAllTabs={handleCloseAllDocumentTabs}
-                  onCloseOtherTabs={handleCloseOtherDocumentTabs}
-                  onCloseTab={handleCloseDocumentTab}
-                  onCloseTabsToLeft={handleCloseDocumentTabsToLeft}
-                  onCloseTabsToRight={handleCloseDocumentTabsToRight}
-                  onMarkdownChange={handleEditorMarkdownChange}
-                  onRetryDocument={workspace.retryCurrentDocument}
-                  onSaveRequested={() => void workspace.saveCurrentDocumentNow()}
-                  onSelectTab={handleSelectDocumentTab}
-                  onSplitTab={handleSplitDocumentTab}
-                  onTocSnapshotChange={handleTocSnapshotChange}
+                  onModeChange={workspace.setRightPanelMode}
+                  onOpenSettings={() => openSettingsDialog('appearance')}
+                  onSettingsOpenChange={setSettingsOpen}
+                  onSettingsSaved={(settings) => {
+                    setPageWidthMode(settings.appearance.pageWidthMode);
+                    setSettingsVersion((current) => current + 1);
+                  }}
                 />
-              ) : (
-                <EditorPane
-                  currentDirectory={workspace.currentDirectory}
-                  currentDocument={workspace.currentDocument}
-                  directoryContent={
-                    workspace.currentDirectory ? (
-                      <DirectoryPage
-                        key={workspace.currentDirectory.absolutePath}
-                        directory={workspace.currentDirectory}
-                        workspaceRootPath={workspace.snapshot?.rootPath ?? ''}
-                        onOpenDocument={openDocumentNode}
-                        onSelectDirectory={(node) =>
-                          void workspace.selectDirectory(node)
-                        }
-                      />
-                    ) : null
-                  }
-                  documentLoadError={workspace.documentLoadError}
-                  documentLoadState={workspace.documentLoadState}
-                  hasWorkspace={workspace.snapshot !== null}
-                  isWorkspaceEmpty={isWorkspaceEmpty}
-                  onCreateDirectory={() => void workspace.createDirectory('')}
-                  onCreateDocument={() => void handleCreateDocument('')}
-                  onImportMarkdown={() =>
-                    void workspace.importMarkdownDocuments('')
-                  }
-                  onOpenWorkspace={workspace.openWorkspace}
-                  onRetryDocument={workspace.retryCurrentDocument}
-                >
-                  {null}
-                </EditorPane>
-              )}
-            </section>
+              </WorkspaceMainHeader>
 
-            {workspace.rightPanelMode ? (
-              <WorkspaceResizeHandle
-                aria-label="调整右侧面板宽度"
-                className="-mx-2"
-                direction="right"
-                max={RIGHT_PANEL_WIDTH.max}
-                min={RIGHT_PANEL_WIDTH.min}
-                value={rightPanelWidth}
-                onResize={handleRightPanelResize}
+              <div className="flex min-h-0 flex-1 overflow-hidden">
+                <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                  {leftPanelMode === 'git' ? (
+                    <GitDiffView
+                      diff={gitDiffState}
+                      error={gitError}
+                      isLoading={gitLoading && Boolean(gitSelectedPath)}
+                      label={gitDiffLabel}
+                    />
+                  ) : workspace.currentDocument ||
+                    (!workspace.currentDirectory && hasOpenDocumentTabs) ? (
+                    <DocumentEditorSurface
+                      activeDocumentPath={activePanelDocumentPath}
+                      currentDocumentPath={currentDocumentPath}
+                      documentEditorLayout={documentEditorLayout}
+                      documentLoadError={workspace.documentLoadError}
+                      documentLoadState={workspace.documentLoadState}
+                      documentVersion={workspace.documentVersion}
+                      draftMarkdown={workspace.draftDocument?.markdown ?? null}
+                      editorSessions={editorSessions}
+                      pageWidthMode={pageWidthMode}
+                      workspaceRootPath={workspace.snapshot?.rootPath ?? null}
+                      onActivateGroup={activateDocumentEditorGroup}
+                      onCloseAllTabs={handleCloseAllDocumentTabs}
+                      onCloseOtherTabs={handleCloseOtherDocumentTabs}
+                      onCloseTab={handleCloseDocumentTab}
+                      onCloseTabsToLeft={handleCloseDocumentTabsToLeft}
+                      onCloseTabsToRight={handleCloseDocumentTabsToRight}
+                      onMarkdownChange={handleEditorMarkdownChange}
+                      onRetryDocument={workspace.retryCurrentDocument}
+                      onSaveRequested={() => void workspace.saveCurrentDocumentNow()}
+                      onSelectTab={handleSelectDocumentTab}
+                      onSplitTab={handleSplitDocumentTab}
+                    />
+                  ) : (
+                    <EditorPane
+                      currentDirectory={workspace.currentDirectory}
+                      currentDocument={workspace.currentDocument}
+                      directoryContent={
+                        workspace.currentDirectory ? (
+                          <DirectoryPage
+                            key={workspace.currentDirectory.absolutePath}
+                            directory={workspace.currentDirectory}
+                            workspaceRootPath={workspace.snapshot?.rootPath ?? ''}
+                            onOpenDocument={openDocumentNode}
+                            onSelectDirectory={(node) =>
+                              void workspace.selectDirectory(node)
+                            }
+                          />
+                        ) : null
+                      }
+                      documentLoadError={workspace.documentLoadError}
+                      documentLoadState={workspace.documentLoadState}
+                      hasWorkspace={workspace.snapshot !== null}
+                      isWorkspaceEmpty={isWorkspaceEmpty}
+                      onCreateDirectory={() => void workspace.createDirectory('')}
+                      onCreateDocument={() => void handleCreateDocument('')}
+                      onImportMarkdown={() =>
+                        void workspace.importMarkdownDocuments('')
+                      }
+                      onOpenRecentDocument={handleOpenRecentDocument}
+                      onOpenWorkspace={workspace.openWorkspace}
+                      onRetryDocument={workspace.retryCurrentDocument}
+                      recentDocuments={visibleRecentDocuments}
+                    >
+                      {null}
+                    </EditorPane>
+                  )}
+                </div>
+
+                {workspace.rightPanelMode ? (
+                  <WorkspaceResizeHandle
+                    aria-label="调整右侧面板宽度"
+                    className="-mx-2"
+                    direction="right"
+                    max={RIGHT_PANEL_WIDTH.max}
+                    min={RIGHT_PANEL_WIDTH.min}
+                    value={rightPanelWidth}
+                    onResize={handleRightPanelResize}
+                  />
+                ) : null}
+
+                <RightSidePanel
+                  currentDocument={activePanelDocument}
+                  documentPanelData={documentPanelData}
+                  mode={workspace.rightPanelMode}
+                  settingsVersion={settingsVersion}
+                  width={rightPanelWidth}
+                  workspaceRootPath={workspaceRootPath}
+                  onOpenSettings={() => openSettingsDialog('ai')}
+                />
+              </div>
+
+              <WorkspaceStatusBar
+                characterCount={documentCharacterCount}
+                lineCount={documentLineCount}
+                saveError={workspace.saveError}
+                saveState={workspace.saveState}
+                visible={
+                  Boolean(workspace.currentDocument) &&
+                  workspace.documentLoadState === 'loaded'
+                }
               />
-            ) : null}
-
-            <RightSidePanel
-              currentDocument={activePanelDocument}
-              documentPanelData={documentPanelData}
-              mode={workspace.rightPanelMode}
-              tocSnapshot={tocSnapshot}
-              width={rightPanelWidth}
-              workspaceRootPath={workspaceRootPath}
-            />
-          </div>
+            </section>
           {gitLogOpen ? (
             <WorkspaceHorizontalResizeHandle
               aria-label="调整 Git 日志高度"
@@ -1636,25 +1719,7 @@ export function WorkspaceLayout({
             </div>
           ) : null}
         </div>
-        <RightToolRail
-          mode={workspace.rightPanelMode}
-          workspaceRootPath={workspace.snapshot?.rootPath ?? null}
-          onModeChange={workspace.setRightPanelMode}
-          onSettingsSaved={(settings) =>
-            setPageWidthMode(settings.appearance.pageWidthMode)
-          }
-        />
       </div>
-
-      <WorkspaceStatusBar
-        characterCount={documentCharacterCount}
-        saveError={workspace.saveError}
-        saveState={workspace.saveState}
-        visible={
-          Boolean(workspace.currentDocument) &&
-          workspace.documentLoadState === 'loaded'
-        }
-      />
     </main>
   );
 }
@@ -1741,6 +1806,82 @@ function WindowsTitlebarControls() {
   );
 }
 
+function WorkspaceMainHeader({
+  children,
+  gitLogOpen,
+  leftPanelMode,
+  terminalOpen,
+  onOpenGitPanel,
+  onOpenGlobalSearch,
+  onToggleGitLog,
+  onToggleTerminal,
+}: {
+  children: React.ReactNode;
+  gitLogOpen: boolean;
+  leftPanelMode: LeftPanelMode;
+  terminalOpen: boolean;
+  onOpenGitPanel: () => void;
+  onOpenGlobalSearch: () => void;
+  onToggleGitLog: () => void;
+  onToggleTerminal: () => void;
+}) {
+  return (
+    <header
+      className="relative flex h-11 shrink-0 items-center gap-1 border-b border-border/70 px-3"
+      data-tauri-drag-region="deep"
+    >
+      <button
+        aria-label="搜索文档"
+        className="absolute left-1/2 top-1/2 inline-flex h-7 w-[min(420px,34vw)] -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 text-sm text-muted-foreground shadow-[inset_0_1px_1px_rgba(15,23,42,0.05)] transition-colors hover:bg-accent hover:text-foreground"
+        data-chrome="codex-centered-search"
+        type="button"
+        onClick={onOpenGlobalSearch}
+      >
+        <Search size={15} strokeWidth={1.75} />
+        <span className="hidden truncate lg:inline">搜索</span>
+      </button>
+
+      <div
+        className="z-10 ml-auto flex items-center gap-0.5"
+        data-testid="right-header-tools"
+      >
+        <button
+          aria-label="打开 Git 面板"
+          className={codexHeaderToolButtonClassName(leftPanelMode === 'git')}
+          type="button"
+          onClick={onOpenGitPanel}
+        >
+          <GitBranch size={16} strokeWidth={1.75} />
+        </button>
+        <button
+          aria-label={terminalOpen ? '关闭终端' : '打开终端'}
+          className={codexHeaderToolButtonClassName(terminalOpen)}
+          type="button"
+          onClick={onToggleTerminal}
+        >
+          <SquareTerminal size={16} strokeWidth={1.75} />
+        </button>
+        <button
+          aria-label={gitLogOpen ? '关闭 Git 日志' : '打开 Git 日志'}
+          className={codexHeaderToolButtonClassName(gitLogOpen)}
+          type="button"
+          onClick={onToggleGitLog}
+        >
+          <GitGraph size={16} strokeWidth={1.75} />
+        </button>
+        {children}
+      </div>
+    </header>
+  );
+}
+
+function codexHeaderToolButtonClassName(active: boolean) {
+  return cn(
+    'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+    active && 'bg-accent text-foreground',
+  );
+}
+
 function DocumentEditorSurface({
   activeDocumentPath,
   currentDocumentPath,
@@ -1763,7 +1904,6 @@ function DocumentEditorSurface({
   onSaveRequested,
   onSelectTab,
   onSplitTab,
-  onTocSnapshotChange,
 }: {
   activeDocumentPath: string | null;
   currentDocumentPath: string | null;
@@ -1789,10 +1929,6 @@ function DocumentEditorSurface({
     groupId: string,
     tabPath: string,
     direction: EditorSplitDirection,
-  ) => void;
-  onTocSnapshotChange: (
-    documentPath: string,
-    snapshot: DocumentTocSnapshot,
   ) => void;
 }) {
   const hasSplitGroups = documentEditorLayout.groups.length > 1;
@@ -1872,7 +2008,6 @@ function DocumentEditorSurface({
                 onRetryDocument,
                 onSaveRequested,
                 onSelectTab,
-                onTocSnapshotChange,
               })}
             </div>
           </div>
@@ -1896,7 +2031,6 @@ function renderDocumentEditorGroupContent({
   onRetryDocument,
   onSaveRequested,
   onSelectTab,
-  onTocSnapshotChange,
 }: {
   activeTab: ReturnType<typeof getActiveTab>;
   currentDocumentPath: string | null;
@@ -1911,10 +2045,6 @@ function renderDocumentEditorGroupContent({
   onRetryDocument: () => void;
   onSaveRequested: () => void;
   onSelectTab: (groupId: string, tabPath: string) => void;
-  onTocSnapshotChange: (
-    documentPath: string,
-    snapshot: DocumentTocSnapshot,
-  ) => void;
 }) {
   if (!activeTab) {
     return (
@@ -1985,7 +2115,6 @@ function renderDocumentEditorGroupContent({
       workspaceRootPath={workspaceRootPath}
       onMarkdownChange={onMarkdownChange}
       onSaveRequested={onSaveRequested}
-      onTocSnapshotChange={onTocSnapshotChange}
     />
   );
 }
@@ -1998,7 +2127,6 @@ function DocumentEditorInstance({
   workspaceRootPath,
   onMarkdownChange,
   onSaveRequested,
-  onTocSnapshotChange,
 }: {
   groupId: string;
   documentPath: string;
@@ -2007,19 +2135,10 @@ function DocumentEditorInstance({
   workspaceRootPath: string | null;
   onMarkdownChange: (documentPath: string, markdown: string) => void;
   onSaveRequested: () => void;
-  onTocSnapshotChange: (
-    documentPath: string,
-    snapshot: DocumentTocSnapshot,
-  ) => void;
 }) {
   const handleMarkdownChange = React.useCallback(
     (markdown: string) => onMarkdownChange(documentPath, markdown),
     [documentPath, onMarkdownChange],
-  );
-  const handleTocSnapshotChange = React.useCallback(
-    (snapshot: DocumentTocSnapshot) =>
-      onTocSnapshotChange(documentPath, snapshot),
-    [documentPath, onTocSnapshotChange],
   );
 
   return (
@@ -2030,7 +2149,6 @@ function DocumentEditorInstance({
       workspaceRootPath={workspaceRootPath}
       onMarkdownChange={handleMarkdownChange}
       onSaveRequested={onSaveRequested}
-      onTocSnapshotChange={handleTocSnapshotChange}
     />
   );
 }
@@ -2300,24 +2418,36 @@ function formatUnknownError(error: unknown) {
 
 function WorkspaceStatusBar({
   characterCount,
+  lineCount,
   saveError,
   saveState,
   visible,
 }: {
   characterCount: number;
+  lineCount: number;
   saveError: string | null;
   saveState: DocumentSaveState;
   visible: boolean;
 }) {
   return (
     <div
-      className="flex h-5 shrink-0 items-center justify-end px-14 text-xs text-muted-foreground"
+      className="flex h-7 shrink-0 items-center justify-end gap-4 px-4 text-[12px] text-muted-foreground"
       data-testid="workspace-status-bar"
     >
       {visible ? (
-        <div className="flex items-center gap-3">
-          <span>字数：{characterCount}</span>
-          <span>
+        <>
+          <span className="flex items-center gap-1">
+            <Check
+              className={cn(
+                'size-3',
+                saveState === 'error'
+                  ? 'text-destructive'
+                  : saveState === 'dirty'
+                    ? 'text-amber-600'
+                    : 'text-emerald-600',
+              )}
+              strokeWidth={2}
+            />
             {saveState === 'dirty' ? '有未保存更改' : null}
             {saveState === 'saving' ? '保存中...' : null}
             {saveState === 'saved' ? '已保存' : null}
@@ -2327,7 +2457,11 @@ function WorkspaceStatusBar({
               </span>
             ) : null}
           </span>
-        </div>
+          <span>词数 {characterCount}</span>
+          <span>行数 {lineCount}</span>
+          <span>字符 {characterCount}</span>
+          <span>UTF-8 · Markdown</span>
+        </>
       ) : null}
     </div>
   );

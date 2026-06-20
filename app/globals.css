@@ -55,37 +55,37 @@
 
 :root {
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: oklch(0.208 0.042 265.755);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.968 0.007 247.896);
+  --secondary-foreground: oklch(0.208 0.042 265.755);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.554 0.046 257.417);
+  --accent: oklch(0.968 0.007 247.896);
+  --accent-foreground: oklch(0.208 0.042 265.755);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.929 0.013 255.508);
+  --input: oklch(0.929 0.013 255.508);
+  --ring: oklch(0.704 0.04 256.788);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar: oklch(0.984 0.003 247.858);
+  --sidebar-foreground: oklch(0.129 0.042 264.695);
+  --sidebar-primary: oklch(0.208 0.042 265.755);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-accent: oklch(0.968 0.007 247.896);
+  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
+  --sidebar-border: oklch(0.929 0.013 255.508);
+  --sidebar-ring: oklch(0.704 0.04 256.788);
   --highlight: oklch(0.852 0.199 91.936);
   --brand: oklch(0.623 0.214 259.815);
 }
@@ -139,6 +139,182 @@
 }
 
 @layer components {
+  .app-splash {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 50% 43%, rgb(255 255 255 / 86%), transparent 38%),
+      #fafaf8;
+    color: #25272d;
+    opacity: 1;
+    pointer-events: auto;
+    transition:
+      opacity 240ms cubic-bezier(0.22, 0.61, 0.36, 1),
+      visibility 0ms linear 240ms;
+  }
+
+  body[data-app-splash='ready'] .app-splash,
+  body[data-app-splash='complete'] .app-splash {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  body[data-app-splash='complete'] .app-splash {
+    display: none;
+  }
+
+  .app-splash__content {
+    width: min(520px, calc(100vw - 48px));
+    transform: translateY(-4vh);
+    text-align: center;
+  }
+
+  .app-splash__logo {
+    width: 32px;
+    height: 32px;
+    margin: 0 auto 22px;
+    opacity: 0;
+    animation:
+      app-splash-item-in 560ms cubic-bezier(0.22, 0.61, 0.36, 1) 120ms both,
+      app-splash-breathe 2800ms ease-in-out 900ms infinite;
+  }
+
+  .app-splash__title {
+    margin: 0;
+    color: #25272d;
+    font-size: 24px;
+    font-weight: 500;
+    letter-spacing: 0;
+    line-height: 1.35;
+    opacity: 0;
+    animation: app-splash-item-in 520ms cubic-bezier(0.22, 0.61, 0.36, 1) 320ms both;
+  }
+
+  .app-splash__subtitle {
+    margin: 11px 0 0;
+    color: #8a909c;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.7;
+    opacity: 0;
+    animation: app-splash-item-in 520ms cubic-bezier(0.22, 0.61, 0.36, 1) 620ms both;
+  }
+
+  .app-splash__cursor {
+    display: inline-block;
+    width: 1px;
+    height: 1em;
+    margin-left: 5px;
+    transform: translateY(2px);
+    background: #9aa1ad;
+    animation: app-splash-cursor 1200ms ease-in-out 1000ms infinite;
+  }
+
+  .app-splash__line {
+    position: relative;
+    width: 88px;
+    height: 1px;
+    margin: 34px auto 0;
+    overflow: hidden;
+    border-radius: 999px;
+    background: #e3e5e8;
+    opacity: 0;
+    animation: app-splash-line-in 420ms ease-out 860ms both;
+  }
+
+  .app-splash__line span {
+    position: absolute;
+    inset-block: 0;
+    width: 28px;
+    border-radius: inherit;
+    background: #343842;
+    animation: app-splash-line-flow 1800ms cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  }
+
+  @keyframes app-splash-item-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes app-splash-breathe {
+    0%,
+    100% {
+      opacity: 0.88;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.025);
+    }
+  }
+
+  @keyframes app-splash-cursor {
+    0%,
+    42% {
+      opacity: 0.75;
+    }
+    43%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes app-splash-line-in {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes app-splash-line-flow {
+    from {
+      transform: translateX(-32px);
+    }
+    to {
+      transform: translateX(96px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .app-splash,
+    .app-splash__logo,
+    .app-splash__title,
+    .app-splash__subtitle,
+    .app-splash__line,
+    .app-splash__line span,
+    .app-splash__cursor {
+      animation: none;
+    }
+
+    .app-splash__logo,
+    .app-splash__title,
+    .app-splash__subtitle,
+    .app-splash__line {
+      opacity: 1;
+      transform: none;
+    }
+
+    .app-splash__cursor {
+      opacity: 0.45;
+    }
+  }
+
   .fixed-toolbar-buttons {
     container-type: inline-size;
   }
@@ -170,29 +346,112 @@
   }
 
   .workspace-editor-shell {
-    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 34%, transparent) transparent;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 26%, transparent) transparent;
+    scrollbar-width: thin;
+  }
+
+  .workspace-editor-scrollarea {
+    margin-right: 12px;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 26%, transparent) transparent;
     scrollbar-width: thin;
   }
 
   .workspace-editor-scrollarea::-webkit-scrollbar {
-    width: 5px;
+    width: 4px;
+    height: 4px;
+    background: transparent;
   }
 
-  .workspace-editor-scrollarea::-webkit-scrollbar-track {
+  .workspace-editor-scrollarea::-webkit-scrollbar-track,
+  .workspace-editor-scrollarea::-webkit-scrollbar-track-piece,
+  .workspace-editor-scrollarea::-webkit-scrollbar-corner {
     background: transparent;
   }
 
   .workspace-editor-scrollarea::-webkit-scrollbar-thumb {
     min-height: 48px;
     border-radius: 999px;
-    background: color-mix(in oklab, var(--muted-foreground) 34%, transparent);
+    background: color-mix(in oklab, var(--muted-foreground) 26%, transparent);
   }
 
   .workspace-editor-scrollarea::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in oklab, var(--muted-foreground) 52%, transparent);
+    background: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
   }
 
   .workspace-editor-scrollarea::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .workspace-editor-shell .cm-editor {
+    background: transparent;
+    color: var(--foreground);
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .workspace-editor-shell .cm-scroller {
+    margin-right: 12px;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent) transparent;
+    scrollbar-width: thin;
+  }
+
+  .workspace-editor-shell .cm-scroller::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+    background: transparent;
+  }
+
+  .workspace-editor-shell .cm-scroller::-webkit-scrollbar-track,
+  .workspace-editor-shell .cm-scroller::-webkit-scrollbar-track-piece,
+  .workspace-editor-shell .cm-scroller::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .workspace-editor-shell .cm-scroller::-webkit-scrollbar-thumb {
+    min-height: 48px;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
+  }
+
+  .workspace-editor-shell .cm-scroller::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--muted-foreground) 46%, transparent);
+  }
+
+  .workspace-editor-shell .cm-scroller::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .workspace-editor-shell .cm-markora .cm-content {
+    caret-color: var(--foreground);
+    padding-bottom: 8rem;
+  }
+
+  .workspace-editor-shell .cm-markora h1,
+  .workspace-editor-shell .cm-markora .cm-line:has(.tok-heading1) {
+    letter-spacing: 0;
+  }
+
+  .workspace-editor-shell table {
+    overflow: hidden;
+    border-color: color-mix(in oklab, var(--border) 90%, transparent);
+    border-radius: 0.5rem;
+  }
+
+  .workspace-editor-shell pre,
+  .workspace-editor-shell code {
+    border-color: color-mix(in oklab, var(--border) 80%, transparent);
+  }
+
+  .markora-toc-panel-scrollarea {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .markora-toc-panel-scrollarea::-webkit-scrollbar {
     display: none;
     width: 0;
     height: 0;
@@ -228,6 +487,7 @@
   }
 
   .workspace-tree-scrollarea {
+    margin-right: 12px;
     scrollbar-color: color-mix(in oklab, var(--muted-foreground) 20%, transparent) transparent;
     scrollbar-width: thin;
   }

@@ -11,7 +11,6 @@ import {
   FileText,
   Hash,
   Image as ImageIcon,
-  Type,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -24,6 +23,7 @@ import {
 } from './workspace-api';
 import {
   countMarkdownCharacters,
+  countMarkdownLines,
   extractResourceReferencesFromMarkdown,
   type DocumentResourceReference,
 } from './workspace-document-insights';
@@ -55,6 +55,10 @@ export function DocumentMetaPanel({
     () => countMarkdownCharacters(documentPanelData?.markdown),
     [documentPanelData?.markdown],
   );
+  const lineCount = React.useMemo(
+    () => countMarkdownLines(documentPanelData?.markdown),
+    [documentPanelData?.markdown],
+  );
 
   React.useEffect(() => {
     const timeoutId = window.setTimeout(() => setActiveTab('meta'), 0);
@@ -63,49 +67,44 @@ export function DocumentMetaPanel({
   }, [currentDocument?.absolutePath]);
 
   return (
-    <>
-      <header className="flex h-10 items-center border-b px-3">
-        <span className="truncate text-sm font-medium">文档信息</span>
-      </header>
-
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b px-3 py-2">
-          <div
-            className="grid rounded-full bg-muted p-0.5 text-xs"
-            style={{ gridTemplateColumns: '1fr 1fr' }}
-          >
-            <MetaTabButton
-              active={activeTab === 'meta'}
-              label="元信息"
-              onClick={() => setActiveTab('meta')}
-            />
-            <MetaTabButton
-              active={activeTab === 'resources'}
-              label={`资源 ${resources.length}`}
-              onClick={() => setActiveTab('resources')}
-            />
-          </div>
-        </div>
-
-        <div className="git-panel-scroll min-h-0 flex-1 overflow-auto p-3">
-          {!currentDocument ? (
-            <DocumentMetaEmptyState text="选择文档后查看元信息和资源。" />
-          ) : activeTab === 'meta' ? (
-            <DocumentMetaDetails
-              characterCount={characterCount}
-              currentDocument={currentDocument}
-              documentPanelData={documentPanelData}
-              resourceCount={resources.length}
-            />
-          ) : (
-            <DocumentResourceList
-              references={resources}
-              workspaceRootPath={workspaceRootPath}
-            />
-          )}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-9 shrink-0 items-center border-b px-3 py-1">
+        <div
+          className="grid h-7 flex-1 rounded-full bg-muted p-0.5 text-xs"
+          style={{ gridTemplateColumns: '1fr 1fr' }}
+        >
+          <MetaTabButton
+            active={activeTab === 'meta'}
+            label="元信息"
+            onClick={() => setActiveTab('meta')}
+          />
+          <MetaTabButton
+            active={activeTab === 'resources'}
+            label={`资源 ${resources.length}`}
+            onClick={() => setActiveTab('resources')}
+          />
         </div>
       </div>
-    </>
+
+      <div className="git-panel-scroll min-h-0 flex-1 overflow-auto p-3">
+        {!currentDocument ? (
+          <DocumentMetaEmptyState text="选择文档后查看元信息和资源。" />
+        ) : activeTab === 'meta' ? (
+          <DocumentMetaDetails
+            characterCount={characterCount}
+            currentDocument={currentDocument}
+            documentPanelData={documentPanelData}
+            lineCount={lineCount}
+            resourceCount={resources.length}
+          />
+        ) : (
+          <DocumentResourceList
+            references={resources}
+            workspaceRootPath={workspaceRootPath}
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -121,7 +120,7 @@ function MetaTabButton({
   return (
     <button
       className={cn(
-        'h-7 rounded-full px-3 text-muted-foreground transition-colors',
+        'h-6 rounded-full px-3 text-muted-foreground transition-colors',
         active && 'bg-background text-foreground shadow-sm',
       )}
       type="button"
@@ -136,11 +135,13 @@ function DocumentMetaDetails({
   characterCount,
   currentDocument,
   documentPanelData,
+  lineCount,
   resourceCount,
 }: {
   characterCount: number;
   currentDocument: WorkspaceNode;
   documentPanelData: DocumentPanelData | null;
+  lineCount: number;
   resourceCount: number;
 }) {
   const title =
@@ -149,37 +150,94 @@ function DocumentMetaDetails({
     '未命名文档';
 
   return (
-    <div className="rounded-xl bg-muted/25 px-4 py-3">
-      <div className="pb-3">
-        <p className="text-[11px] text-muted-foreground">标题</p>
-        <p className="mt-1 break-words text-base font-medium leading-6">
-          {title}
-        </p>
+    <div className="space-y-3">
+      <div className="rounded-xl bg-muted/25 px-4 py-3">
+        <div className="pb-3">
+          <p className="text-[11px] text-muted-foreground">标题</p>
+          <p className="mt-1 break-words text-base font-medium leading-6">
+            {title}
+          </p>
+        </div>
+
+        <div className="divide-y divide-border/60">
+          <MetaRow
+            icon={<Clock size={14} />}
+            label="创建时间"
+            value={formatDocumentDate(documentPanelData?.metadata.createdAt)}
+          />
+          <MetaRow
+            icon={<Clock size={14} />}
+            label="修改时间"
+            value={formatDocumentDate(documentPanelData?.metadata.updatedAt)}
+          />
+          <MetaRow
+            icon={<Hash size={14} />}
+            label="资源数"
+            value={`${resourceCount.toLocaleString('zh-CN')} 个`}
+          />
+          <MetaRow
+            icon={<Hash size={14} />}
+            label="词数"
+            value={characterCount.toLocaleString('zh-CN')}
+          />
+          <MetaRow
+            icon={<FileText size={14} />}
+            label="行数"
+            value={lineCount.toLocaleString('zh-CN')}
+          />
+          <MetaRow
+            icon={<Hash size={14} />}
+            label="字符"
+            value={characterCount.toLocaleString('zh-CN')}
+          />
+          <MetaRow
+            icon={<FileText size={14} />}
+            label="编码"
+            value="UTF-8"
+          />
+        </div>
       </div>
 
-      <div className="divide-y divide-border/60">
-        <MetaRow
-          icon={<Clock size={14} />}
-          label="创建时间"
-          value={formatDocumentDate(documentPanelData?.metadata.createdAt)}
-        />
-        <MetaRow
-          icon={<Clock size={14} />}
-          label="修改时间"
-          value={formatDocumentDate(documentPanelData?.metadata.updatedAt)}
-        />
-        <MetaRow
-          icon={<Type size={14} />}
-          label="字数"
-          value={`${characterCount.toLocaleString('zh-CN')} 字`}
-        />
-        <MetaRow
-          icon={<Hash size={14} />}
-          label="资源数"
-          value={`${resourceCount.toLocaleString('zh-CN')} 个`}
-        />
-      </div>
+      <FrontmatterDetails frontmatter={documentPanelData?.frontmatter ?? {}} />
     </div>
+  );
+}
+
+function FrontmatterDetails({
+  frontmatter,
+}: {
+  frontmatter: Record<string, string>;
+}) {
+  const entries = Object.entries(frontmatter);
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-xl bg-muted/25 px-4 py-3">
+      <h3 className="text-[11px] font-medium text-muted-foreground">
+        Frontmatter
+      </h3>
+      <dl className="mt-2 divide-y divide-border/60">
+        {entries.map(([key, value]) => (
+          <div
+            className="grid grid-cols-[minmax(0,0.42fr)_minmax(0,0.58fr)] gap-3 py-2 text-xs"
+            key={key}
+          >
+            <dt className="truncate text-muted-foreground" title={key}>
+              {key}
+            </dt>
+            <dd
+              className="break-words text-right font-medium text-foreground"
+              title={value}
+            >
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -222,10 +280,22 @@ function DocumentResourceList({
   const [downloadingId, setDownloadingId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (!workspaceRootPath || references.length === 0) {
+    const remotePreviews = Object.fromEntries(
+      references
+        .filter(
+          (reference) =>
+            reference.source === 'remote' && reference.nodeType === 'image',
+        )
+        .map((reference) => [reference.id, reference.url]),
+    );
+    const localReferences = references.filter(
+      (reference) => reference.source === 'local',
+    );
+
+    if (!workspaceRootPath || localReferences.length === 0) {
       const timeoutId = window.setTimeout(() => {
         setAssets({});
-        setPreviews({});
+        setPreviews(remotePreviews);
       }, 0);
 
       return () => window.clearTimeout(timeoutId);
@@ -236,9 +306,9 @@ function DocumentResourceList({
 
     async function loadAssets() {
       const nextAssets: Record<string, ResolvedWorkspaceAsset> = {};
-      const nextPreviews: Record<string, string> = {};
+      const nextPreviews: Record<string, string> = { ...remotePreviews };
 
-      for (const reference of references) {
+      for (const reference of localReferences) {
         try {
           const asset = await resolveWorkspaceAsset(rootPath, reference.id);
           nextAssets[reference.id] = asset;
@@ -271,6 +341,10 @@ function DocumentResourceList({
 
   const handleDownload = React.useCallback(
     async (reference: DocumentResourceReference) => {
+      if (reference.source === 'remote') {
+        return;
+      }
+
       if (!workspaceRootPath) {
         setError('打开工作区后才能下载资源。');
         return;
@@ -337,15 +411,16 @@ function DocumentResourceItem({
   reference: DocumentResourceReference;
   onDownload: () => void;
 }) {
-  const name = asset?.name ?? reference.id;
+  const displayName = asset?.name ?? getResourceNameFromReference(reference);
   const mediaType = asset?.mediaType ?? getResourceTypeFromNode(reference.nodeType);
+  const sourceLabel = reference.source === 'remote' ? '远程链接' : '本地资源';
 
   return (
     <div className="group flex gap-3 rounded-lg border bg-background p-2 transition-colors hover:border-[#3574f0]/40 hover:bg-muted/30">
       <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted text-muted-foreground">
         {previewUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img alt={name} className="h-full w-full object-cover" src={previewUrl} />
+          <img alt={displayName} className="h-full w-full object-cover" src={previewUrl} />
         ) : (
           getResourceIcon(mediaType)
         )}
@@ -354,22 +429,24 @@ function DocumentResourceItem({
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-start gap-2">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{name}</p>
+            <p className="truncate text-sm font-medium">{displayName}</p>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">
               {getResourceLabel(mediaType)}
-              {asset ? ` · ${formatBytes(asset.size)}` : ''}
+              {asset ? ` · ${formatBytes(asset.size)}` : ` · ${sourceLabel}`}
             </p>
           </div>
-          <button
-            aria-label={`下载资源 ${name}`}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={downloading}
-            title="下载"
-            type="button"
-            onClick={onDownload}
-          >
-            <Download size={15} />
-          </button>
+          {reference.source === 'local' ? (
+            <button
+              aria-label={`下载资源 ${displayName}`}
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={downloading}
+              title="下载"
+              type="button"
+              onClick={onDownload}
+            >
+              <Download size={15} />
+            </button>
+          ) : null}
         </div>
         <p className="mt-1 truncate text-[11px] text-muted-foreground/80">
           {reference.url}
@@ -377,6 +454,23 @@ function DocumentResourceItem({
       </div>
     </div>
   );
+}
+
+function getResourceNameFromReference(reference: DocumentResourceReference) {
+  if (reference.source === 'local') {
+    return reference.id;
+  }
+
+  try {
+    const url = new URL(reference.url);
+    const fileName = decodeURIComponent(
+      url.pathname.split('/').filter(Boolean).at(-1) ?? '',
+    );
+
+    return fileName || url.hostname;
+  } catch {
+    return reference.id;
+  }
 }
 
 function DocumentMetaEmptyState({ text }: { text: string }) {

@@ -10,6 +10,7 @@ import CodeMirror, {
 import { EditorView } from '@codemirror/view';
 import { githubDark, githubLight } from '@uiw/codemirror-theme-github';
 import {
+  EditorSelection,
   markora,
   ThemeEnum,
   type MarkoraTocItem,
@@ -17,24 +18,19 @@ import {
 import { allPlugins } from '@refinex/markora/plugins';
 
 import {
-  buildTocSnapshot,
-  scrollToHeadingIn,
-  type DocumentTocSnapshot,
-} from '@/components/editor/markdown-toc';
-import {
   parseFrontmatter,
   serializeFrontmatter,
 } from '@/components/editor/markdown-frontmatter';
 import { useWorkspaceAssetUploader } from '@/components/editor/use-workspace-asset-uploader';
 import { WorkspaceAssetProvider } from '@/components/editor/workspace-asset-context';
 import type { PageWidthMode } from '@/components/workspace/workspace-types';
+import { cn } from '@/lib/utils';
 
 interface MarkdownEditorProps {
   documentKey?: string;
   markdown: string;
   pageWidthMode?: PageWidthMode;
   onSaveRequested?: () => void;
-  onTocSnapshotChange?: (snapshot: DocumentTocSnapshot) => void;
   onMarkdownChange?: (markdown: string) => void;
   workspaceRootPath?: string | null;
 }
@@ -46,16 +42,14 @@ export function MarkdownEditor({
   markdown,
   pageWidthMode = 'wide',
   onSaveRequested,
-  onTocSnapshotChange,
   onMarkdownChange,
   workspaceRootPath = null,
 }: MarkdownEditorProps) {
   const { resolvedTheme } = useTheme();
   const editorRef = React.useRef<ReactCodeMirrorRef>(null);
-  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
-  const [tocItems, setTocItems] = React.useState<MarkoraTocItem[]>([]);
-  const [activeTocId, setActiveTocId] = React.useState<string | null>(null);
+  const activeTocItemRef = React.useRef<HTMLButtonElement | null>(null);
   const [backToTopVisible, setBackToTopVisible] = React.useState(false);
+  const [tocItems, setTocItems] = React.useState<MarkoraTocItem[]>([]);
 
   const isDark = resolvedTheme === 'dark';
   const cmTheme = isDark ? githubDark : githubLight;
@@ -63,12 +57,11 @@ export function MarkdownEditor({
   const uploader = useWorkspaceAssetUploader(workspaceRootPath ?? null);
   const frontmatterView = React.useMemo(() => {
     const parsed = parseFrontmatter(markdown);
-    const entries = Object.entries(parsed.metadata);
+    const hasFrontmatter = Object.keys(parsed.metadata).length > 0;
 
-    if (entries.length === 0) {
+    if (!hasFrontmatter) {
       return {
         body: markdown,
-        entries,
         hasFrontmatter: false,
         metadata: parsed.metadata,
       };
@@ -76,72 +69,26 @@ export function MarkdownEditor({
 
     return {
       body: parsed.body,
-      entries,
       hasFrontmatter: true,
       metadata: parsed.metadata,
     };
   }, [markdown]);
   const pageWidthExtensions = React.useMemo<Extension[]>(() => {
-    const contentMaxWidth =
-      pageWidthMode === 'wide' ? 'none' : STANDARD_PAGE_WIDTH;
+    if (pageWidthMode === 'wide') {
+      return [];
+    }
 
     return [
       EditorView.theme({
-        '&.cm-markora .cm-scroller': {
-          overflow: 'visible !important',
-        },
+        // 限宽下沉到内容区并居中；.cm-markora 撑满，内置 TOC 浮层贴卡片右侧。
         '&.cm-markora .cm-content': {
-          maxWidth: contentMaxWidth,
+          maxWidth: STANDARD_PAGE_WIDTH,
           width: '100%',
+          marginInline: 'auto',
         },
-      }),
-      EditorView.contentAttributes.of({
-        style: `max-width: ${contentMaxWidth}; width: 100%;`,
       }),
     ];
   }, [pageWidthMode]);
-
-  const handleTocChange = React.useCallback((items: MarkoraTocItem[]) => {
-    setTocItems(items);
-
-    const markoraActiveId = items.find((item) => item.active)?.id ?? null;
-    setActiveTocId((currentActiveId) => {
-      if (markoraActiveId) {
-        return markoraActiveId;
-      }
-
-      if (
-        currentActiveId &&
-        items.some((item) => item.id === currentActiveId)
-      ) {
-        return currentActiveId;
-      }
-
-      return null;
-    });
-  }, []);
-
-  // markora 的 onTocChange 会推带 active 字段的 items；
-  // 用 state 存储，effect 负责发布 DocumentTocSnapshot 给右侧 TOC 面板。
-  React.useEffect(() => {
-    if (!onTocSnapshotChange) {
-      return;
-    }
-
-    const snapshot = buildTocSnapshot(tocItems, activeTocId);
-    onTocSnapshotChange({
-      ...snapshot,
-      scrollToHeading: (id: string) => {
-        setActiveTocId(id);
-        scrollToHeadingIn(
-          editorRef.current?.view ?? null,
-          tocItems,
-          id,
-          scrollContainerRef.current,
-        );
-      },
-    });
-  }, [activeTocId, onTocSnapshotChange, tocItems]);
 
   const handleMarkdownChange = React.useCallback(
     (value: string) => {
@@ -163,6 +110,71 @@ export function MarkdownEditor({
     },
     [frontmatterView, onMarkdownChange],
   );
+
+  const handleTocChange = React.useCallback((items: MarkoraTocItem[]) => {
+    setTocItems(items);
+  }, []);
+
+  const handleSelectTocItem = React.useCallback((item: MarkoraTocItem) => {
+    if (typeof item.from !== 'number') {
+      return;
+    }
+
+    const view = editorRef.current?.view ?? null;
+
+    if (!view) {
+      return;
+    }
+
+    view.dispatch({
+      effects: EditorView.scrollIntoView(item.from, { y: 'start' }),
+      selection: EditorSelection.cursor(item.from),
+    });
+    view.focus();
+    setTocItems((current) =>
+      current.map((tocItem) => ({
+        ...tocItem,
+        active: tocItem.id === item.id,
+      })),
+    );
+  }, []);
+
+  React.useEffect(() => {
+    activeTocItemRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [tocItems]);
+
+  // 回到顶部按钮的可见性监听绑定到 CodeMirror scrollDOM。
+  // react-codemirror 首次渲染时 view 可能尚未就绪，用 rAF 轮询兜底。
+  React.useEffect(() => {
+    let frame = 0;
+    let cleanup: (() => void) | null = null;
+    let attempts = 0;
+
+    const attach = () => {
+      const scroller = editorRef.current?.view?.scrollDOM ?? null;
+      if (scroller) {
+        const handleScroll = () => {
+          setBackToTopVisible(scroller.scrollTop > 240);
+        };
+        scroller.addEventListener('scroll', handleScroll, { passive: true });
+        cleanup = () => scroller.removeEventListener('scroll', handleScroll);
+        return;
+      }
+
+      if (attempts++ < 30) {
+        frame = requestAnimationFrame(attach);
+      }
+    };
+
+    attach();
+
+    return () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+      }
+      cleanup?.();
+    };
+  }, []);
 
   const extensions = React.useMemo<Extension[]>(
     () =>
@@ -192,8 +204,6 @@ export function MarkdownEditor({
           },
         },
         toc: {
-          // 不渲染 markora 内置 TOC 面板，但 onTocChange 仍会触发。
-          // handleTocChange 会同步 TOC 列表与当前 active id。
           enabled: false,
           onTocChange: handleTocChange,
         },
@@ -201,16 +211,13 @@ export function MarkdownEditor({
     [handleTocChange, markoraTheme, pageWidthExtensions, uploader],
   );
 
-  const maxWidthClass =
-    pageWidthMode === 'wide' ? 'max-w-none' : 'max-w-[64rem]';
-
   return (
     <WorkspaceAssetProvider
       mode="workspace"
       rootPath={workspaceRootPath ?? null}
     >
       <div
-        className={`workspace-editor-page-${pageWidthMode} relative flex h-full min-h-0 flex-col`}
+        className={`workspace-editor-shell workspace-editor-page-${pageWidthMode} relative flex h-full min-h-0 flex-col`}
         data-page-width-mode={pageWidthMode}
         data-testid="markdown-editor-root"
         key={documentKey}
@@ -224,27 +231,22 @@ export function MarkdownEditor({
           }
         }}
       >
-        <div
-          className="workspace-editor-shell workspace-editor-scrollarea min-h-0 flex-1 overflow-auto"
-          ref={scrollContainerRef}
-          onScroll={(event) =>
-            setBackToTopVisible(event.currentTarget.scrollTop > 240)
-          }
-        >
-          <div className={`mx-auto w-full ${maxWidthClass} px-6 py-8`}>
-            {frontmatterView.hasFrontmatter ? (
-              <FrontmatterPanel entries={frontmatterView.entries} />
-            ) : null}
-            <CodeMirror
-              ref={editorRef}
-              value={frontmatterView.body}
-              theme={cmTheme}
-              extensions={extensions}
-              basicSetup={false}
-              onChange={handleMarkdownChange}
-            />
-          </div>
-        </div>
+        <CodeMirror
+          className="min-h-0 w-full flex-1"
+          height="100%"
+          ref={editorRef}
+          value={frontmatterView.body}
+          theme={cmTheme}
+          extensions={extensions}
+          basicSetup={false}
+          onChange={handleMarkdownChange}
+        />
+
+        <MarkoraTocOverlay
+          activeItemRef={activeTocItemRef}
+          items={tocItems}
+          onSelectItem={handleSelectTocItem}
+        />
 
         {backToTopVisible ? (
           <button
@@ -252,11 +254,11 @@ export function MarkdownEditor({
             className="absolute right-4 bottom-4 z-40 flex size-8 items-center justify-center rounded-md border bg-background/95 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
             type="button"
             onClick={() => {
-              scrollContainerRef.current?.scrollTo({
-                behavior: 'smooth',
-                top: 0,
-              });
-              setBackToTopVisible(false);
+              const scroller = editorRef.current?.view?.scrollDOM ?? null;
+              if (scroller) {
+                scroller.scrollTo({ behavior: 'smooth', top: 0 });
+                setBackToTopVisible(false);
+              }
             }}
           >
             <ArrowUp size={15} />
@@ -267,31 +269,101 @@ export function MarkdownEditor({
   );
 }
 
-function FrontmatterPanel({
-  entries,
+function MarkoraTocOverlay({
+  activeItemRef,
+  items,
+  onSelectItem,
 }: {
-  entries: Array<[string, string]>;
+  activeItemRef: React.RefObject<HTMLButtonElement | null>;
+  items: MarkoraTocItem[];
+  onSelectItem: (item: MarkoraTocItem) => void;
 }) {
+  if (items.length === 0) {
+    return null;
+  }
+
   return (
-    <section
-      className="mb-6 border-b px-4 py-3"
-      data-testid="markdown-frontmatter-panel"
+    <div
+      className="group/toc absolute top-1/2 right-9 z-30 flex -translate-y-1/2 items-center"
+      data-testid="markora-toc-overlay"
     >
-      <div className="mb-3 text-xs font-medium text-muted-foreground">
-        文档元数据
-      </div>
-      <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
-        {entries.map(([key, value]) => (
-          <div className="min-w-0" key={key}>
-            <dt className="mb-1 text-xs text-muted-foreground">
-              {key}
-            </dt>
-            <dd className="truncate font-medium text-foreground" title={value}>
-              {value}
-            </dd>
-          </div>
+      <span
+        aria-hidden="true"
+        className="absolute top-1/2 right-0 h-[64vh] w-16 -translate-y-1/2"
+        data-testid="markora-toc-hover-bridge"
+      />
+      <div
+        aria-hidden="true"
+        className="relative flex flex-col items-end gap-1.5 py-2"
+        data-testid="markora-toc-rail"
+      >
+        {items.map((item) => (
+          <span
+            className={cn(
+              'block h-0.5 rounded-full bg-muted-foreground/25 transition-colors',
+              getTocRailWidthClassName(item.level),
+              item.active && 'bg-foreground',
+            )}
+            data-testid={`markora-toc-bar-${item.id}`}
+            key={item.id}
+          />
         ))}
-      </dl>
-    </section>
+      </div>
+
+      <nav
+        aria-label="文档目录"
+        className="markora-toc-panel-scrollarea pointer-events-none absolute top-1/2 right-10 max-h-[58vh] w-72 -translate-y-1/2 overflow-y-auto rounded-lg border border-border/80 bg-background/95 p-4 text-sm opacity-0 shadow-[0_18px_48px_-24px_rgba(15,23,42,0.45),0_2px_8px_rgba(15,23,42,0.08)] backdrop-blur transition-opacity duration-150 group-hover/toc:pointer-events-auto group-hover/toc:opacity-100 group-focus-within/toc:pointer-events-auto group-focus-within/toc:opacity-100"
+        data-testid="markora-toc-panel"
+      >
+        <div className="flex flex-col gap-1">
+          {items.map((item) => (
+            <button
+              aria-label={`跳转到 ${item.text}`}
+              className={cn(
+                'min-w-0 truncate rounded-md py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+                getTocPanelIndentClassName(item.level),
+                item.active && 'font-medium text-foreground',
+              )}
+              key={item.id}
+              ref={item.active ? activeItemRef : undefined}
+              type="button"
+              onClick={() => onSelectItem(item)}
+            >
+              {item.text}
+            </button>
+          ))}
+        </div>
+      </nav>
+    </div>
   );
+}
+
+function getTocRailWidthClassName(level: MarkoraTocItem['level']) {
+  switch (level) {
+    case 2:
+      return 'w-6';
+    case 3:
+      return 'w-5';
+    case 4:
+      return 'w-4';
+    case 5:
+      return 'w-3';
+    case 6:
+      return 'w-2';
+  }
+}
+
+function getTocPanelIndentClassName(level: MarkoraTocItem['level']) {
+  switch (level) {
+    case 2:
+      return 'pl-2';
+    case 3:
+      return 'pl-5';
+    case 4:
+      return 'pl-8';
+    case 5:
+      return 'pl-11';
+    case 6:
+      return 'pl-14';
+  }
 }
