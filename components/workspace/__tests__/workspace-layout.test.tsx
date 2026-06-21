@@ -1637,7 +1637,10 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
     await user.click(await screen.findByRole('button', { name: '打开 AI 设置' }));
 
-    expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
+    expect(await screen.findByTestId('workspace-settings-page')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
+    expect(screen.queryByTestId('document-meta-panel')).toBeNull();
+    expect(screen.queryByTestId('ai-panel-island')).toBeNull();
     expect(screen.getByText('AI 模型')).toBeTruthy();
     expect(screen.getByText('启用模型')).toBeTruthy();
   });
@@ -1817,7 +1820,19 @@ describe('WorkspaceLayout', () => {
 
     await user.click(screen.getByRole('button', { name: '打开设置' }));
 
-    expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
+    expect(await screen.findByTestId('workspace-settings-page')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
+    expect(screen.queryByTestId('workspace-sidebar')).toBeNull();
+    expect(screen.getByTestId('workspace-settings-sidebar')).toBeTruthy();
+    expect(screen.getByTestId('workspace-editor-column')).toBeTruthy();
+    expect(screen.queryByTestId('workspace-editor-block')).toBeNull();
+    expect(screen.getByTestId('workspace-settings-header')).toBeTruthy();
+    expect(screen.queryByTestId('workspace-main-header')).toBeNull();
+    expect(screen.queryByTestId('right-tool-rail')).toBeNull();
+    expect(screen.queryByRole('button', { name: '搜索文档' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '切换主题' })).toBeNull();
+    expect(screen.queryByTestId('sidebar-chrome-toggle')).toBeNull();
+    expect(screen.getByRole('button', { name: '返回应用' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '外观' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '存储' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '跟随系统' })).toBeTruthy();
@@ -1825,6 +1840,13 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('radio', { name: '暗色' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '标准' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '全宽' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '返回应用' }));
+
+    expect(screen.queryByTestId('workspace-settings-page')).toBeNull();
+    expect(screen.getByTestId('workspace-sidebar')).toBeTruthy();
+    expect(screen.getByTestId('right-tool-rail')).toBeTruthy();
+    expect(screen.getByTestId('workspace-editor-block')).toBeTruthy();
   });
 
   it('opens storage settings from the settings menu', async () => {
@@ -1838,7 +1860,8 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }));
     await user.click(await screen.findByRole('button', { name: '存储' }));
 
-    expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
+    expect(await screen.findByTestId('workspace-settings-page')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
     expect(screen.getByRole('button', { name: '存储' })).toBeTruthy();
     expect(screen.getByText('本地存储配置')).toBeTruthy();
     expect(screen.getByDisplayValue('/repo/.madora/assets')).toBeTruthy();
@@ -1867,7 +1890,8 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }));
     await user.click(await screen.findByRole('button', { name: 'AI' }));
 
-    expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
+    expect(await screen.findByTestId('workspace-settings-page')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
     expect(screen.getByText('AI 模型')).toBeTruthy();
     expect(screen.getByText('启用模型')).toBeTruthy();
     expect(screen.getByText('Fake Echo')).toBeTruthy();
@@ -1985,6 +2009,7 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }));
     await user.click(await screen.findByRole('radio', { name: '标准' }));
     await user.click(screen.getByRole('button', { name: '应用' }));
+    await user.click(screen.getByRole('button', { name: '返回应用' }));
 
     const updatedEditor = await screen.findByTestId('markdown-editor');
     expect(updatedEditor.getAttribute('data-page-width-mode')).toBe('standard');

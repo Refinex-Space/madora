@@ -114,6 +114,7 @@ import {
   DEFAULT_APP_SETTINGS,
   withDefaultAppSettings,
 } from './workspace-settings';
+import { WorkspaceSettingsPage } from './workspace-settings-page';
 import { WorkspaceResizeHandle } from './workspace-resize-handle';
 import { WorkspaceSidebar } from './workspace-sidebar';
 import { WorkspaceViewsPage } from './workspace-views-page';
@@ -147,7 +148,7 @@ type LeftPanelMode = 'workspace' | 'git';
 type BottomPanelMode = 'git-log' | 'terminal' | null;
 type GlobalSearchIndexStatus = 'error' | 'idle' | 'indexing' | 'ready';
 type ThemeMode = 'dark' | 'light' | 'system';
-type WorkspaceSystemPage = 'views' | null;
+type WorkspaceSystemPage = 'settings' | 'views' | null;
 
 interface GlobalSearchState {
   index: WorkspaceSearchIndex | null;
@@ -234,7 +235,6 @@ export function WorkspaceLayout({
     RIGHT_PANEL_WIDTH.min,
     RIGHT_PANEL_WIDTH.max,
   );
-  const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [settingsInitialSectionId, setSettingsInitialSectionId] =
     React.useState<'appearance' | 'storage' | 'ai'>('appearance');
   const [settingsVersion, setSettingsVersion] = React.useState(0);
@@ -462,10 +462,10 @@ export function WorkspaceLayout({
   const gitLogOpen = bottomPanelMode === 'git-log';
   const terminalOpen = bottomPanelMode === 'terminal';
 
-  const openSettingsDialog = React.useCallback(
+  const openSettingsPage = React.useCallback(
     (sectionId: 'appearance' | 'storage' | 'ai' = 'appearance') => {
       setSettingsInitialSectionId(sectionId);
-      setSettingsOpen(true);
+      setSystemPage('settings');
     },
     [],
   );
@@ -1637,13 +1637,15 @@ export function WorkspaceLayout({
         </div>
       ) : null}
 
-      <SidebarChromeToggle
-        collapsed={workspace.isSidebarCollapsed}
-        pinnedNodes={pinnedNodes}
-        onToggle={toggleLeftSidebar}
-        onOpenPinnedNode={handleOpenWorkspaceViewNode}
-        onUnpinNode={handleUnpinNode}
-      />
+      {systemPage === 'settings' ? null : (
+        <SidebarChromeToggle
+          collapsed={workspace.isSidebarCollapsed}
+          pinnedNodes={pinnedNodes}
+          onToggle={toggleLeftSidebar}
+          onOpenPinnedNode={handleOpenWorkspaceViewNode}
+          onUnpinNode={handleUnpinNode}
+        />
+      )}
 
       <WorkspaceGlobalSearchDialog
         indexStatus={activeGlobalSearchStatus}
@@ -1659,6 +1661,30 @@ export function WorkspaceLayout({
         className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
         data-testid="workspace-main-blocks"
       >
+        {systemPage === 'settings' ? (
+          <WorkspaceSettingsPage
+            header={
+              <header
+                className="h-11 shrink-0"
+                data-tauri-drag-region="deep"
+                data-testid="workspace-settings-header"
+              />
+            }
+            initialSectionId={settingsInitialSectionId}
+            sidebarResize={{
+              max: LEFT_PANEL_WIDTH.max,
+              min: LEFT_PANEL_WIDTH.min,
+              onResize: handleLeftSidebarResize,
+            }}
+            sidebarWidth={leftSidebarWidth}
+            workspaceRootPath={workspace.snapshot?.rootPath ?? null}
+            onBack={() => setSystemPage(null)}
+            onSettingsSaved={(settings) => {
+              setPageWidthMode(settings.appearance.pageWidthMode);
+              setSettingsVersion((current) => current + 1);
+            }}
+          />
+        ) : (
         <div className="flex min-w-0 flex-1 overflow-hidden">
             {leftPanelMode === 'workspace' ? (
               <WorkspaceSidebar
@@ -1685,12 +1711,12 @@ export function WorkspaceLayout({
                   void handleOpenDailyNote(formatDailyDate(new Date()))
                 }
                 onOpenViews={handleOpenViewsPage}
-                onOpenSettings={() => openSettingsDialog('appearance')}
+                onOpenSettings={() => openSettingsPage('appearance')}
                 revealDirectoryPath={revealedDirectoryPath}
                 onSelectDirectory={handleSelectWorkspaceDirectory}
                 onSelectDocument={openDocumentNode}
                 onTogglePinned={handleToggleNodePinned}
-                systemPage={systemPage}
+                systemPage={systemPage === 'views' ? 'views' : null}
               />
             ) : workspace.isSidebarCollapsed ? null : (
               <div className="h-full shrink-0" style={{ width: leftSidebarWidth }}>
@@ -1756,17 +1782,9 @@ export function WorkspaceLayout({
                   <RightToolRail
                     mode={workspace.rightPanelMode}
                     orientation="header"
-                    settingsInitialSectionId={settingsInitialSectionId}
-                    settingsOpen={settingsOpen}
                     showSettingsButton={false}
-                    workspaceRootPath={workspace.snapshot?.rootPath ?? null}
                     onModeChange={workspace.setRightPanelMode}
-                    onOpenSettings={() => openSettingsDialog('appearance')}
-                    onSettingsOpenChange={setSettingsOpen}
-                    onSettingsSaved={(settings) => {
-                      setPageWidthMode(settings.appearance.pageWidthMode);
-                      setSettingsVersion((current) => current + 1);
-                    }}
+                    onOpenSettings={() => openSettingsPage('appearance')}
                   />
                 </WorkspaceMainHeader>
 
@@ -1887,7 +1905,7 @@ export function WorkspaceLayout({
                             )
                         : undefined
                     }
-                    onOpenSettings={() => openSettingsDialog('ai')}
+                    onOpenSettings={() => openSettingsPage('ai')}
                   />
                 </div>
 
@@ -1982,6 +2000,7 @@ export function WorkspaceLayout({
               ) : null}
             </div>
         </div>
+        )}
       </div>
     </main>
   );

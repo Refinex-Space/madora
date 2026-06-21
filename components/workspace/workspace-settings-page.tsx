@@ -3,6 +3,7 @@
 import * as React from 'react';
 import {
   AlertTriangle,
+  ArrowLeft,
   Bot,
   CheckCircle2,
   Cloud,
@@ -22,14 +23,6 @@ import {
 import { useTheme } from 'next-themes';
 
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -40,6 +33,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
+import { WorkspaceResizeHandle } from './workspace-resize-handle';
 import {
   detectAiAccounts,
   deleteAiProviderSecret,
@@ -69,11 +63,17 @@ import type {
   AiProviderSettings,
 } from './ai-provider/provider-types';
 
-interface WorkspaceSettingsDialogProps {
+interface WorkspaceSettingsPageProps {
+  header?: React.ReactNode;
   initialSectionId?: SettingsSectionId;
-  open: boolean;
+  sidebarResize?: {
+    max: number;
+    min: number;
+    onResize: (width: number) => void;
+  };
+  sidebarWidth?: number;
   workspaceRootPath: string | null;
-  onOpenChange: (open: boolean) => void;
+  onBack: () => void;
   onSettingsSaved?: (settings: AppSettings) => void;
 }
 
@@ -210,13 +210,15 @@ const AI_FIELD_DEFINITIONS = [
   },
 ];
 
-export function WorkspaceSettingsDialog({
+export function WorkspaceSettingsPage({
+  header,
   initialSectionId = 'appearance',
-  open,
+  sidebarResize,
+  sidebarWidth = 280,
   workspaceRootPath,
-  onOpenChange,
+  onBack,
   onSettingsSaved,
-}: WorkspaceSettingsDialogProps) {
+}: WorkspaceSettingsPageProps) {
   const { setTheme, theme } = useTheme();
   const [settings, setSettings] =
     React.useState<AppSettings>(DEFAULT_APP_SETTINGS);
@@ -304,10 +306,6 @@ export function WorkspaceSettingsDialog({
     let cancelled = false;
 
     async function loadSettings() {
-      if (!open) {
-        return;
-      }
-
       setSearchQuery('');
       setActiveSectionId(initialSectionId);
       setLoadState('loading');
@@ -355,7 +353,7 @@ export function WorkspaceSettingsDialog({
     return () => {
       cancelled = true;
     };
-  }, [initialSectionId, open, workspaceRootPath]);
+  }, [initialSectionId, workspaceRootPath]);
 
   function updatePageWidthMode(pageWidthMode: PageWidthMode) {
     setSettings((current) => ({
@@ -416,144 +414,187 @@ export function WorkspaceSettingsDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid max-h-[min(620px,calc(100vh-40px))] min-h-[500px] w-[860px] max-w-[calc(100vw-40px)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl p-0 sm:max-w-[860px]">
-        <DialogHeader className="gap-1 border-b px-5 py-3">
-          <DialogTitle className="text-[15px]">设置</DialogTitle>
-          <DialogDescription className="text-xs">
-            配置应用外观、上传、资源存储方式和 AI 模型。
-          </DialogDescription>
-        </DialogHeader>
+    <section
+      aria-label="设置"
+      className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-sidebar"
+      data-testid="workspace-settings-page"
+    >
+      <aside
+        className="flex h-full shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground"
+        data-testid="workspace-settings-sidebar"
+        style={{ width: sidebarWidth }}
+      >
+        <header
+          className="h-10 shrink-0"
+          data-tauri-drag-region="deep"
+        />
 
-        <div className="grid min-h-0 grid-cols-[184px_minmax(0,1fr)]">
-          <aside className="space-y-3 border-r bg-muted/25 p-3">
-            <label className="flex h-8 items-center gap-2 rounded-md border bg-background px-2 text-muted-foreground focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
-              <Search size={14} />
-              <input
-                aria-label="搜索设置"
-                className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
-                placeholder="搜索设置"
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
-              {searchQuery ? (
-                <button
-                  aria-label="清空设置搜索"
-                  className="text-muted-foreground hover:text-foreground"
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                >
-                  <X size={13} />
-                </button>
-              ) : null}
-            </label>
-
-            <div className="grid gap-1">
-              {visibleSections.map((section) => (
-                <button
-                  key={section.id}
-                  className={cn(
-                    'flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-medium transition-colors',
-                    activeSection === section.id
-                      ? 'bg-[#3574f0] text-white shadow-sm'
-                      : 'text-muted-foreground hover:bg-background hover:text-foreground',
-                  )}
-                  type="button"
-                  onClick={() => setActiveSectionId(section.id)}
-                >
-                  <SettingsSectionIcon sectionId={section.id} />
-                  {section.label}
-                </button>
-              ))}
-            </div>
-          </aside>
-
-          <section className="min-h-0 overflow-auto px-6 py-5">
-            {activeSection === 'appearance' ? (
-              <AppearanceSettingsSection
-                errorMessage={errorMessage}
-                pageWidthMode={settings.appearance.pageWidthMode}
-                saveState={saveState}
-                theme={theme ?? 'system'}
-                visibleFields={visibleAppearanceFields.map((field) => field.id)}
-                onPageWidthModeChange={updatePageWidthMode}
-                onThemeChange={setTheme}
-              />
-            ) : null}
-
-            {activeSection === 'storage' ? (
-              <StorageSettingsSection
-                assetDirectory={assetDirectory}
-                errorMessage={errorMessage}
-                saveState={saveState}
-                settings={settings}
-                visibleFields={visibleStorageFields}
-                onStorageProviderChange={(value) =>
-                  setSettings((current) => ({
-                    ...current,
-                    schemaVersion: 1,
-                    storage: { defaultProvider: value },
-                  }))
-                }
-              />
-            ) : null}
-
-            {activeSection === 'ai' ? (
-              <AiSettingsSection
-                errorMessage={errorMessage}
-                saveState={saveState}
-                detectedAccounts={detectedAccounts}
-                settings={settings}
-                visibleFields={visibleAiFields.map((field) => field.id)}
-                onEnabledProfileChange={updateEnabledAiProfile}
-                onProviderSettingsChange={updateAiProviderSettings}
-              />
-            ) : null}
-
-            {!activeSection ? (
-              <div className="flex h-full max-w-[620px] flex-col items-center justify-center text-center">
-                <Search className="mb-3 text-muted-foreground" size={26} />
-                <h2 className="text-sm font-medium">未找到设置</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  没有匹配“{searchQuery}”的设置项。
-                </p>
-              </div>
-            ) : null}
-          </section>
+        <div className="px-2 pb-2 pr-4">
+          <button
+            aria-label="返回应用"
+            className="inline-flex h-8 max-w-full items-center gap-1.5 rounded-md px-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            type="button"
+            onClick={onBack}
+          >
+            <ArrowLeft size={14} strokeWidth={1.8} />
+            <span>返回应用</span>
+          </button>
         </div>
 
-        <DialogFooter className="mx-0 mb-0 min-h-13 rounded-none px-5 py-3">
-          <Button
-            size="sm"
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            取消
-          </Button>
-          <Button
-            disabled={loadState === 'loading' || saveState === 'saving'}
-            size="sm"
-            type="button"
-            onClick={() => void handleApply()}
-          >
-            应用
-          </Button>
-          <Button
-            disabled={loadState === 'loading' || saveState === 'saving'}
-            size="sm"
-            type="button"
-            onClick={async () => {
-              await handleApply();
-              onOpenChange(false);
-            }}
-          >
-            确定
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2 pb-4 pr-4">
+          <label className="flex h-8 items-center gap-2 rounded-md border border-sidebar-border/60 bg-background/70 px-2 text-muted-foreground focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+            <Search size={14} />
+            <input
+              aria-label="搜索设置"
+              className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+              placeholder="搜索设置"
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+            {searchQuery ? (
+              <button
+                aria-label="清空设置搜索"
+                className="text-muted-foreground hover:text-foreground"
+                type="button"
+                onClick={() => setSearchQuery('')}
+              >
+                <X size={13} />
+              </button>
+            ) : null}
+          </label>
+
+          <div className="grid gap-1">
+            <p className="px-2 pb-1 text-[11px] font-medium text-muted-foreground">
+              个人
+            </p>
+            {visibleSections.map((section) => (
+              <button
+                key={section.id}
+                className={cn(
+                  'flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-medium transition-colors',
+                  activeSection === section.id
+                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/75 hover:text-sidebar-accent-foreground',
+                )}
+                type="button"
+                onClick={() => setActiveSectionId(section.id)}
+              >
+                <SettingsSectionIcon sectionId={section.id} />
+                {section.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </aside>
+
+      {sidebarResize ? (
+        <WorkspaceResizeHandle
+          aria-label="调整设置侧栏宽度"
+          className="-mx-2"
+          direction="left"
+          max={sidebarResize.max}
+          min={sidebarResize.min}
+          value={sidebarWidth}
+          onResize={sidebarResize.onResize}
+        />
+      ) : null}
+
+      <div
+        className="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-background shadow-[0_1px_3px_rgba(15,23,42,0.05),0_18px_42px_-28px_rgba(15,23,42,0.45)]"
+        data-testid="workspace-editor-column"
+      >
+        <section
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background"
+          data-chrome="codex-main-surface"
+          data-testid="workspace-settings-main-surface"
+        >
+          {header}
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-[680px] px-8 py-12 pb-28">
+              {activeSection === 'appearance' ? (
+                <AppearanceSettingsSection
+                  errorMessage={errorMessage}
+                  pageWidthMode={settings.appearance.pageWidthMode}
+                  saveState={saveState}
+                  theme={theme ?? 'system'}
+                  visibleFields={visibleAppearanceFields.map(
+                    (field) => field.id,
+                  )}
+                  onPageWidthModeChange={updatePageWidthMode}
+                  onThemeChange={setTheme}
+                />
+              ) : null}
+
+              {activeSection === 'storage' ? (
+                <StorageSettingsSection
+                  assetDirectory={assetDirectory}
+                  errorMessage={errorMessage}
+                  saveState={saveState}
+                  settings={settings}
+                  visibleFields={visibleStorageFields}
+                  onStorageProviderChange={(value) =>
+                    setSettings((current) => ({
+                      ...current,
+                      schemaVersion: 1,
+                      storage: { defaultProvider: value },
+                    }))
+                  }
+                />
+              ) : null}
+
+              {activeSection === 'ai' ? (
+                <AiSettingsSection
+                  errorMessage={errorMessage}
+                  saveState={saveState}
+                  detectedAccounts={detectedAccounts}
+                  settings={settings}
+                  visibleFields={visibleAiFields.map((field) => field.id)}
+                  onEnabledProfileChange={updateEnabledAiProfile}
+                  onProviderSettingsChange={updateAiProviderSettings}
+                />
+              ) : null}
+
+              {!activeSection ? (
+                <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
+                  <Search className="mb-3 text-muted-foreground" size={26} />
+                  <h2 className="text-sm font-medium">未找到设置</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    没有匹配“{searchQuery}”的设置项。
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <footer className="flex min-h-13 shrink-0 items-center justify-end gap-2 border-t px-5 py-3">
+            <Button size="sm" type="button" variant="outline" onClick={onBack}>
+              取消
+            </Button>
+            <Button
+              disabled={loadState === 'loading' || saveState === 'saving'}
+              size="sm"
+              type="button"
+              onClick={() => void handleApply()}
+            >
+              应用
+            </Button>
+            <Button
+              disabled={loadState === 'loading' || saveState === 'saving'}
+              size="sm"
+              type="button"
+              onClick={async () => {
+                await handleApply();
+                onBack();
+              }}
+            >
+              确定
+            </Button>
+          </footer>
+        </section>
+      </div>
+    </section>
   );
 }
 
