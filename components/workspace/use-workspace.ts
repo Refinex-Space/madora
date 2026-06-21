@@ -22,6 +22,7 @@ import {
   selectMarkdownSourceFiles,
   selectWorkspaceParentDirectory,
   selectWorkspaceRoot,
+  setWorkspaceNodeState,
 } from './workspace-api';
 import {
   extractH1FromMarkdown,
@@ -641,6 +642,47 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     [openDocument, refreshWorkspaceTree, snapshot],
   );
 
+  const updateNodeState = React.useCallback(
+    async (
+      node: WorkspaceNode,
+      state: { locked?: boolean; pinned?: boolean },
+    ) => {
+      if (!snapshot) {
+        return null;
+      }
+
+      const nextSnapshot = await setWorkspaceNodeState(
+        snapshot.rootPath,
+        node.absolutePath,
+        state,
+      );
+
+      setSnapshot(nextSnapshot);
+
+      const nextNode = findNodeByAbsolutePath(
+        nextSnapshot.nodes,
+        node.absolutePath,
+      );
+
+      if (
+        nextNode?.kind === 'document' &&
+        currentDocument?.absolutePath === node.absolutePath
+      ) {
+        setCurrentDocument(nextNode);
+      }
+
+      if (
+        nextNode?.kind === 'directory' &&
+        currentDirectoryPath === node.absolutePath
+      ) {
+        setCurrentDirectoryPath(nextNode.absolutePath);
+      }
+
+      return nextNode;
+    },
+    [currentDirectoryPath, currentDocument?.absolutePath, snapshot],
+  );
+
   const workspaceHistory = React.useMemo(() => {
     return storedWorkspaceHistory;
   }, [storedWorkspaceHistory]);
@@ -773,6 +815,7 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     snapshot,
     switchWorkspace: loadWorkspace,
     updateMarkdown,
+    updateNodeState,
     workspaceHistory,
     removeWorkspace,
   };

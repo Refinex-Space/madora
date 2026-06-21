@@ -3,6 +3,7 @@ mod ai_http;
 mod ai_secret;
 mod assets;
 mod git;
+mod link_preview;
 mod settings;
 mod terminal;
 mod workspace;
@@ -49,6 +50,7 @@ pub fn run() {
             git::git_push,
             git::git_revert_file,
             git::git_delete_file,
+            link_preview::resolve_link_preview,
             terminal::terminal_spawn,
             terminal::terminal_write,
             terminal::terminal_resize,
@@ -57,6 +59,7 @@ pub fn run() {
             settings::save_app_settings,
             workspace::ensure_workspace,
             workspace::record_recent_document,
+            workspace::set_workspace_node_state,
             workspace::open_daily_note,
             workspace::list_daily_notes_for_month,
             workspace::load_workspace_tree,

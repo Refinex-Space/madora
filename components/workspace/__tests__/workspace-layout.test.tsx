@@ -39,6 +39,7 @@ import {
   saveAppSettings,
   selectWorkspaceAssetDownloadPath,
   selectWorkspaceParentDirectory,
+  setWorkspaceNodeState,
   closeAppWindow,
   cancelAiTurn,
   minimizeAppWindow,
@@ -88,15 +89,18 @@ vi.mock('@/components/editor/markdown-editor', () => ({
     documentKey,
     markdown,
     pageWidthMode,
+    readOnly,
   }: {
     documentKey?: string;
     markdown?: string;
     pageWidthMode?: string;
+    readOnly?: boolean;
   }) => (
     <button
       data-document-key={documentKey}
       data-page-width-mode={pageWidthMode}
       data-markdown={markdown}
+      data-read-only={String(Boolean(readOnly))}
       data-testid="markdown-editor"
       type="button"
     >
@@ -156,6 +160,7 @@ vi.mock('../workspace-api', async (importOriginal) => {
     saveAppSettings: vi.fn(),
     selectWorkspaceAssetDownloadPath: vi.fn(),
     selectWorkspaceParentDirectory: vi.fn(),
+    setWorkspaceNodeState: vi.fn(),
     setAppWindowTitle: vi.fn(),
     closeAppWindow: vi.fn(),
     cancelAiTurn: vi.fn(),
@@ -211,6 +216,7 @@ const selectWorkspaceAssetDownloadPathMock = vi.mocked(
 const selectWorkspaceParentDirectoryMock = vi.mocked(
   selectWorkspaceParentDirectory,
 );
+const setWorkspaceNodeStateMock = vi.mocked(setWorkspaceNodeState);
 const closeAppWindowMock = vi.mocked(closeAppWindow);
 const cancelAiTurnMock = vi.mocked(cancelAiTurn);
 const minimizeAppWindowMock = vi.mocked(minimizeAppWindow);
@@ -493,6 +499,7 @@ describe('WorkspaceLayout', () => {
     saveAppSettingsMock.mockReset();
     selectWorkspaceAssetDownloadPathMock.mockReset();
     selectWorkspaceParentDirectoryMock.mockReset();
+    setWorkspaceNodeStateMock.mockReset();
     closeAppWindowMock.mockReset();
     cancelAiTurnMock.mockReset();
     minimizeAppWindowMock.mockReset();
@@ -654,6 +661,35 @@ describe('WorkspaceLayout', () => {
     expect(await screen.findByRole('tab', { name: /2026-06-20/ })).toBeTruthy();
   });
 
+  it('keeps sidebar system entry hover backgrounds inset from the divider', () => {
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    expect(screen.getByTestId('daily-note-entry').className).toContain(
+      'w-[calc(100%-0.75rem)]',
+    );
+    expect(screen.getByTestId('workspace-views-entry').className).toContain(
+      'w-[calc(100%-0.75rem)]',
+    );
+    expect(screen.getByRole('button', { name: '打开设置' }).className).toContain(
+      'w-[calc(100%-0.75rem)]',
+    );
+  });
+
+  it('renders the selected daily calendar day without a square today backing', () => {
+    const today = formatTestDailyDate(new Date());
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    const selectedDay = screen.getByTestId(`daily-note-day-${today}`);
+    const selectedCell = selectedDay.closest('[data-selected]');
+
+    expect(selectedDay.className).toContain(
+      'data-[selected-single=true]:bg-primary/10',
+    );
+    expect(selectedCell?.className).not.toContain('bg-muted');
+    expect(selectedCell?.className).toContain('bg-transparent');
+  });
+
   it('collapses and restores the sidebar calendar from the compact summary', async () => {
     const user = userEvent.setup();
 
@@ -743,6 +779,247 @@ describe('WorkspaceLayout', () => {
       expect(openDailyNoteMock).toHaveBeenCalledWith('/repo', today);
     });
     expect(await screen.findByRole('tab', { name: new RegExp(today) })).toBeTruthy();
+  });
+
+  it('hides dot-prefixed directories from the sidebar tree', async () => {
+    const dotDirectorySnapshot: WorkspaceSnapshot = {
+      ...directorySnapshot,
+      nodes: [
+        {
+          id: '.madora',
+          name: '.madora',
+          kind: 'directory',
+          relativePath: '.madora',
+          absolutePath: '/repo/.madora',
+          children: [
+            {
+              id: 'hidden-settings',
+              name: 'settings.md',
+              kind: 'document',
+              relativePath: '.madora/settings.md',
+              absolutePath: '/repo/.madora/settings.md',
+              title: '隐藏设置',
+            },
+          ],
+        },
+        {
+          ...directorySnapshot.nodes[0],
+          children: [
+            ...(directorySnapshot.nodes[0].children ?? []),
+            {
+              id: '.drafts',
+              name: '.drafts',
+              kind: 'directory',
+              relativePath: 'Guides/.drafts',
+              absolutePath: '/repo/Guides/.drafts',
+              children: [
+                {
+                  id: 'hidden-draft',
+                  name: 'draft.md',
+                  kind: 'document',
+                  relativePath: 'Guides/.drafts/draft.md',
+                  absolutePath: '/repo/Guides/.drafts/draft.md',
+                  title: '隐藏草稿',
+                },
+              ],
+            },
+          ],
+        },
+        ...snapshot.nodes,
+      ],
+    };
+
+    render(<WorkspaceLayout initialSnapshot={dotDirectorySnapshot} />);
+
+    expect(screen.queryByTestId('tree-node-.madora')).toBeNull();
+    expect(screen.queryByTestId('tree-node-.drafts')).toBeNull();
+    expect(screen.queryByText('隐藏设置')).toBeNull();
+    expect(screen.queryByText('隐藏草稿')).toBeNull();
+    expect(screen.getByTestId('tree-node-guides')).toBeTruthy();
+    expect(screen.getByText('项目说明')).toBeTruthy();
+  });
+
+  it('opens the workspace views page from the sidebar system entry', async () => {
+    const user = userEvent.setup();
+    const viewsSnapshot = {
+      ...multiDocumentSnapshot,
+      nodes: multiDocumentSnapshot.nodes.map((node, index) => ({
+        ...node,
+        createdAt: index === 0 ? 10 : 20,
+        updatedAt: index === 0 ? 30 : 40,
+        pinned: index === 1,
+        locked: index === 0,
+      })),
+    } as WorkspaceSnapshot;
+    loadWorkspaceTreeMock.mockResolvedValue(viewsSnapshot);
+
+    render(<WorkspaceLayout initialSnapshot={viewsSnapshot} />);
+
+    await user.click(screen.getByTestId('workspace-views-entry'));
+
+    expect(screen.getByRole('heading', { name: '视图' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /名称/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /位置/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /创建时间/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /更新时间/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /置顶/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /锁定/ })).toBeTruthy();
+    expect(screen.getByTestId('workspace-view-sort-icon-name')).toBeTruthy();
+    expect(screen.getByTestId('workspace-view-sort-icon-pinned')).toBeTruthy();
+
+    const viewsPage = screen.getByTestId('workspace-views-page');
+    const documentLink = within(viewsPage).getByRole('button', { name: '文档 A' });
+
+    expect(documentLink.getAttribute('data-variant')).toBe('link');
+    expect(within(viewsPage).getByText('已置顶').closest('button')?.getAttribute('data-variant'))
+      .toBe('pill');
+    expect(within(viewsPage).getByText('只读').closest('button')?.getAttribute('data-variant'))
+      .toBe('pill');
+
+    const refreshButton = screen.getByRole('button', { name: '刷新视图' });
+
+    expect(refreshButton.getAttribute('data-align')).toBe('right-rail');
+    await user.click(refreshButton);
+    expect(refreshButton.getAttribute('data-refreshing')).toBe('true');
+
+    await user.click(screen.getByRole('button', { name: '搜索视图' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索视图' }), '文档 B');
+
+    expect(within(viewsPage).getByText('文档 B')).toBeTruthy();
+    expect(within(viewsPage).queryByText('文档 A')).toBeNull();
+  });
+
+  it('opens pinned items from the macOS chrome and unpins them inline', async () => {
+    const user = userEvent.setup();
+    const pinnedSnapshot = {
+      ...directorySnapshot,
+      nodes: [
+        {
+          ...directorySnapshot.nodes[0],
+          children: directorySnapshot.nodes[0].children?.map((child) =>
+            child.id === 'advanced' ? { ...child, pinned: true } : child,
+          ),
+        },
+        {
+          id: 'readme',
+          name: 'README.md',
+          kind: 'document',
+          relativePath: 'README.md',
+          absolutePath: '/repo/README.md',
+          title: '项目说明',
+          pinned: true,
+        },
+      ],
+    } as WorkspaceSnapshot;
+    setWorkspaceNodeStateMock.mockResolvedValueOnce({
+      ...pinnedSnapshot,
+      nodes: pinnedSnapshot.nodes.map((node) =>
+        node.id === 'readme' ? { ...node, pinned: false } : node,
+      ),
+    });
+    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
+      path: '/repo/README.md',
+      title: '项目说明',
+    }));
+
+    render(<WorkspaceLayout initialSnapshot={pinnedSnapshot} />);
+
+    expect(screen.queryByTestId('tree-row-advanced')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '打开置顶内容' }));
+
+    const pinnedMenu = screen.getByTestId('pinned-chrome-menu');
+
+    expect(within(pinnedMenu).getByText('置顶')).toBeTruthy();
+    expect(within(pinnedMenu).getByRole('button', { name: '打开目录 Advanced' }))
+      .toBeTruthy();
+
+    await user.click(within(pinnedMenu).getByRole('button', {
+      name: '打开文档 项目说明',
+    }));
+
+    expect(await screen.findByRole('tab', { name: '项目说明' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '打开置顶内容' }));
+    await user.click(within(screen.getByTestId('pinned-chrome-menu')).getByRole(
+      'button',
+      { name: '打开目录 Advanced' },
+    ));
+
+    expect(await screen.findByTestId('tree-row-advanced')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '打开置顶内容' }));
+    const item = within(screen.getByTestId('pinned-chrome-menu')).getByRole(
+      'button',
+      { name: '打开文档 项目说明' },
+    );
+
+    await user.hover(item);
+    await user.click(within(screen.getByTestId('pinned-chrome-menu')).getByRole(
+      'button',
+      { name: '取消置顶 项目说明' },
+    ));
+
+    expect(setWorkspaceNodeStateMock).toHaveBeenCalledWith(
+      '/repo',
+      '/repo/README.md',
+      { pinned: false },
+    );
+  });
+
+  it('opens locked documents in read-only editor mode and switches back from metadata status', async () => {
+    const user = userEvent.setup();
+    const lockedSnapshot = {
+      ...snapshot,
+      nodes: [
+        {
+          ...snapshot.nodes[0],
+          locked: true,
+        },
+      ],
+    } as WorkspaceSnapshot;
+
+    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
+      path: '/repo/README.md',
+      title: '项目说明',
+    }));
+    setWorkspaceNodeStateMock.mockResolvedValueOnce({
+      ...lockedSnapshot,
+      nodes: [
+        {
+          ...snapshot.nodes[0],
+          locked: false,
+        },
+      ],
+    });
+
+    render(<WorkspaceLayout initialSnapshot={lockedSnapshot} />);
+
+    await user.click(screen.getByText('项目说明'));
+
+    expect(
+      (await screen.findByTestId('markdown-editor')).getAttribute(
+        'data-read-only',
+      ),
+    ).toBe('true');
+
+    await user.click(screen.getByRole('button', { name: '展开元信息面板' }));
+
+    const metaPanel = await screen.findByTestId('document-meta-panel');
+
+    expect(within(metaPanel).getByText('模式')).toBeTruthy();
+    const metaPanelText = metaPanel.textContent ?? '';
+
+    expect(metaPanelText.indexOf('编码')).toBeLessThan(
+      metaPanelText.indexOf('模式'),
+    );
+
+    await user.click(within(metaPanel).getByRole('button', {
+      name: '切换为编辑模式',
+    }));
+
+    expect(screen.getByTestId('markdown-editor').getAttribute('data-read-only'))
+      .toBe('false');
   });
 
   it('opens documents in tabs and switches from the tab bar', async () => {
@@ -1360,7 +1637,10 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
     await user.click(await screen.findByRole('button', { name: '打开 AI 设置' }));
 
-    expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
+    expect(await screen.findByTestId('workspace-settings-page')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
+    expect(screen.queryByTestId('document-meta-panel')).toBeNull();
+    expect(screen.queryByTestId('ai-panel-island')).toBeNull();
     expect(screen.getByText('AI 模型')).toBeTruthy();
     expect(screen.getByText('启用模型')).toBeTruthy();
   });
@@ -1540,7 +1820,19 @@ describe('WorkspaceLayout', () => {
 
     await user.click(screen.getByRole('button', { name: '打开设置' }));
 
-    expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
+    expect(await screen.findByTestId('workspace-settings-page')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
+    expect(screen.queryByTestId('workspace-sidebar')).toBeNull();
+    expect(screen.getByTestId('workspace-settings-sidebar')).toBeTruthy();
+    expect(screen.getByTestId('workspace-editor-column')).toBeTruthy();
+    expect(screen.queryByTestId('workspace-editor-block')).toBeNull();
+    expect(screen.getByTestId('workspace-settings-header')).toBeTruthy();
+    expect(screen.queryByTestId('workspace-main-header')).toBeNull();
+    expect(screen.queryByTestId('right-tool-rail')).toBeNull();
+    expect(screen.queryByRole('button', { name: '搜索文档' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '切换主题' })).toBeNull();
+    expect(screen.queryByTestId('sidebar-chrome-toggle')).toBeNull();
+    expect(screen.getByRole('button', { name: '返回应用' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '外观' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '存储' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '跟随系统' })).toBeTruthy();
@@ -1548,6 +1840,13 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('radio', { name: '暗色' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '标准' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '全宽' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '返回应用' }));
+
+    expect(screen.queryByTestId('workspace-settings-page')).toBeNull();
+    expect(screen.getByTestId('workspace-sidebar')).toBeTruthy();
+    expect(screen.getByTestId('right-tool-rail')).toBeTruthy();
+    expect(screen.getByTestId('workspace-editor-block')).toBeTruthy();
   });
 
   it('opens storage settings from the settings menu', async () => {
@@ -1561,7 +1860,8 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }));
     await user.click(await screen.findByRole('button', { name: '存储' }));
 
-    expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
+    expect(await screen.findByTestId('workspace-settings-page')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
     expect(screen.getByRole('button', { name: '存储' })).toBeTruthy();
     expect(screen.getByText('本地存储配置')).toBeTruthy();
     expect(screen.getByDisplayValue('/repo/.madora/assets')).toBeTruthy();
@@ -1590,7 +1890,8 @@ describe('WorkspaceLayout', () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }));
     await user.click(await screen.findByRole('button', { name: 'AI' }));
 
-    expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
+    expect(await screen.findByTestId('workspace-settings-page')).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
     expect(screen.getByText('AI 模型')).toBeTruthy();
     expect(screen.getByText('启用模型')).toBeTruthy();
     expect(screen.getByText('Fake Echo')).toBeTruthy();
@@ -1691,27 +1992,30 @@ describe('WorkspaceLayout', () => {
       configurable: true,
       value: {},
     });
+    const standardAppSettings = {
+      ...defaultAppSettings,
+      appearance: { pageWidthMode: 'standard' as const },
+    };
     readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({}));
-    saveAppSettingsMock.mockResolvedValueOnce(defaultAppSettings);
+    saveAppSettingsMock.mockResolvedValueOnce(standardAppSettings);
 
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     await user.click(screen.getByText('项目说明'));
-    expect(
-      (await screen.findByTestId('markdown-editor')).getAttribute(
-        'data-page-width-mode',
-      ),
-    ).toBe('wide');
+    const initialEditor = await screen.findByTestId('markdown-editor');
+    expect(initialEditor.getAttribute('data-page-width-mode')).toBe('wide');
+    expect(initialEditor.getAttribute('data-document-key')).toContain(':wide:');
 
     await user.click(screen.getByRole('button', { name: '打开设置' }));
-    await user.click(await screen.findByRole('radio', { name: '全宽' }));
+    await user.click(await screen.findByRole('radio', { name: '标准' }));
     await user.click(screen.getByRole('button', { name: '应用' }));
+    await user.click(screen.getByRole('button', { name: '返回应用' }));
 
-    expect(
-      (await screen.findByTestId('markdown-editor')).getAttribute(
-        'data-page-width-mode',
-      ),
-    ).toBe('wide');
+    const updatedEditor = await screen.findByTestId('markdown-editor');
+    expect(updatedEditor.getAttribute('data-page-width-mode')).toBe('standard');
+    expect(updatedEditor.getAttribute('data-document-key')).toContain(
+      ':standard:',
+    );
   });
 
   it('shows saved feedback when applying appearance settings', async () => {

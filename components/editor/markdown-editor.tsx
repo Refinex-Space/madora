@@ -4,7 +4,6 @@ import * as React from 'react';
 import { useTheme } from 'next-themes';
 import { ArrowUp } from 'lucide-react';
 import CodeMirror, {
-  type Extension,
   type ReactCodeMirrorRef,
 } from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
@@ -13,15 +12,22 @@ import {
   EditorSelection,
   mardora,
   ThemeEnum,
+  type MardoraContentWidth,
   type MardoraTocItem,
 } from 'mardora/editor';
 import { allPlugins } from 'mardora/plugins';
+import {
+  extractPreviewTocFromMarkdown,
+  generateCSS,
+  preview,
+} from 'mardora/preview';
 
 import {
   parseFrontmatter,
   serializeFrontmatter,
 } from '@/components/editor/markdown-frontmatter';
 import { useWorkspaceAssetUploader } from '@/components/editor/use-workspace-asset-uploader';
+import { resolveLinkPreview } from '@/components/editor/link-preview-resolver';
 import { WorkspaceAssetProvider } from '@/components/editor/workspace-asset-context';
 import type { PageWidthMode } from '@/components/workspace/workspace-types';
 import { cn } from '@/lib/utils';
@@ -32,10 +38,15 @@ interface MarkdownEditorProps {
   pageWidthMode?: PageWidthMode;
   onSaveRequested?: () => void;
   onMarkdownChange?: (markdown: string) => void;
+  readOnly?: boolean;
   workspaceRootPath?: string | null;
 }
 
-const STANDARD_PAGE_WIDTH = '64rem';
+type MardoraEditorConfig = NonNullable<Parameters<typeof mardora>[0]>;
+
+const STANDARD_PAGE_WIDTH = '48rem';
+const WIDE_PAGE_WIDTH = 'min(88rem, 75%)';
+
 const MARDORA_MOUSE_SELECTION_GUARD_SELECTOR = [
   '.cm-mardora-media-preview',
   '.cm-mardora-media-preview-button',
@@ -74,13 +85,19 @@ export function MarkdownEditor({
   pageWidthMode = 'wide',
   onSaveRequested,
   onMarkdownChange,
+  readOnly = false,
   workspaceRootPath = null,
 }: MarkdownEditorProps) {
   const { resolvedTheme } = useTheme();
   const editorRef = React.useRef<ReactCodeMirrorRef>(null);
+  const previewScrollRef = React.useRef<HTMLDivElement | null>(null);
   const activeTocItemRef = React.useRef<HTMLButtonElement | null>(null);
   const [backToTopVisible, setBackToTopVisible] = React.useState(false);
   const [tocItems, setTocItems] = React.useState<MardoraTocItem[]>([]);
+  const [previewState, setPreviewState] = React.useState<{
+    css: string;
+    html: string;
+  }>({ css: '', html: '' });
 
   const isDark = resolvedTheme === 'dark';
   const cmTheme = isDark ? githubDark : githubLight;
@@ -104,22 +121,22 @@ export function MarkdownEditor({
       metadata: parsed.metadata,
     };
   }, [markdown]);
-  const pageWidthExtensions = React.useMemo<Extension[]>(() => {
-    if (pageWidthMode === 'wide') {
-      return [];
-    }
-
-    return [
-      EditorView.theme({
-        // 限宽下沉到内容区并居中；.cm-mardora 撑满，内置 TOC 浮层贴卡片右侧。
-        '&.cm-mardora .cm-content': {
-          maxWidth: STANDARD_PAGE_WIDTH,
-          width: '100%',
-          marginInline: 'auto',
-        },
-      }),
-    ];
-  }, [pageWidthMode]);
+  const contentWidth = React.useMemo<MardoraContentWidth>(
+    () => ({
+      maxWidth:
+        pageWidthMode === 'wide' ? WIDE_PAGE_WIDTH : STANDARD_PAGE_WIDTH,
+    }),
+    [pageWidthMode],
+  );
+  const previewPageWidthClassName =
+    pageWidthMode === 'wide'
+      ? '[&_.mardora-preview]:mx-auto [&_.mardora-preview]:max-w-[min(88rem,75%)]'
+      : '[&_.mardora-preview]:mx-auto [&_.mardora-preview]:max-w-[48rem]';
+  const previewTocItems = React.useMemo(
+    () =>
+      readOnly ? extractPreviewTocFromMarkdown(frontmatterView.body) : [],
+    [frontmatterView.body, readOnly],
+  );
 
   const handleMarkdownChange = React.useCallback(
     (value: string) => {
@@ -170,6 +187,24 @@ export function MarkdownEditor({
     );
   }, []);
 
+  const handleSelectPreviewTocItem = React.useCallback(
+    (item: MardoraTocItem) => {
+      const previewRoot = previewScrollRef.current;
+
+      if (!previewRoot) {
+        return;
+      }
+
+      const target = previewRoot.querySelector(
+        `[id="${escapeCssAttributeValue(item.id)}"]`,
+      );
+
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView({ block: 'start' });
+      }
+    },
+    [],
+  );
   React.useEffect(() => {
     activeTocItemRef.current?.scrollIntoView?.({ block: 'nearest' });
   }, [tocItems]);
@@ -177,6 +212,10 @@ export function MarkdownEditor({
   // 回到顶部按钮的可见性监听绑定到 CodeMirror scrollDOM。
   // react-codemirror 首次渲染时 view 可能尚未就绪，用 rAF 轮询兜底。
   React.useEffect(() => {
+    if (readOnly) {
+      return;
+    }
+
     let frame = 0;
     let cleanup: (() => void) | null = null;
     let attempts = 0;
@@ -205,16 +244,58 @@ export function MarkdownEditor({
       }
       cleanup?.();
     };
-  }, []);
+  }, [readOnly]);
 
-  const extensions = React.useMemo<Extension[]>(
-    () =>
-      mardora({
+  React.useEffect(() => {
+    if (!readOnly) {
+      return;
+    }
+
+    let cancelled = false;
+    const config = {
+      plugins: allPlugins,
+      theme: mardoraTheme,
+      wrapperClass: 'mardora-preview',
+    };
+
+    const css = generateCSS({
+      ...config,
+      includeBase: true,
+    });
+
+    void preview(frontmatterView.body, config)
+      .then((html) => {
+        if (cancelled) {
+          return;
+        }
+
+        setPreviewState({ css, html });
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setPreviewState({
+          css,
+          html: '<article class="mardora-preview"><p>预览渲染失败</p></article>',
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [frontmatterView.body, mardoraTheme, readOnly]);
+
+  const extensions = React.useMemo(
+    () => {
+      const config: MardoraEditorConfig = {
         theme: mardoraTheme,
         locale: 'zh-CN',
         baseStyles: true,
+        contentWidth,
         plugins: allPlugins,
-        extensions: [mardoraMouseSelectionGuard, ...pageWidthExtensions],
+        extensions: [mardoraMouseSelectionGuard],
         disableViewPlugin: false,
         defaultKeybindings: true,
         history: true,
@@ -222,6 +303,10 @@ export function MarkdownEditor({
         lineWrapping: true,
         slashCommands: { enabled: true },
         selectionToolbar: { enabled: true },
+        linkPreview: {
+          enabled: true,
+          resolve: resolveLinkPreview,
+        },
         attachments: {
           enabled: true,
           uploader,
@@ -238,8 +323,11 @@ export function MarkdownEditor({
           enabled: false,
           onTocChange: handleTocChange,
         },
-      }),
-    [handleTocChange, mardoraTheme, pageWidthExtensions, uploader],
+      };
+
+      return mardora(config);
+    },
+    [contentWidth, handleTocChange, mardoraTheme, uploader],
   );
 
   return (
@@ -262,24 +350,49 @@ export function MarkdownEditor({
           }
         }}
       >
-        <CodeMirror
-          className="min-h-0 w-full flex-1"
-          height="100%"
-          ref={editorRef}
-          value={frontmatterView.body}
-          theme={cmTheme}
-          extensions={extensions}
-          basicSetup={false}
-          onChange={handleMarkdownChange}
-        />
+        {readOnly ? (
+          <>
+            <div
+              className={cn(
+                'markdown-editor-preview-scrollarea min-h-0 flex-1 overflow-auto px-8 py-8',
+                previewPageWidthClassName,
+              )}
+              data-testid="markdown-editor-preview"
+              ref={previewScrollRef}
+            >
+              <style>{previewState.css}</style>
+              <div
+                dangerouslySetInnerHTML={{ __html: previewState.html }}
+              />
+            </div>
+            <MardoraTocOverlay
+              activeItemRef={activeTocItemRef}
+              items={previewTocItems}
+              onSelectItem={handleSelectPreviewTocItem}
+            />
+          </>
+        ) : (
+          <>
+            <CodeMirror
+              className="min-h-0 w-full flex-1"
+              height="100%"
+              ref={editorRef}
+              value={frontmatterView.body}
+              theme={cmTheme}
+              extensions={extensions}
+              basicSetup={false}
+              onChange={handleMarkdownChange}
+            />
 
-        <MardoraTocOverlay
-          activeItemRef={activeTocItemRef}
-          items={tocItems}
-          onSelectItem={handleSelectTocItem}
-        />
+            <MardoraTocOverlay
+              activeItemRef={activeTocItemRef}
+              items={tocItems}
+              onSelectItem={handleSelectTocItem}
+            />
+          </>
+        )}
 
-        {backToTopVisible ? (
+        {backToTopVisible && !readOnly ? (
           <button
             aria-label="回到顶部"
             className="absolute right-4 bottom-4 z-40 flex size-8 items-center justify-center rounded-md border bg-background/95 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
@@ -298,6 +411,10 @@ export function MarkdownEditor({
       </div>
     </WorkspaceAssetProvider>
   );
+}
+
+function escapeCssAttributeValue(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
 function MardoraTocOverlay({

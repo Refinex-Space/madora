@@ -26,9 +26,7 @@ import { cn } from '@/lib/utils';
 
 import { DocumentMetaPanel } from './document-meta-panel';
 import { AiPanelContent } from './ai-panel/ai-panel-content';
-import { WorkspaceSettingsDialog } from './workspace-settings-dialog';
 import type {
-  AppSettings,
   RightPanelMode,
   WorkspaceNode,
 } from './workspace-types';
@@ -42,33 +40,32 @@ export interface DocumentPanelData {
 interface RightSidePanelProps {
   currentDocument: WorkspaceNode | null;
   documentPanelData: DocumentPanelData | null;
+  documentReadOnly: boolean;
   mode: RightPanelMode;
   settingsVersion: number;
   width: number;
   workspaceRootPath: string | null;
+  onToggleDocumentReadOnly?: () => void;
   onOpenSettings: () => void;
 }
 
 interface RightToolRailProps {
   mode: RightPanelMode;
   orientation?: 'header' | 'rail';
-  settingsInitialSectionId?: 'appearance' | 'storage' | 'ai';
-  settingsOpen: boolean;
   showSettingsButton?: boolean;
-  workspaceRootPath: string | null;
   onModeChange: (mode: RightPanelMode) => void;
   onOpenSettings: () => void;
-  onSettingsOpenChange: (open: boolean) => void;
-  onSettingsSaved?: (settings: AppSettings) => void;
 }
 
 export function RightSidePanel({
   currentDocument,
   documentPanelData,
+  documentReadOnly,
   mode,
   settingsVersion,
   width,
   workspaceRootPath,
+  onToggleDocumentReadOnly,
   onOpenSettings,
 }: RightSidePanelProps) {
   if (!mode) {
@@ -93,7 +90,9 @@ export function RightSidePanel({
         <DocumentMetaPanel
           currentDocument={currentDocument}
           documentPanelData={documentPanelData}
+          readOnly={documentReadOnly}
           workspaceRootPath={workspaceRootPath}
+          onToggleReadOnly={onToggleDocumentReadOnly}
         />
       )}
     </aside>
@@ -103,14 +102,9 @@ export function RightSidePanel({
 export function RightToolRail({
   mode,
   orientation = 'rail',
-  settingsInitialSectionId = 'appearance',
-  settingsOpen,
   showSettingsButton = true,
-  workspaceRootPath,
   onModeChange,
   onOpenSettings,
-  onSettingsOpenChange,
-  onSettingsSaved,
 }: RightToolRailProps) {
   const nextMode = (targetMode: Exclude<RightPanelMode, null>) =>
     mode === targetMode ? null : targetMode;
@@ -221,13 +215,6 @@ export function RightToolRail({
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-        <WorkspaceSettingsDialog
-          initialSectionId={settingsInitialSectionId}
-          open={settingsOpen}
-          workspaceRootPath={workspaceRootPath}
-          onOpenChange={onSettingsOpenChange}
-          onSettingsSaved={onSettingsSaved}
-        />
       </nav>
     </TooltipProvider>
   );

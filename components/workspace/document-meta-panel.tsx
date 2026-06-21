@@ -11,7 +11,9 @@ import {
   FileText,
   Fullscreen,
   Hash,
+  Eye,
   Image as ImageIcon,
+  PenLine,
 } from 'lucide-react';
 
 import {
@@ -46,13 +48,17 @@ type MetaTab = 'meta' | 'resources';
 interface DocumentMetaPanelProps {
   currentDocument: WorkspaceNode | null;
   documentPanelData: DocumentPanelData | null;
+  readOnly: boolean;
   workspaceRootPath: string | null;
+  onToggleReadOnly?: () => void;
 }
 
 export function DocumentMetaPanel({
   currentDocument,
   documentPanelData,
+  readOnly,
   workspaceRootPath,
+  onToggleReadOnly,
 }: DocumentMetaPanelProps) {
   const [activeTab, setActiveTab] = React.useState<MetaTab>('meta');
   const resources = React.useMemo(
@@ -103,7 +109,9 @@ export function DocumentMetaPanel({
             currentDocument={currentDocument}
             documentPanelData={documentPanelData}
             lineCount={lineCount}
+            readOnly={readOnly}
             resourceCount={resources.length}
+            onToggleReadOnly={onToggleReadOnly}
           />
         ) : (
           <DocumentResourceList
@@ -144,13 +152,17 @@ function DocumentMetaDetails({
   currentDocument,
   documentPanelData,
   lineCount,
+  readOnly,
   resourceCount,
+  onToggleReadOnly,
 }: {
   characterCount: number;
   currentDocument: WorkspaceNode;
   documentPanelData: DocumentPanelData | null;
   lineCount: number;
+  readOnly: boolean;
   resourceCount: number;
+  onToggleReadOnly?: () => void;
 }) {
   const title =
     documentPanelData?.metadata.title ||
@@ -203,10 +215,66 @@ function DocumentMetaDetails({
             label="编码"
             value="UTF-8"
           />
+          <DocumentModeRow
+            readOnly={readOnly}
+            onToggleReadOnly={onToggleReadOnly}
+          />
         </div>
       </div>
 
       <FrontmatterDetails frontmatter={documentPanelData?.frontmatter ?? {}} />
+    </div>
+  );
+}
+
+function DocumentModeRow({
+  readOnly,
+  onToggleReadOnly,
+}: {
+  readOnly: boolean;
+  onToggleReadOnly?: () => void;
+}) {
+  const Icon = readOnly ? Eye : PenLine;
+
+  return (
+    <div className="flex min-h-11 items-center gap-3 py-2.5">
+      <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground/80">
+        <Icon size={14} strokeWidth={1.8} />
+      </span>
+      <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+        模式
+      </span>
+      <span className="flex max-w-[58%] justify-end">
+        <button
+            aria-label={readOnly ? '切换为编辑模式' : '切换为阅读模式'}
+            className={cn(
+              'grid h-7 w-[58px] shrink-0 grid-cols-2 rounded-lg border border-border/70 bg-background/80 p-0.5 text-muted-foreground shadow-[inset_0_1px_1px_rgba(15,23,42,0.03)] transition-colors',
+              'hover:border-border hover:bg-background disabled:pointer-events-none disabled:opacity-50',
+            )}
+          disabled={!onToggleReadOnly}
+          type="button"
+          onClick={onToggleReadOnly}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              'flex size-6 items-center justify-center rounded-md transition-colors',
+              !readOnly && 'bg-sidebar-accent text-foreground shadow-sm',
+            )}
+          >
+            <PenLine size={13} strokeWidth={1.8} />
+          </span>
+          <span
+            aria-hidden="true"
+            className={cn(
+              'flex size-6 items-center justify-center rounded-md transition-colors',
+              readOnly && 'bg-sidebar-accent text-foreground shadow-sm',
+            )}
+          >
+            <Eye size={13} strokeWidth={1.8} />
+          </span>
+        </button>
+      </span>
     </div>
   );
 }

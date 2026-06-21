@@ -193,6 +193,21 @@ export async function recordRecentDocument(
   });
 }
 
+export async function setWorkspaceNodeState(
+  rootPath: string,
+  nodePath: string,
+  state: { locked?: boolean; pinned?: boolean },
+) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<WorkspaceSnapshot>('set_workspace_node_state', {
+    rootPath,
+    nodePath,
+    locked: state.locked ?? null,
+    pinned: state.pinned ?? null,
+  });
+}
+
 export async function openDailyNote(rootPath: string, date: string) {
   const { invoke } = await import('@tauri-apps/api/core');
 
