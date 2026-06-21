@@ -1838,8 +1838,13 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('radio', { name: '跟随系统' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '亮色' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '暗色' })).toBeTruthy();
+    expect(screen.getByTestId('theme-preview-system')).toBeTruthy();
+    expect(screen.getByTestId('theme-preview-light')).toBeTruthy();
+    expect(screen.getByTestId('theme-preview-dark')).toBeTruthy();
     expect(screen.getByRole('radio', { name: '标准' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '全宽' })).toBeTruthy();
+    expect(screen.getByTestId('page-width-preview-standard')).toBeTruthy();
+    expect(screen.getByTestId('page-width-preview-wide')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '返回应用' }));
 

@@ -634,23 +634,26 @@ function AppearanceSettingsSection({
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               跟随系统会同步当前操作系统外观。
             </p>
-            <div className="mt-3 grid w-fit grid-cols-3 rounded-md border bg-muted/30 p-0.5">
-              <SegmentedRadioButton
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <ThemePreviewRadioButton
                 checked={theme === 'system'}
-                icon={<Monitor size={14} />}
                 label="跟随系统"
+                testId="theme-preview-system"
+                variant="system"
                 onClick={() => onThemeChange('system')}
               />
-              <SegmentedRadioButton
+              <ThemePreviewRadioButton
                 checked={theme === 'light'}
-                icon={<Sun size={14} />}
                 label="亮色"
+                testId="theme-preview-light"
+                variant="light"
                 onClick={() => onThemeChange('light')}
               />
-              <SegmentedRadioButton
+              <ThemePreviewRadioButton
                 checked={theme === 'dark'}
-                icon={<Moon size={14} />}
                 label="暗色"
+                testId="theme-preview-dark"
+                variant="dark"
                 onClick={() => onThemeChange('dark')}
               />
             </div>
@@ -663,15 +666,19 @@ function AppearanceSettingsSection({
             <p className="mt-1 text-xs leading-5 text-muted-foreground">
               控制文档正文宽度，不改变左右侧栏宽度。
             </p>
-            <div className="mt-3 grid w-fit grid-cols-2 rounded-md border bg-muted/30 p-0.5">
-              <SegmentedRadioButton
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <PageWidthPreviewRadioButton
                 checked={pageWidthMode === 'standard'}
                 label="标准"
+                testId="page-width-preview-standard"
+                variant="standard"
                 onClick={() => onPageWidthModeChange('standard')}
               />
-              <SegmentedRadioButton
+              <PageWidthPreviewRadioButton
                 checked={pageWidthMode === 'wide'}
                 label="全宽"
+                testId="page-width-preview-wide"
+                variant="wide"
                 onClick={() => onPageWidthModeChange('wide')}
               />
             </div>
@@ -1393,33 +1400,206 @@ function SettingsSectionIcon({ sectionId }: { sectionId: SettingsSectionId }) {
   }
 }
 
-function SegmentedRadioButton({
+function ThemePreviewRadioButton({
   checked,
-  icon,
   label,
+  testId,
+  variant,
   onClick,
 }: {
   checked: boolean;
-  icon?: React.ReactNode;
   label: string;
+  testId: string;
+  variant: 'dark' | 'light' | 'system';
   onClick: () => void;
 }) {
+  const Icon =
+    variant === 'system' ? Monitor : variant === 'light' ? Sun : Moon;
+
   return (
     <button
+      aria-label={label}
       aria-checked={checked}
       className={cn(
-        'flex h-8 min-w-20 items-center justify-center gap-1.5 rounded-[5px] px-3 text-xs transition-colors',
+        'group grid min-h-[156px] gap-2 rounded-lg border bg-background p-2 text-left transition-colors',
         checked
-          ? 'bg-background text-foreground shadow-sm'
-          : 'text-muted-foreground hover:text-foreground',
+          ? 'border-[#3574f0] shadow-[0_0_0_2px_rgba(53,116,240,0.14)]'
+          : 'border-border hover:border-border/80 hover:bg-muted/20',
       )}
+      data-testid={testId}
       role="radio"
       type="button"
       onClick={onClick}
     >
-      {icon}
-      {label}
+      <div className="relative h-24 overflow-hidden rounded-md border border-border/70 bg-muted/30">
+        <ThemeArticlePreview variant={variant} />
+        {checked ? (
+          <span className="absolute right-2 top-2 grid size-5 place-items-center rounded-full bg-[#3574f0] text-white shadow-sm">
+            <CheckCircle2 size={13} strokeWidth={2.2} />
+          </span>
+        ) : null}
+      </div>
+      <span
+        className={cn(
+          'flex min-w-0 items-center justify-center gap-1.5 text-sm font-medium',
+          checked ? 'text-foreground' : 'text-muted-foreground',
+        )}
+      >
+        <Icon size={15} strokeWidth={1.8} />
+        {label}
+      </span>
     </button>
+  );
+}
+
+function ThemeArticlePreview({
+  variant,
+}: {
+  variant: 'dark' | 'light' | 'system';
+}) {
+  if (variant === 'system') {
+    return (
+      <div className="grid h-full grid-cols-2">
+        <ArticleMiniature mode="light" />
+        <ArticleMiniature mode="dark" />
+      </div>
+    );
+  }
+
+  return <ArticleMiniature mode={variant} />;
+}
+
+function ArticleMiniature({ mode }: { mode: 'dark' | 'light' }) {
+  const dark = mode === 'dark';
+
+  return (
+    <div
+      className={cn(
+        'relative h-full overflow-hidden px-3 py-2',
+        dark ? 'bg-[#181b20]' : 'bg-[#f8fafc]',
+      )}
+    >
+      <div
+        className={cn(
+          'mx-auto h-full max-w-[112px] rounded-md border px-3 py-2 shadow-sm',
+          dark
+            ? 'border-white/10 bg-[#242932]'
+            : 'border-slate-200 bg-white',
+        )}
+      >
+        <div
+          className={cn(
+            'mb-1 h-1.5 w-10 rounded-full',
+            dark ? 'bg-slate-500' : 'bg-slate-300',
+          )}
+        />
+        <div
+          className={cn(
+            'mb-2 h-2 w-16 rounded-full',
+            dark ? 'bg-slate-300' : 'bg-slate-700',
+          )}
+        />
+        <div className="space-y-1">
+          <PreviewLine mode={mode} width="w-full" />
+          <PreviewLine mode={mode} width="w-4/5" />
+          <PreviewLine mode={mode} width="w-11/12" />
+        </div>
+        <div
+          className={cn(
+            'mt-2 grid gap-1 rounded border-l-2 py-1 pl-2',
+            dark
+              ? 'border-[#60a5fa] bg-white/5'
+              : 'border-[#3574f0] bg-[#eff6ff]',
+          )}
+        >
+          <PreviewLine mode={mode} width="w-10/12" />
+          <PreviewLine mode={mode} width="w-7/12" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PageWidthPreviewRadioButton({
+  checked,
+  label,
+  testId,
+  variant,
+  onClick,
+}: {
+  checked: boolean;
+  label: string;
+  testId: string;
+  variant: PageWidthMode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label={label}
+      aria-checked={checked}
+      className={cn(
+        'group grid min-h-32 gap-2 rounded-lg border bg-background p-2 text-left transition-colors',
+        checked
+          ? 'border-[#3574f0] shadow-[0_0_0_2px_rgba(53,116,240,0.14)]'
+          : 'border-border hover:border-border/80 hover:bg-muted/20',
+      )}
+      data-testid={testId}
+      role="radio"
+      type="button"
+      onClick={onClick}
+    >
+      <div className="relative h-20 overflow-hidden rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+        <div
+          className={cn(
+            'mx-auto h-full rounded-md border bg-background px-3 py-2 shadow-sm',
+            variant === 'standard' ? 'max-w-[104px]' : 'max-w-[172px]',
+          )}
+        >
+          <div className="mb-2 h-2 w-14 rounded-full bg-foreground/50" />
+          <div className="space-y-1">
+            <PreviewLine mode="light" width="w-full" />
+            <PreviewLine mode="light" width="w-11/12" />
+            <PreviewLine mode="light" width="w-4/5" />
+          </div>
+          <div className="mt-2 grid grid-cols-3 gap-1">
+            <span className="h-2 rounded bg-[#3574f0]/20" />
+            <span className="h-2 rounded bg-[#3574f0]/15" />
+            <span className="h-2 rounded bg-[#3574f0]/10" />
+          </div>
+        </div>
+        {checked ? (
+          <span className="absolute right-2 top-2 grid size-5 place-items-center rounded-full bg-[#3574f0] text-white shadow-sm">
+            <CheckCircle2 size={13} strokeWidth={2.2} />
+          </span>
+        ) : null}
+      </div>
+      <span
+        className={cn(
+          'text-center text-sm font-medium',
+          checked ? 'text-foreground' : 'text-muted-foreground',
+        )}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function PreviewLine({
+  mode,
+  width,
+}: {
+  mode: 'dark' | 'light';
+  width: string;
+}) {
+  return (
+    <span
+      className={cn(
+        'block h-1 rounded-full',
+        width,
+        mode === 'dark' ? 'bg-slate-500/80' : 'bg-slate-200',
+      )}
+    />
   );
 }
 
