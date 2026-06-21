@@ -85,13 +85,16 @@ import {
   gitCommitFiles,
   gitDeleteFile,
   gitDiff,
+  ensureWorkspace,
   gitInit,
   gitLog,
   gitProbe,
+  gitRemoteInfo,
   gitPush,
   gitRevertFile,
   gitStage,
   gitStatus,
+  gitSyncNow,
   gitUnstage,
   listDailyNotesForMonth,
   listenTerminalData,
@@ -101,6 +104,7 @@ import {
   readAppSettings,
   recordRecentDocument,
   readMarkdownDocument,
+  saveWorkspaceGitSyncSettings,
   minimizeAppWindow,
   openDailyNote,
   setAppWindowTitle,
@@ -134,10 +138,12 @@ import type {
   GitCommitFile,
   GitDiff,
   GitProbe,
+  GitSyncConflictResolution,
   GitStatus,
   MarkdownDraft,
   PageWidthMode,
   WorkspaceNode,
+  WorkspaceGitSyncSettings,
   WorkspaceSnapshot,
 } from './workspace-types';
 
@@ -217,6 +223,12 @@ const DOCUMENT_FONT_FALLBACK =
   "ui-serif, Georgia, 'Times New Roman', 'Songti SC', serif";
 const CODE_FONT_FALLBACK =
   "ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace";
+const DEFAULT_WORKSPACE_GIT_SYNC_SETTINGS: WorkspaceGitSyncSettings = {
+  conflictResolution: 'abort',
+  enabled: true,
+  intervalMinutes: 10,
+  lastSyncedAt: null,
+};
 
 function toRecentDocument(node: WorkspaceNode): RecentWorkspaceDocument {
   return {
@@ -243,7 +255,7 @@ export function WorkspaceLayout({
     RIGHT_PANEL_WIDTH.max,
   );
   const [settingsInitialSectionId, setSettingsInitialSectionId] =
-    React.useState<'appearance' | 'storage' | 'ai'>('appearance');
+    React.useState<'appearance' | 'storage' | 'git-sync' | 'ai'>('appearance');
   const [settingsVersion, setSettingsVersion] = React.useState(0);
   const [gitLogDetailWidth, setGitLogDetailWidth] = useStoredPanelWidth(
     WORKSPACE_PANEL_WIDTH_STORAGE_KEYS.gitLogDetailWidth,
@@ -308,6 +320,7 @@ export function WorkspaceLayout({
   const pageTitle = documentTitle ?? workspace.currentDirectory?.name;
   const currentDocumentPath = workspace.currentDocument?.absolutePath ?? null;
   const workspaceRootPath = workspace.snapshot?.rootPath ?? null;
+  const saveCurrentDocumentNow = workspace.saveCurrentDocumentNow;
   const activePanelDocumentPath =
     activeEditorDocumentPath ?? currentDocumentPath;
   const activePanelDocument =
@@ -474,7 +487,9 @@ export function WorkspaceLayout({
   const terminalOpen = bottomPanelMode === 'terminal';
 
   const openSettingsPage = React.useCallback(
-    (sectionId: 'appearance' | 'storage' | 'ai' = 'appearance') => {
+    (
+      sectionId: 'appearance' | 'storage' | 'git-sync' | 'ai' = 'appearance',
+    ) => {
       setSettingsInitialSectionId(sectionId);
       setSystemPage('settings');
     },
@@ -960,7 +975,7 @@ export function WorkspaceLayout({
       setGitError(null);
 
       try {
-        await workspace.saveCurrentDocumentNow();
+        await saveCurrentDocumentNow();
         setGitStatusState(
           await gitCommit(workspaceRootPath, message, selectedGitPaths),
         );
@@ -974,7 +989,7 @@ export function WorkspaceLayout({
         setGitLoading(false);
       }
     },
-    [selectedGitPaths, workspace, workspaceRootPath],
+    [saveCurrentDocumentNow, selectedGitPaths, workspaceRootPath],
   );
 
   const handleGitCommitAndPush = React.useCallback(
@@ -987,7 +1002,7 @@ export function WorkspaceLayout({
       setGitError(null);
 
       try {
-        await workspace.saveCurrentDocumentNow();
+        await saveCurrentDocumentNow();
         await gitCommit(workspaceRootPath, message, selectedGitPaths);
         setGitStatusState(await gitPush(workspaceRootPath));
         setGitDiffState(null);
@@ -1000,7 +1015,7 @@ export function WorkspaceLayout({
         setGitLoading(false);
       }
     },
-    [selectedGitPaths, workspace, workspaceRootPath],
+    [saveCurrentDocumentNow, selectedGitPaths, workspaceRootPath],
   );
 
   const loadGitLogCommitFiles = React.useCallback(
@@ -1055,6 +1070,80 @@ export function WorkspaceLayout({
       setGitLogLoading(false);
     }
   }, [workspaceRootPath]);
+
+  React.useEffect(() => {
+    if (!isTauriRuntime || !workspaceRootPath) {
+      return;
+    }
+
+    let disposed = false;
+    let timeoutId: number | null = null;
+
+    async function scheduleNextGitSync() {
+      try {
+        const metadata = await ensureWorkspace(workspaceRootPath!);
+        const settings = withDefaultWorkspaceGitSyncSettings(metadata.gitSync);
+
+        if (!settings.enabled || disposed) {
+          return;
+        }
+
+        const remoteInfo = await gitRemoteInfo(workspaceRootPath!).catch(
+          () => null,
+        );
+
+        if (!remoteInfo?.remoteUrl || disposed) {
+          return;
+        }
+
+        timeoutId = window.setTimeout(() => {
+          void runScheduledGitSync(settings);
+        }, settings.intervalMinutes * 60_000);
+      } catch (error) {
+        setGitError(formatUnknownError(error));
+      }
+    }
+
+    async function runScheduledGitSync(settings: WorkspaceGitSyncSettings) {
+      if (disposed || !workspaceRootPath) {
+        return;
+      }
+
+      try {
+        await saveCurrentDocumentNow();
+        const result = await gitSyncNow(
+          workspaceRootPath,
+          settings.conflictResolution,
+        );
+        await saveWorkspaceGitSyncSettings(workspaceRootPath, {
+          ...settings,
+          lastSyncedAt: result.lastSyncedAt,
+        });
+        setGitStatusState(result.status);
+        setGitError(null);
+      } catch (error) {
+        setGitError(formatUnknownError(error));
+      } finally {
+        if (!disposed) {
+          void scheduleNextGitSync();
+        }
+      }
+    }
+
+    void scheduleNextGitSync();
+
+    return () => {
+      disposed = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [
+    isTauriRuntime,
+    saveCurrentDocumentNow,
+    settingsVersion,
+    workspaceRootPath,
+  ]);
 
   const createTerminalTab = React.useCallback(async () => {
     if (
@@ -2974,6 +3063,36 @@ function getStoredPanelWidthEventName(key: string) {
 
 function formatUnknownError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function withDefaultWorkspaceGitSyncSettings(
+  settings?: Partial<WorkspaceGitSyncSettings> | null,
+): WorkspaceGitSyncSettings {
+  const interval =
+    settings?.intervalMinutes ??
+    DEFAULT_WORKSPACE_GIT_SYNC_SETTINGS.intervalMinutes;
+  const conflictResolution =
+    settings?.conflictResolution ??
+    DEFAULT_WORKSPACE_GIT_SYNC_SETTINGS.conflictResolution;
+
+  return {
+    conflictResolution: isWorkspaceGitSyncConflictResolution(
+      conflictResolution,
+    )
+      ? conflictResolution
+      : DEFAULT_WORKSPACE_GIT_SYNC_SETTINGS.conflictResolution,
+    enabled: settings?.enabled ?? DEFAULT_WORKSPACE_GIT_SYNC_SETTINGS.enabled,
+    intervalMinutes: [1, 2, 3, 5, 10, 15, 30, 60].includes(interval)
+      ? interval
+      : DEFAULT_WORKSPACE_GIT_SYNC_SETTINGS.intervalMinutes,
+    lastSyncedAt: settings?.lastSyncedAt ?? null,
+  };
+}
+
+function isWorkspaceGitSyncConflictResolution(
+  value: string,
+): value is GitSyncConflictResolution {
+  return value === 'abort' || value === 'local' || value === 'remote';
 }
 
 function WorkspaceStatusBar({

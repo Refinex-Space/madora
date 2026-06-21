@@ -9,11 +9,14 @@ import {
   Cloud,
   Cpu,
   Database,
+  ExternalLink,
   FolderArchive,
+  GitBranch,
   KeyRound,
   Monitor,
   Moon,
   Palette,
+  RefreshCw,
   Search,
   Server,
   Sun,
@@ -37,12 +40,17 @@ import { WorkspaceResizeHandle } from './workspace-resize-handle';
 import {
   detectAiAccounts,
   deleteAiProviderSecret,
+  ensureWorkspace,
+  gitProbe,
+  gitRemoteInfo,
+  gitSyncNow,
   getAiProviderSecretStatus,
   isTauriRuntime,
   listAiAgentProfiles,
   listSystemFonts,
   readAppSettings,
   saveAppSettings,
+  saveWorkspaceGitSyncSettings,
   saveAiProviderSecret,
 } from './workspace-api';
 import {
@@ -53,8 +61,12 @@ import type {
   AiConfiguredProfile,
   AppearanceFontSettings,
   AppSettings,
+  GitProbe,
+  GitRemoteInfo,
+  GitSyncConflictResolution,
   PageWidthMode,
   SystemFontOptions,
+  WorkspaceGitSyncSettings,
 } from './workspace-types';
 import type {
   AiAgentProfile,
@@ -80,7 +92,7 @@ interface WorkspaceSettingsPageProps {
   onSettingsSaved?: (settings: AppSettings) => void;
 }
 
-type SettingsSectionId = 'appearance' | 'storage' | 'ai';
+type SettingsSectionId = 'appearance' | 'storage' | 'git-sync' | 'ai';
 
 const APPEARANCE_SEARCH_TERMS = [
   '外观',
@@ -121,6 +133,18 @@ const FALLBACK_SYSTEM_FONT_OPTIONS: SystemFontOptions = {
   ],
 };
 
+const DEFAULT_GIT_SYNC_SETTINGS: WorkspaceGitSyncSettings = {
+  conflictResolution: 'abort',
+  enabled: true,
+  intervalMinutes: 10,
+  lastSyncedAt: null,
+};
+
+const DEFAULT_GIT_REMOTE_INFO: GitRemoteInfo = {
+  remoteUrl: null,
+  webUrl: null,
+};
+
 const STORAGE_SEARCH_TERMS = [
   '存储',
   '上传',
@@ -133,6 +157,22 @@ const STORAGE_SEARCH_TERMS = [
   '本地存储',
   'oss',
   '自定义 api',
+];
+
+const GIT_SYNC_SEARCH_TERMS = [
+  'git',
+  'Git',
+  'Git Sync',
+  '同步',
+  '远程仓库',
+  'remote',
+  'repository',
+  '上次同步',
+  '同步频率',
+  '冲突',
+  '差异',
+  '立即同步',
+  '移除',
 ];
 
 const AI_SEARCH_TERMS = [
@@ -167,6 +207,11 @@ const SETTINGS_SECTIONS = [
     id: 'storage' as const,
     label: '存储',
     terms: STORAGE_SEARCH_TERMS,
+  },
+  {
+    id: 'git-sync' as const,
+    label: 'Git Sync',
+    terms: GIT_SYNC_SEARCH_TERMS,
   },
   {
     id: 'ai' as const,
@@ -224,6 +269,44 @@ const STORAGE_FIELD_DEFINITIONS = [
   },
 ];
 
+const GIT_SYNC_FIELD_DEFINITIONS = [
+  {
+    id: 'enabled',
+    label: '启用 Git 同步',
+    terms: ['启用 Git 同步', '开关', 'Git Sync', 'manage git', 'auto sync'],
+  },
+  {
+    id: 'remote-url',
+    label: '远程仓库地址',
+    terms: ['远程仓库地址', 'remote url', 'repository', '仓库地址', '跳转'],
+  },
+  {
+    id: 'last-synced',
+    label: '上次同步时间',
+    terms: ['上次同步时间', 'last synced', '同步时间'],
+  },
+  {
+    id: 'interval',
+    label: '同步频率',
+    terms: ['同步频率', 'backup interval', 'minutes', '分钟'],
+  },
+  {
+    id: 'conflict-resolution',
+    label: '差异处理策略',
+    terms: ['差异处理策略', '冲突', '放弃', '本地仓库', '远程仓库'],
+  },
+  {
+    id: 'sync-now',
+    label: '立即同步',
+    terms: ['立即同步', 'sync now', 'pull', 'push'],
+  },
+  {
+    id: 'remove',
+    label: '移除',
+    terms: ['移除', 'remove', '关闭管理'],
+  },
+];
+
 const AI_FIELD_DEFINITIONS = [
   {
     id: 'enabled-profile',
@@ -276,6 +359,20 @@ export function WorkspaceSettingsPage({
   const [detectedAccounts, setDetectedAccounts] = React.useState<
     AiAssistantAccount[]
   >([]);
+  const [gitSyncSettings, setGitSyncSettings] =
+    React.useState<WorkspaceGitSyncSettings>(DEFAULT_GIT_SYNC_SETTINGS);
+  const [gitProbeState, setGitProbeState] = React.useState<GitProbe | null>(
+    null,
+  );
+  const [gitRemoteState, setGitRemoteState] = React.useState<GitRemoteInfo>(
+    DEFAULT_GIT_REMOTE_INFO,
+  );
+  const [gitSyncActionState, setGitSyncActionState] = React.useState<
+    'idle' | 'saving' | 'syncing' | 'saved' | 'synced' | 'error'
+  >('idle');
+  const [gitSyncMessage, setGitSyncMessage] = React.useState<string | null>(
+    null,
+  );
   const [systemFonts, setSystemFonts] = React.useState<SystemFontOptions>(
     FALLBACK_SYSTEM_FONT_OPTIONS,
   );
@@ -319,6 +416,25 @@ export function WorkspaceSettingsPage({
     hasSearchQuery && matchingStorageFields.length > 0 && !storageSectionMatches
       ? matchingStorageFields
       : STORAGE_FIELD_DEFINITIONS;
+  const gitSyncSectionMatches = matchesSearchTerms(
+    normalizedSearchQuery,
+    GIT_SYNC_SEARCH_TERMS,
+  );
+  const matchingGitSyncFields = hasSearchQuery
+    ? GIT_SYNC_FIELD_DEFINITIONS.filter((field) =>
+        matchesSearchTerms(normalizedSearchQuery, [field.label, ...field.terms]),
+      )
+    : GIT_SYNC_FIELD_DEFINITIONS;
+  const shouldShowGitSyncSection =
+    !hasSearchQuery ||
+    gitSyncSectionMatches ||
+    matchingGitSyncFields.length > 0;
+  const visibleGitSyncFields =
+    hasSearchQuery &&
+    matchingGitSyncFields.length > 0 &&
+    !gitSyncSectionMatches
+      ? matchingGitSyncFields
+      : GIT_SYNC_FIELD_DEFINITIONS;
   const aiSectionMatches = matchesSearchTerms(
     normalizedSearchQuery,
     AI_SEARCH_TERMS,
@@ -339,7 +455,9 @@ export function WorkspaceSettingsPage({
       ? shouldShowAppearanceSection
       : section.id === 'storage'
         ? shouldShowStorageSection
-        : shouldShowAiSection,
+        : section.id === 'git-sync'
+          ? shouldShowGitSyncSection
+          : shouldShowAiSection,
   );
   const activeSection = visibleSections.some(
     (section) => section.id === activeSectionId,
@@ -360,6 +478,11 @@ export function WorkspaceSettingsPage({
       if (!isTauriRuntime()) {
         setSettings(DEFAULT_APP_SETTINGS);
         setDetectedAccounts([]);
+        setGitSyncSettings(DEFAULT_GIT_SYNC_SETTINGS);
+        setGitProbeState(null);
+        setGitRemoteState(DEFAULT_GIT_REMOTE_INFO);
+        setGitSyncActionState('idle');
+        setGitSyncMessage(null);
         setSystemFonts(FALLBACK_SYSTEM_FONT_OPTIONS);
         setLoadState('loaded');
         return;
@@ -368,12 +491,26 @@ export function WorkspaceSettingsPage({
       try {
         const [
           nextSettings,
+          workspaceMetadata,
+          nextGitProbe,
+          nextGitRemote,
           runtimeProfiles,
           nextDetectedAccounts,
           nextSystemFonts,
         ] =
           await Promise.all([
             readAppSettings(),
+            workspaceRootPath
+              ? ensureWorkspace(workspaceRootPath)
+              : Promise.resolve(null),
+            workspaceRootPath
+              ? Promise.resolve(gitProbe(workspaceRootPath)).catch(() => null)
+              : Promise.resolve(null),
+            workspaceRootPath
+              ? Promise.resolve(gitRemoteInfo(workspaceRootPath)).catch(
+                  () => DEFAULT_GIT_REMOTE_INFO,
+                )
+              : Promise.resolve(DEFAULT_GIT_REMOTE_INFO),
             workspaceRootPath
               ? listAiAgentProfiles(workspaceRootPath)
               : Promise.resolve([]),
@@ -387,6 +524,13 @@ export function WorkspaceSettingsPage({
           setSettings(
             mergeRuntimeAiProfiles(normalizedSettings, runtimeProfiles),
           );
+          setGitSyncSettings(
+            withDefaultGitSyncSettings(workspaceMetadata?.gitSync),
+          );
+          setGitProbeState(nextGitProbe);
+          setGitRemoteState(nextGitRemote);
+          setGitSyncActionState('idle');
+          setGitSyncMessage(null);
           setDetectedAccounts(nextDetectedAccounts);
           setSystemFonts(mergeSystemFontOptions(nextSystemFonts));
           setLoadState('loaded');
@@ -460,24 +604,108 @@ export function WorkspaceSettingsPage({
     }));
   }
 
+  function updateGitSyncSettings(
+    updater: (settings: WorkspaceGitSyncSettings) => WorkspaceGitSyncSettings,
+  ) {
+    setGitSyncSettings((current) => withDefaultGitSyncSettings(updater(current)));
+    setGitSyncActionState('idle');
+    setGitSyncMessage(null);
+  }
+
+  async function persistGitSyncSettings(
+    nextSettings = gitSyncSettings,
+  ): Promise<WorkspaceGitSyncSettings> {
+    const normalized = withDefaultGitSyncSettings(nextSettings);
+
+    if (!isTauriRuntime() || !workspaceRootPath) {
+      setGitSyncSettings(normalized);
+      return normalized;
+    }
+
+    const saved = await saveWorkspaceGitSyncSettings(
+      workspaceRootPath,
+      normalized,
+    );
+
+    setGitSyncSettings(withDefaultGitSyncSettings(saved));
+
+    return withDefaultGitSyncSettings(saved);
+  }
+
+  async function handleGitSyncNow() {
+    if (!workspaceRootPath) {
+      return;
+    }
+
+    setGitSyncActionState('syncing');
+    setGitSyncMessage(null);
+
+    try {
+      const saved = await persistGitSyncSettings(gitSyncSettings);
+      const result = await gitSyncNow(workspaceRootPath, saved.conflictResolution);
+      const nextSettings = {
+        ...saved,
+        lastSyncedAt: result.lastSyncedAt,
+      };
+
+      await persistGitSyncSettings(nextSettings);
+      setGitSyncActionState('synced');
+      setGitSyncMessage(`同步完成：${formatGitSyncTimestamp(result.lastSyncedAt)}`);
+    } catch (error) {
+      setGitSyncActionState('error');
+      setGitSyncMessage(
+        error instanceof Error ? error.message : 'Git Sync 同步失败',
+      );
+    }
+  }
+
+  async function handleGitSyncRemove() {
+    const nextSettings = {
+      ...gitSyncSettings,
+      enabled: false,
+    };
+
+    setGitSyncActionState('saving');
+    setGitSyncMessage(null);
+
+    try {
+      await persistGitSyncSettings(nextSettings);
+      setGitSyncActionState('saved');
+      setGitSyncMessage('已关闭 Git Sync 管理，仓库内容保持不变。');
+    } catch (error) {
+      setGitSyncActionState('error');
+      setGitSyncMessage(
+        error instanceof Error ? error.message : '无法关闭 Git Sync',
+      );
+    }
+  }
+
   async function handleApply() {
     setSaveState('saving');
+    setGitSyncActionState('saving');
     setErrorMessage(null);
+    setGitSyncMessage(null);
 
     if (!isTauriRuntime()) {
       setSaveState('saved');
+      setGitSyncActionState('saved');
       onSettingsSaved?.(settings);
       return;
     }
 
     try {
-      const savedSettings = await saveAppSettings(settings);
+      const [savedSettings] = await Promise.all([
+        saveAppSettings(settings),
+        persistGitSyncSettings(gitSyncSettings),
+      ]);
 
       setSettings(withDefaultAppSettings(savedSettings));
       onSettingsSaved?.(withDefaultAppSettings(savedSettings));
       setSaveState('saved');
+      setGitSyncActionState('saved');
     } catch (error) {
       setSaveState('error');
+      setGitSyncActionState('error');
       setErrorMessage(error instanceof Error ? error.message : '无法保存应用设置');
     }
   }
@@ -581,7 +809,7 @@ export function WorkspaceSettingsPage({
           {header}
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[680px] px-8 py-12 pb-28">
+            <div className="mx-auto w-full max-w-[1120px] px-8 py-10 pb-24">
               {activeSection === 'appearance' ? (
                 <AppearanceSettingsSection
                   errorMessage={errorMessage}
@@ -613,6 +841,20 @@ export function WorkspaceSettingsPage({
                       storage: { defaultProvider: value },
                     }))
                   }
+                />
+              ) : null}
+
+              {activeSection === 'git-sync' ? (
+                <GitSyncSettingsSection
+                  actionMessage={gitSyncMessage}
+                  actionState={gitSyncActionState}
+                  gitProbe={gitProbeState}
+                  remoteInfo={gitRemoteState}
+                  settings={gitSyncSettings}
+                  visibleFields={visibleGitSyncFields.map((field) => field.id)}
+                  onRemove={() => void handleGitSyncRemove()}
+                  onSettingsChange={updateGitSyncSettings}
+                  onSyncNow={() => void handleGitSyncNow()}
                 />
               ) : null}
 
@@ -975,6 +1217,296 @@ function StorageSettingsSection({
         />
       </div>
     </>
+  );
+}
+
+function GitSyncSettingsSection({
+  actionMessage,
+  actionState,
+  gitProbe,
+  remoteInfo,
+  settings,
+  visibleFields,
+  onRemove,
+  onSettingsChange,
+  onSyncNow,
+}: {
+  actionMessage: string | null;
+  actionState: 'idle' | 'saving' | 'syncing' | 'saved' | 'synced' | 'error';
+  gitProbe: GitProbe | null;
+  remoteInfo: GitRemoteInfo;
+  settings: WorkspaceGitSyncSettings;
+  visibleFields: string[];
+  onRemove: () => void;
+  onSettingsChange: (
+    updater: (settings: WorkspaceGitSyncSettings) => WorkspaceGitSyncSettings,
+  ) => void;
+  onSyncNow: () => void;
+}) {
+  const gitAvailable = gitProbe?.gitAvailable ?? true;
+  const isRepository = gitProbe?.isRepository ?? false;
+  const enabled = settings.enabled && gitAvailable;
+  const isSyncing = actionState === 'syncing';
+  const canSync =
+    enabled &&
+    isRepository &&
+    Boolean(remoteInfo.remoteUrl) &&
+    !isSyncing &&
+    actionState !== 'saving';
+  const showEnabled = visibleFields.includes('enabled');
+  const showRemoteUrl = visibleFields.includes('remote-url');
+  const showLastSynced = visibleFields.includes('last-synced');
+  const showInterval = visibleFields.includes('interval');
+  const showConflictResolution = visibleFields.includes('conflict-resolution');
+  const showSyncNow = visibleFields.includes('sync-now');
+  const showRemove = visibleFields.includes('remove');
+
+  return (
+    <div
+      className="max-w-[1120px] space-y-6 pb-8"
+      data-testid="git-sync-settings-shell"
+    >
+      <div>
+        <h2 className="text-xl font-semibold tracking-tight">Git Sync</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          通过 Git 远程仓库同步当前工作区。
+        </p>
+      </div>
+
+      <div className="space-y-6">
+        {!gitAvailable ? (
+          <div className="rounded-xl bg-amber-50 px-5 py-3 text-sm leading-6 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+            未检测到本机 Git 命令。安装 Git 后会默认启用 Git Sync。
+          </div>
+        ) : null}
+
+        {showEnabled ? (
+          <section
+            className="rounded-xl bg-muted/30"
+            data-testid="git-sync-enable-card"
+          >
+            <SettingRow
+              description="显示 Git Sync 控制项，并允许 Madora 提交、拉取和推送这个工作区。"
+              label="启用 Git 同步"
+              control={
+                <PillSwitch
+                  checked={enabled}
+                  disabled={!gitAvailable}
+                  label="启用 Git 同步"
+                  onChange={(checked) =>
+                    onSettingsChange((current) => ({
+                      ...current,
+                      enabled: checked,
+                    }))
+                  }
+                />
+              }
+            />
+          </section>
+        ) : null}
+
+        {showRemoteUrl || showLastSynced ? (
+          <section>
+            <h3 className="text-sm font-medium text-muted-foreground">仓库</h3>
+            <div
+              className="mt-2 overflow-hidden rounded-xl bg-muted/30"
+              data-testid="git-sync-repository-card"
+            >
+              {showRemoteUrl ? (
+                <div className="grid gap-3 border-b border-border/60 px-5 py-4 text-sm sm:grid-cols-[160px_minmax(0,1fr)] sm:items-center">
+                  <span className="text-muted-foreground">远程仓库地址</span>
+                  <div className="flex min-w-0 items-center gap-3 sm:justify-end">
+                    <code
+                      className="min-w-0 break-all font-mono text-sm leading-6 text-foreground sm:text-right"
+                      data-testid="git-sync-remote-url"
+                    >
+                      {remoteInfo.remoteUrl ?? '未检测到 origin remote'}
+                    </code>
+                    {remoteInfo.webUrl ? (
+                      <a
+                        aria-label="打开远程仓库"
+                        className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-background/80 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                        href={remoteInfo.webUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              {showLastSynced ? (
+                <div className="grid gap-3 px-5 py-4 text-sm sm:grid-cols-[160px_minmax(0,1fr)] sm:items-center">
+                  <span className="text-muted-foreground">上次同步时间</span>
+                  <span
+                    className="min-w-0 leading-6 text-foreground sm:text-right"
+                    data-testid="git-sync-last-synced"
+                  >
+                    {settings.lastSyncedAt
+                      ? formatGitSyncTimestamp(settings.lastSyncedAt)
+                      : '尚未同步'}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {showInterval || showConflictResolution || showSyncNow ? (
+          <section>
+            <h3 className="text-sm font-medium text-muted-foreground">
+              同步偏好
+            </h3>
+            <div
+              className="mt-2 divide-y divide-border/60 overflow-hidden rounded-xl bg-muted/30"
+              data-testid="git-sync-preferences-card"
+            >
+              {showInterval ? (
+                <SettingRow
+                  description="自动同步当前工作区的时间间隔。"
+                  label="同步频率"
+                  control={
+                    <Select
+                      value={String(settings.intervalMinutes)}
+                      onValueChange={(value) =>
+                        onSettingsChange((current) => ({
+                          ...current,
+                          intervalMinutes: Number(value),
+                        }))
+                      }
+                    >
+                      <SelectTrigger
+                        aria-label="同步频率"
+                        className="h-10 w-full min-w-[180px] rounded-lg border-border/80 bg-background/80 sm:w-[180px]"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent
+                        align="end"
+                        avoidCollisions={false}
+                        data-testid="git-sync-interval-content"
+                        position="popper"
+                        side="bottom"
+                        sideOffset={4}
+                      >
+                        {[1, 2, 3, 5, 10, 15, 30, 60].map((minutes) => (
+                          <SelectItem key={minutes} value={String(minutes)}>
+                            {minutes} 分钟
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  }
+                />
+              ) : null}
+
+              {showConflictResolution ? (
+                <SettingRow
+                  description="同步出现差异时选择保留哪一侧。"
+                  label="差异处理策略"
+                  control={
+                    <Select
+                      value={settings.conflictResolution}
+                      onValueChange={(value) =>
+                        onSettingsChange((current) => ({
+                          ...current,
+                          conflictResolution:
+                            value as GitSyncConflictResolution,
+                        }))
+                      }
+                    >
+                      <SelectTrigger
+                        aria-label="差异处理策略"
+                        className="h-10 w-full min-w-[180px] rounded-lg border-border/80 bg-background/80 sm:w-[180px]"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent
+                        align="end"
+                        avoidCollisions={false}
+                        position="popper"
+                        side="bottom"
+                        sideOffset={4}
+                      >
+                        <SelectItem value="abort">放弃</SelectItem>
+                        <SelectItem value="local">本地仓库</SelectItem>
+                        <SelectItem value="remote">远程仓库</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  }
+                />
+              ) : null}
+
+              {showSyncNow ? (
+                <SettingRow
+                  description="立即提交、拉取并推送当前工作区变更。"
+                  label="立即同步"
+                  control={
+                    <Button
+                      className="h-9 rounded-lg"
+                      disabled={!canSync}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                      onClick={onSyncNow}
+                    >
+                      <RefreshCw
+                        className={cn(isSyncing ? 'animate-spin' : null)}
+                        data-testid="git-sync-now-icon"
+                        size={14}
+                      />
+                      {isSyncing ? '同步中' : '立即同步'}
+                    </Button>
+                  }
+                />
+              ) : null}
+            </div>
+            {!isRepository && gitAvailable ? (
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                当前工作区还不是 Git 仓库，请先在 Git 面板初始化仓库。
+              </p>
+            ) : null}
+            {isRepository && !remoteInfo.remoteUrl ? (
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                当前仓库未配置 origin remote，配置后才能同步到远程。
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
+        {showRemove ? (
+          <section
+            className="rounded-xl bg-destructive/5 p-5"
+            data-testid="git-sync-danger-zone"
+          >
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                <AlertTriangle size={17} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-medium text-destructive">移除</h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  关闭 Madora 对 Git Sync 的管理，不删除本地 .git 目录和提交历史。
+                </p>
+                <Button
+                  className="mt-3 h-9 rounded-lg"
+                  size="sm"
+                  type="button"
+                  variant="destructive"
+                  onClick={onRemove}
+                >
+                  <Trash2 size={14} />
+                  移除 Git Sync
+                </Button>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        <GitSyncFeedback message={actionMessage} state={actionState} />
+      </div>
+    </div>
   );
 }
 
@@ -1578,12 +2110,43 @@ function SettingsFeedback({
   );
 }
 
+function GitSyncFeedback({
+  message,
+  state,
+}: {
+  message: string | null;
+  state: 'idle' | 'saving' | 'syncing' | 'saved' | 'synced' | 'error';
+}) {
+  const isError = state === 'error';
+
+  return (
+    <div
+      aria-live="polite"
+      className={cn(
+        'min-h-8 rounded-md px-2.5 py-1.5 text-xs',
+        isError ? 'border border-destructive/40 text-destructive' : 'text-muted-foreground',
+      )}
+    >
+      {message ??
+        (state === 'saving'
+          ? '正在保存 Git Sync 设置...'
+          : state === 'syncing'
+            ? '正在同步工作区...'
+            : state === 'saved'
+              ? 'Git Sync 设置已保存。'
+              : 'Git Sync 配置保存在当前工作区。')}
+    </div>
+  );
+}
+
 function SettingsSectionIcon({ sectionId }: { sectionId: SettingsSectionId }) {
   switch (sectionId) {
     case 'appearance':
       return <Palette size={15} />;
     case 'storage':
       return <Database size={15} />;
+    case 'git-sync':
+      return <GitBranch size={15} />;
     case 'ai':
       return <Bot size={15} />;
   }
@@ -1804,6 +2367,50 @@ function matchesSearchTerms(query: string, terms: string[]) {
   return terms.some((term) => normalizeSearchTerm(term).includes(query));
 }
 
+function withDefaultGitSyncSettings(
+  settings?: Partial<WorkspaceGitSyncSettings> | null,
+): WorkspaceGitSyncSettings {
+  const interval =
+    settings?.intervalMinutes ?? DEFAULT_GIT_SYNC_SETTINGS.intervalMinutes;
+  const conflictResolution =
+    settings?.conflictResolution ??
+    DEFAULT_GIT_SYNC_SETTINGS.conflictResolution;
+
+  return {
+    conflictResolution: isGitSyncConflictResolution(conflictResolution)
+      ? conflictResolution
+      : DEFAULT_GIT_SYNC_SETTINGS.conflictResolution,
+    enabled: settings?.enabled ?? DEFAULT_GIT_SYNC_SETTINGS.enabled,
+    intervalMinutes: [1, 2, 3, 5, 10, 15, 30, 60].includes(interval)
+      ? interval
+      : DEFAULT_GIT_SYNC_SETTINGS.intervalMinutes,
+    lastSyncedAt: settings?.lastSyncedAt ?? null,
+  };
+}
+
+function isGitSyncConflictResolution(
+  value: string,
+): value is GitSyncConflictResolution {
+  return value === 'abort' || value === 'local' || value === 'remote';
+}
+
+function formatGitSyncTimestamp(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+    minute: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
 function mergeSystemFontOptions(options: SystemFontOptions): SystemFontOptions {
   return {
     code: ensureFontOptionList(options.code, [
@@ -1935,15 +2542,82 @@ function getAiRuntimeLabel(profile: AiConfiguredProfile) {
   return profile.isTestRuntime ? '测试运行时' : profile.kind;
 }
 
-function ReadonlyField({ label, value }: { label: string; value: string }) {
+function SettingRow({
+  control,
+  description,
+  label,
+}: {
+  control: React.ReactNode;
+  description: string;
+  label: string;
+}) {
+  return (
+    <div className="grid gap-4 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(200px,auto)] sm:items-center">
+      <div className="min-w-0">
+        <p className="text-base font-medium tracking-tight">{label}</p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      <div className="flex justify-start sm:justify-end">{control}</div>
+    </div>
+  );
+}
+
+function PillSwitch({
+  checked,
+  disabled,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      aria-checked={checked}
+      aria-label={label}
+      className={cn(
+        'relative inline-flex h-6 w-11 items-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        checked ? 'border-primary bg-primary' : 'border-input bg-muted',
+      )}
+      disabled={disabled}
+      role="switch"
+      type="button"
+      onClick={() => onChange(!checked)}
+    >
+      <span
+        className={cn(
+          'inline-block size-5 rounded-full bg-background shadow transition-transform',
+          checked ? 'translate-x-5' : 'translate-x-0.5',
+        )}
+      />
+    </button>
+  );
+}
+
+function ReadonlyField({
+  action,
+  label,
+  value,
+}: {
+  action?: React.ReactNode;
+  label: string;
+  value: string;
+}) {
   return (
     <label className="grid grid-cols-[136px_minmax(0,1fr)] items-center gap-3 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <Input
-        className="h-8 rounded-md bg-muted/20 font-mono text-xs"
-        readOnly
-        value={value}
-      />
+      <span className="flex min-w-0 items-center gap-2">
+        <Input
+          className="h-8 min-w-0 rounded-md bg-muted/20 font-mono text-xs"
+          readOnly
+          value={value}
+        />
+        {action}
+      </span>
     </label>
   );
 }

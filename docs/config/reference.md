@@ -54,6 +54,7 @@ Do not persist API keys, access tokens, or session credentials in app settings. 
 - `expandedPaths`：目录树展开状态（预留）。
 - `sortOrder`：目录树拖拽排序记录。
 - `dailyNotes`：每日笔记索引，包含最近选中日期 `selectedDate` 和 `entries` 日期映射。每日笔记正文仍保存在工作区可见 Markdown 文件 `Daily/YYYY/MM/YYYY-MM-DD.md`，`.madora/workspace.json` 只保存路径、是否有实际内容的标记和更新时间。
+- `gitSync`：当前工作区的 Git Sync 偏好，包含是否启用 `enabled`、同步频率 `intervalMinutes`、差异处理策略 `conflictResolution` 和上次同步时间 `lastSyncedAt`。远程仓库地址从真实 Git remote 读取，不在工作区元数据中保存副本。
 
 打开文档时通过 `record_recent_document` 命令即时落盘；已删除/重命名的路径在展示层用工作区快照过滤，不从文件清理。旧的 `recentDocumentPath`（单数）字段在读取时迁移进新列表后即淘汰，新写入的文件不再包含该字段。
 

@@ -17,8 +17,10 @@ import {
   gitInit,
   gitLog,
   gitProbe,
+  gitRemoteInfo,
   gitPush,
   gitRevertFile,
+  gitSyncNow,
   gitStage,
   gitStatus,
   gitUnstage,
@@ -38,6 +40,7 @@ import {
   recordWorkspaceHistory,
   resolveWorkspaceAsset,
   saveAppSettings,
+  saveWorkspaceGitSyncSettings,
   selectWorkspaceAssetDownloadPath,
   selectWorkspaceParentDirectory,
   setWorkspaceNodeState,
@@ -75,6 +78,26 @@ Object.defineProperty(globalThis, 'ResizeObserver', {
   configurable: true,
   value: TestResizeObserver,
   writable: true,
+});
+
+Object.defineProperty(Element.prototype, 'hasPointerCapture', {
+  configurable: true,
+  value: vi.fn(() => false),
+});
+
+Object.defineProperty(Element.prototype, 'setPointerCapture', {
+  configurable: true,
+  value: vi.fn(),
+});
+
+Object.defineProperty(Element.prototype, 'releasePointerCapture', {
+  configurable: true,
+  value: vi.fn(),
+});
+
+Object.defineProperty(Element.prototype, 'scrollIntoView', {
+  configurable: true,
+  value: vi.fn(),
 });
 
 vi.mock('next-themes', () => ({
@@ -140,8 +163,10 @@ vi.mock('../workspace-api', async (importOriginal) => {
     gitInit: vi.fn(),
     gitLog: vi.fn(),
     gitProbe: vi.fn(),
+    gitRemoteInfo: vi.fn(),
     gitPush: vi.fn(),
     gitRevertFile: vi.fn(),
+    gitSyncNow: vi.fn(),
     gitStage: vi.fn(),
     gitStatus: vi.fn(),
     gitUnstage: vi.fn(),
@@ -160,6 +185,7 @@ vi.mock('../workspace-api', async (importOriginal) => {
     resolveWorkspaceAsset: vi.fn(),
     readAppSettings: vi.fn(),
     saveAppSettings: vi.fn(),
+    saveWorkspaceGitSyncSettings: vi.fn(),
     selectWorkspaceAssetDownloadPath: vi.fn(),
     selectWorkspaceParentDirectory: vi.fn(),
     setWorkspaceNodeState: vi.fn(),
@@ -193,8 +219,10 @@ const gitDiffMock = vi.mocked(gitDiff);
 const gitInitMock = vi.mocked(gitInit);
 const gitLogMock = vi.mocked(gitLog);
 const gitProbeMock = vi.mocked(gitProbe);
+const gitRemoteInfoMock = vi.mocked(gitRemoteInfo);
 const gitPushMock = vi.mocked(gitPush);
 const gitRevertFileMock = vi.mocked(gitRevertFile);
+const gitSyncNowMock = vi.mocked(gitSyncNow);
 const gitStageMock = vi.mocked(gitStage);
 const gitStatusMock = vi.mocked(gitStatus);
 const gitUnstageMock = vi.mocked(gitUnstage);
@@ -213,6 +241,9 @@ const readWorkspaceAssetDataMock = vi.mocked(readWorkspaceAssetData);
 const recordRecentDocumentMock = vi.mocked(recordRecentDocument);
 const resolveWorkspaceAssetMock = vi.mocked(resolveWorkspaceAsset);
 const saveAppSettingsMock = vi.mocked(saveAppSettings);
+const saveWorkspaceGitSyncSettingsMock = vi.mocked(
+  saveWorkspaceGitSyncSettings,
+);
 const selectWorkspaceAssetDownloadPathMock = vi.mocked(
   selectWorkspaceAssetDownloadPath,
 );
@@ -481,8 +512,10 @@ describe('WorkspaceLayout', () => {
     gitInitMock.mockReset();
     gitLogMock.mockReset();
     gitProbeMock.mockReset();
+    gitRemoteInfoMock.mockReset();
     gitPushMock.mockReset();
     gitRevertFileMock.mockReset();
+    gitSyncNowMock.mockReset();
     gitStageMock.mockReset();
     gitStatusMock.mockReset();
     gitUnstageMock.mockReset();
@@ -501,6 +534,7 @@ describe('WorkspaceLayout', () => {
     recordRecentDocumentMock.mockReset();
     resolveWorkspaceAssetMock.mockReset();
     saveAppSettingsMock.mockReset();
+    saveWorkspaceGitSyncSettingsMock.mockReset();
     selectWorkspaceAssetDownloadPathMock.mockReset();
     selectWorkspaceParentDirectoryMock.mockReset();
     setWorkspaceNodeStateMock.mockReset();
@@ -555,11 +589,38 @@ describe('WorkspaceLayout', () => {
     terminalWriteMock.mockResolvedValue(undefined);
     readAppSettingsMock.mockResolvedValue(defaultAppSettings);
     saveAppSettingsMock.mockResolvedValue(defaultAppSettings);
+    gitProbeMock.mockResolvedValue({
+      branch: null,
+      gitAvailable: true,
+      isRepository: false,
+      rootPath: '/repo',
+    });
+    gitRemoteInfoMock.mockResolvedValue({
+      remoteUrl: null,
+      webUrl: null,
+    });
+    gitSyncNowMock.mockResolvedValue({
+      lastSyncedAt: '2026-06-21T15:30:00.000Z',
+      status: {
+        rootPath: '/repo',
+        branch: 'main',
+        upstream: 'origin/main',
+        ahead: 0,
+        behind: 0,
+        changes: [],
+      },
+    });
     ensureWorkspaceMock.mockResolvedValue({
       schemaVersion: 1,
       recentDocumentPaths: [],
       expandedPaths: [],
       sortOrder: {},
+      gitSync: {
+        conflictResolution: 'abort',
+        enabled: true,
+        intervalMinutes: 10,
+        lastSyncedAt: null,
+      },
       dailyNotes: {
         selectedDate: null,
         entries: {},
@@ -1953,6 +2014,201 @@ describe('WorkspaceLayout', () => {
       storage: { defaultProvider: 'local' },
       appearance: defaultAppSettings.appearance,
     });
+  });
+
+  it('opens Git Sync settings with detected remote information', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    });
+    gitProbeMock.mockResolvedValue({
+      branch: 'main',
+      gitAvailable: true,
+      isRepository: true,
+      rootPath: '/repo',
+    });
+    gitRemoteInfoMock.mockResolvedValue({
+      remoteUrl: 'git@github.com:Refinex-Space/refinex-vault.git',
+      webUrl: 'https://github.com/Refinex-Space/refinex-vault',
+    });
+    ensureWorkspaceMock.mockResolvedValue({
+      schemaVersion: 1,
+      recentDocumentPaths: [],
+      expandedPaths: [],
+      sortOrder: {},
+      gitSync: {
+        conflictResolution: 'remote',
+        enabled: true,
+        intervalMinutes: 10,
+        lastSyncedAt: '2026-06-21T15:20:00.000Z',
+      },
+      dailyNotes: {
+        selectedDate: null,
+        entries: {},
+      },
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开设置' }));
+    await user.click(await screen.findByRole('button', { name: 'Git Sync' }));
+
+    expect(screen.getByRole('heading', { name: 'Git Sync' })).toBeTruthy();
+    expect(
+      screen
+        .getByRole('switch', { name: '启用 Git 同步' })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(screen.getByTestId('git-sync-settings-shell').className).toContain(
+      'max-w-[1120px]',
+    );
+    expect(screen.getByTestId('git-sync-settings-shell').className).toContain(
+      'space-y-6',
+    );
+    expect(screen.getByTestId('git-sync-enable-card').className).not.toContain(
+      'shadow',
+    );
+    expect(screen.getByTestId('git-sync-enable-card').className).not.toContain(
+      'border border',
+    );
+    expect(screen.getByTestId('git-sync-repository-card').className).toContain(
+      'bg-muted/30',
+    );
+    expect(
+      screen.getByTestId('git-sync-repository-card').className,
+    ).not.toContain('shadow');
+    expect(
+      screen.getByTestId('git-sync-repository-card').className,
+    ).not.toContain('border border');
+    expect(
+      screen.getByTestId('git-sync-remote-url').textContent,
+    ).toBe('git@github.com:Refinex-Space/refinex-vault.git');
+    expect(screen.getByTestId('git-sync-remote-url').className).toContain(
+      'break-all',
+    );
+    expect(screen.getByTestId('git-sync-remote-url').className).not.toContain(
+      'border',
+    );
+    expect(
+      screen.queryByDisplayValue(
+        'git@github.com:Refinex-Space/refinex-vault.git',
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByRole('link', { name: '打开远程仓库' }).getAttribute('href'),
+    ).toBe('https://github.com/Refinex-Space/refinex-vault');
+    await user.click(screen.getByRole('combobox', { name: '同步频率' }));
+    expect(
+      (await screen.findByTestId('git-sync-interval-content')).getAttribute(
+        'data-side',
+      ),
+    ).toBe('bottom');
+    expect(
+      screen.getByRole('option', { name: '10 分钟' }).getAttribute(
+        'aria-selected',
+      ),
+    ).toBe('true');
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByTestId('git-sync-interval-content')).toBeNull();
+    });
+    expect(
+      screen.getByRole('combobox', { name: '差异处理策略' }).textContent,
+    ).toContain('远程仓库');
+    expect(screen.getByTestId('git-sync-last-synced').textContent).toBe(
+      '2026/06/21 23:20',
+    );
+    expect(screen.getByTestId('git-sync-preferences-card').className).toContain(
+      'divide-y',
+    );
+    expect(
+      screen.getByTestId('git-sync-preferences-card').className,
+    ).not.toContain('shadow');
+    expect(
+      screen.getByTestId('git-sync-preferences-card').className,
+    ).not.toContain('border border');
+    expect(screen.getByTestId('git-sync-danger-zone').className).toContain(
+      'bg-destructive/5',
+    );
+    expect(screen.getByTestId('git-sync-danger-zone').className).not.toContain(
+      'shadow',
+    );
+  });
+
+  it('saves Git Sync preferences and runs immediate sync from settings', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    });
+    gitProbeMock.mockResolvedValue({
+      branch: 'main',
+      gitAvailable: true,
+      isRepository: true,
+      rootPath: '/repo',
+    });
+    gitRemoteInfoMock.mockResolvedValue({
+      remoteUrl: 'https://github.com/Refinex-Space/refinex-vault.git',
+      webUrl: 'https://github.com/Refinex-Space/refinex-vault',
+    });
+    saveWorkspaceGitSyncSettingsMock.mockResolvedValue({
+      conflictResolution: 'local',
+      enabled: true,
+      intervalMinutes: 15,
+      lastSyncedAt: null,
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开设置' }));
+    await user.click(await screen.findByRole('button', { name: 'Git Sync' }));
+    let finishSync!: (value: Awaited<ReturnType<typeof gitSyncNow>>) => void;
+    gitSyncNowMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSync = resolve;
+      }),
+    );
+
+    await user.click(screen.getByRole('combobox', { name: '同步频率' }));
+    await user.click(await screen.findByRole('option', { name: '15 分钟' }));
+    await user.click(screen.getByRole('combobox', { name: '差异处理策略' }));
+    await user.click(await screen.findByRole('option', { name: '本地仓库' }));
+    await user.click(screen.getByRole('button', { name: '立即同步' }));
+
+    const syncButton = await screen.findByRole('button', { name: '同步中' });
+    expect(syncButton.getAttribute('disabled')).not.toBeNull();
+    expect(
+      screen.getByTestId('git-sync-now-icon').getAttribute('class'),
+    ).toContain(
+      'animate-spin',
+    );
+    expect(
+      screen
+        .getByRole('combobox', { name: '同步频率' })
+        .getAttribute('disabled'),
+    ).toBeNull();
+    expect(saveWorkspaceGitSyncSettingsMock).toHaveBeenCalledWith('/repo', {
+      conflictResolution: 'local',
+      enabled: true,
+      intervalMinutes: 15,
+      lastSyncedAt: null,
+    });
+    expect(gitSyncNowMock).toHaveBeenCalledWith('/repo', 'local');
+    finishSync({
+      lastSyncedAt: '2026-06-21T15:30:00.000Z',
+      status: {
+        rootPath: '/repo',
+        branch: 'main',
+        upstream: 'origin/main',
+        ahead: 0,
+        behind: 0,
+        changes: [],
+      },
+    });
+    expect(
+      await screen.findByText('同步完成：2026/06/21 23:30'),
+    ).toBeTruthy();
   });
 
   it('opens AI settings and saves the enabled model profile', async () => {
