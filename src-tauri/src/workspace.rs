@@ -28,6 +28,10 @@ pub struct WorkspaceNode {
     pub relative_path: String,
     pub absolute_path: String,
     pub title: Option<String>,
+    pub created_at: u128,
+    pub updated_at: u128,
+    pub pinned: bool,
+    pub locked: bool,
     pub children: Option<Vec<WorkspaceNode>>,
 }
 
@@ -50,6 +54,17 @@ pub struct WorkspaceMetadata {
     pub sort_order: serde_json::Map<String, Value>,
     #[serde(default)]
     pub daily_notes: WorkspaceDailyNotes,
+    #[serde(default)]
+    pub node_state: BTreeMap<String, WorkspaceNodeState>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceNodeState {
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub locked: bool,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -270,6 +285,38 @@ pub fn record_recent_document(
 }
 
 #[tauri::command]
+pub fn set_workspace_node_state(
+    root_path: String,
+    node_path: String,
+    pinned: Option<bool>,
+    locked: Option<bool>,
+) -> Result<WorkspaceSnapshot, String> {
+    let (root, node, _) = validate_workspace_node_path(&root_path, &node_path)?;
+    let relative_path = to_relative_path(&root, &node);
+    let mut metadata =
+        ensure_workspace_metadata(&root).map_err(|_| "无法读取工作区元数据".to_string())?;
+    let entry = metadata
+        .node_state
+        .entry(relative_path.clone())
+        .or_default();
+
+    if let Some(next_pinned) = pinned {
+        entry.pinned = next_pinned;
+    }
+
+    if let Some(next_locked) = locked {
+        entry.locked = next_locked;
+    }
+
+    if !entry.pinned && !entry.locked {
+        metadata.node_state.remove(&relative_path);
+    }
+
+    write_workspace_metadata(&root, &metadata).map_err(|_| "无法写入工作区元数据".to_string())?;
+    build_workspace_snapshot(&root).map_err(|error| format!("读取工作区失败：{error}"))
+}
+
+#[tauri::command]
 pub fn open_daily_note(root_path: String, date: String) -> Result<DailyNoteDocument, String> {
     let root = canonical_workspace_root(&root_path)?;
     let day = parse_daily_date(&date)?;
@@ -308,7 +355,7 @@ pub fn open_daily_note(root_path: String, date: String) -> Result<DailyNoteDocum
         .and_then(|name| name.to_str())
         .unwrap_or("daily.md")
         .to_string();
-    let node = build_document_node(&root, &note_path, name)
+    let node = build_document_node(&root, &note_path, name, &metadata.node_state)
         .map_err(|error| format!("读取每日笔记节点失败：{error}"))?;
 
     Ok(DailyNoteDocument {
@@ -488,7 +535,7 @@ pub fn create_markdown_document(
         .and_then(|name| name.to_str())
         .unwrap_or("untitled.md")
         .to_string();
-    let node = build_document_node(&root, &document_path, file_name)
+    let node = build_document_node(&root, &document_path, file_name, &BTreeMap::new())
         .map_err(|_| "无法创建 Markdown 文档节点".to_string())?;
     let content = read_markdown_document(root_path, node.absolute_path.clone())?;
 
@@ -638,7 +685,7 @@ pub fn create_plate_document(
         .to_string();
 
     Ok(CreatedPlateDocument {
-        node: build_document_node(&root, &document_path, file_name)
+        node: build_document_node(&root, &document_path, file_name, &BTreeMap::new())
             .map_err(|_| "无法创建文档节点".to_string())?,
         envelope,
     })
@@ -657,8 +704,14 @@ pub fn create_workspace_directory(
 
     fs::create_dir(&directory_path).map_err(|_| "无法创建目录".to_string())?;
 
-    build_directory_node(&root, &directory_path, safe_name, Vec::new())
-        .map_err(|_| "无法创建目录节点".to_string())
+    build_directory_node(
+        &root,
+        &directory_path,
+        safe_name,
+        Vec::new(),
+        &BTreeMap::new(),
+    )
+    .map_err(|_| "无法创建目录节点".to_string())
 }
 
 #[tauri::command]
@@ -682,14 +735,25 @@ pub fn rename_workspace_node(
     match kind {
         WorkspaceNodeKind::Directory => {
             fs::rename(&node, &target).map_err(|_| "无法重命名目录".to_string())?;
-            let metadata =
+            let mut metadata =
                 ensure_workspace_metadata(&root).map_err(|_| "无法读取工作区元数据".to_string())?;
             let sort_order = read_sort_order(&metadata);
+            let old_relative_path = to_relative_path(&root, &node);
+            let new_relative_path = to_relative_path(&root, &target);
+            rewrite_node_state_path_prefix(
+                &mut metadata.node_state,
+                &old_relative_path,
+                &new_relative_path,
+            );
+            write_workspace_metadata(&root, &metadata)
+                .map_err(|_| "无法写入工作区元数据".to_string())?;
             build_directory_node(
                 &root,
                 &target,
                 safe_name,
-                read_children(&root, &target, &sort_order).unwrap_or_default(),
+                read_children(&root, &target, &sort_order, &metadata.node_state)
+                    .unwrap_or_default(),
+                &metadata.node_state,
             )
             .map_err(|_| "无法读取重命名后的目录".to_string())
         }
@@ -697,13 +761,24 @@ pub fn rename_workspace_node(
             fs::rename(&node, &target).map_err(|_| "无法重命名文档".to_string())?;
             update_markdown_document_title(&target, &safe_name)
                 .map_err(|_| "无法更新文档标题".to_string())?;
+            let mut metadata =
+                ensure_workspace_metadata(&root).map_err(|_| "无法读取工作区元数据".to_string())?;
+            let old_relative_path = to_relative_path(&root, &node);
+            let new_relative_path = to_relative_path(&root, &target);
+            rewrite_node_state_path_prefix(
+                &mut metadata.node_state,
+                &old_relative_path,
+                &new_relative_path,
+            );
+            write_workspace_metadata(&root, &metadata)
+                .map_err(|_| "无法写入工作区元数据".to_string())?;
 
             let file_name = target
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("renamed.md")
                 .to_string();
-            build_document_node(&root, &target, file_name)
+            build_document_node(&root, &target, file_name, &metadata.node_state)
                 .map_err(|_| "无法读取重命名后的文档".to_string())
         }
     }
@@ -740,6 +815,11 @@ pub fn delete_workspace_node(
     if let Err(error) = cleanup_unreferenced_assets(&root, cleanup_candidates) {
         log::warn!("本地资产清理失败：{error}");
     }
+    let mut metadata =
+        ensure_workspace_metadata(&root).map_err(|_| "无法读取工作区元数据".to_string())?;
+    let relative_path = to_relative_path(&root, &node);
+    remove_node_state_path_prefix(&mut metadata.node_state, &relative_path);
+    write_workspace_metadata(&root, &metadata).map_err(|_| "无法写入工作区元数据".to_string())?;
 
     Ok(DeletedWorkspaceNode { path: deleted_path })
 }
@@ -797,6 +877,11 @@ pub fn move_workspace_node(
         .map_err(|error| format!("读取工作区元数据失败：{error}"))?;
     let mut sort_order = read_sort_order(&metadata);
     rewrite_sort_order_path_prefix(&mut sort_order, &old_relative_path, &new_relative_path);
+    rewrite_node_state_path_prefix(
+        &mut metadata.node_state,
+        &old_relative_path,
+        &new_relative_path,
+    );
     ensure_parent_sort_records(&root, &target_parent, &mut sort_order)
         .map_err(|error| format!("初始化排序元数据失败：{error}"))?;
 
@@ -959,7 +1044,7 @@ pub fn create_imported_plate_documents(
                     .unwrap_or("import.plate.json")
                     .to_string();
 
-                match build_document_node(&root, &path, file_name) {
+                match build_document_node(&root, &path, file_name, &BTreeMap::new()) {
                     Ok(node) => created.push(CreatedPlateDocument { node, envelope }),
                     Err(_) => failed.push(ImportFailure {
                         source_file_name: document.source_file_name,
@@ -990,7 +1075,7 @@ pub fn build_workspace_snapshot(root: &Path) -> std::io::Result<WorkspaceSnapsho
     Ok(WorkspaceSnapshot {
         root_path: root.to_string_lossy().to_string(),
         root_name,
-        nodes: read_children(&root, &root, &sort_order)?,
+        nodes: read_children(&root, &root, &sort_order, &metadata.node_state)?,
     })
 }
 
@@ -998,6 +1083,7 @@ fn read_children(
     root: &Path,
     dir: &Path,
     sort_order: &WorkspaceSortOrder,
+    node_state: &BTreeMap<String, WorkspaceNodeState>,
 ) -> std::io::Result<Vec<WorkspaceNode>> {
     let mut nodes = Vec::new();
 
@@ -1013,13 +1099,16 @@ fn read_children(
         let sort_timestamp = read_sort_timestamp(&path)?;
 
         if path.is_dir() {
-            let children = read_children(root, &path, sort_order)?;
+            let children = read_children(root, &path, sort_order, node_state)?;
             nodes.push((
-                build_directory_node(root, &path, file_name, children)?,
+                build_directory_node(root, &path, file_name, children, node_state)?,
                 sort_timestamp,
             ));
         } else if is_markdown_document_file(&path) {
-            nodes.push((build_document_node(root, &path, file_name)?, sort_timestamp));
+            nodes.push((
+                build_document_node(root, &path, file_name, node_state)?,
+                sort_timestamp,
+            ));
         }
     }
 
@@ -1325,6 +1414,41 @@ fn rewrite_sort_order_path_prefix(
     }
 }
 
+fn rewrite_node_state_path_prefix(
+    node_state: &mut BTreeMap<String, WorkspaceNodeState>,
+    old_prefix: &str,
+    new_prefix: &str,
+) {
+    let affected = node_state
+        .iter()
+        .filter_map(|(path, state)| {
+            if path == old_prefix || path.starts_with(&format!("{old_prefix}/")) {
+                Some((path.clone(), state.clone()))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    for (path, _) in &affected {
+        node_state.remove(path);
+    }
+
+    for (path, state) in affected {
+        node_state.insert(
+            rewrite_relative_prefix(&path, old_prefix, new_prefix),
+            state,
+        );
+    }
+}
+
+fn remove_node_state_path_prefix(
+    node_state: &mut BTreeMap<String, WorkspaceNodeState>,
+    prefix: &str,
+) {
+    node_state.retain(|path, _| path != prefix && !path.starts_with(&format!("{prefix}/")));
+}
+
 fn rewrite_relative_prefix(value: &str, old_prefix: &str, new_prefix: &str) -> String {
     if value == old_prefix {
         return new_prefix.to_string();
@@ -1345,6 +1469,7 @@ fn default_workspace_metadata() -> WorkspaceMetadata {
         expanded_paths: Vec::new(),
         sort_order: serde_json::Map::new(),
         daily_notes: WorkspaceDailyNotes::default(),
+        node_state: BTreeMap::new(),
     }
 }
 
@@ -2087,13 +2212,56 @@ fn read_sort_timestamp(path: &Path) -> std::io::Result<u128> {
     Ok(system_time_to_millis(timestamp))
 }
 
+fn read_node_timestamps(path: &Path) -> std::io::Result<(u128, u128)> {
+    let metadata = fs::metadata(path)?;
+    let created = metadata
+        .created()
+        .or_else(|_| metadata.modified())
+        .map(system_time_to_millis)?;
+    let updated = metadata.modified().map(system_time_to_millis)?;
+
+    Ok((created, updated))
+}
+
+fn read_markdown_document_timestamps(path: &Path) -> Option<(u128, u128)> {
+    let raw = fs::read_to_string(path).ok()?;
+    let frontmatter = read_markdown_frontmatter(&raw)?;
+    let created = read_frontmatter_timestamp(frontmatter, "createdAt")?;
+    let updated = read_frontmatter_timestamp(frontmatter, "updatedAt").unwrap_or(created);
+
+    Some((created, updated))
+}
+
+fn read_markdown_frontmatter(raw: &str) -> Option<&str> {
+    let rest = raw.strip_prefix("---\n")?;
+    let end = rest.find("\n---")?;
+
+    Some(&rest[..end])
+}
+
+fn read_frontmatter_timestamp(frontmatter: &str, key: &str) -> Option<u128> {
+    let prefix = format!("{key}:");
+    let value = frontmatter
+        .lines()
+        .find_map(|line| line.trim().strip_prefix(&prefix))
+        .map(str::trim)?;
+    let unquoted = value.trim_matches('"').trim_matches('\'');
+    let parsed = DateTime::parse_from_rfc3339(unquoted).ok()?.to_utc();
+    let millis = parsed.timestamp_millis();
+
+    u128::try_from(millis).ok()
+}
+
 fn build_directory_node(
     root: &Path,
     path: &Path,
     name: String,
     children: Vec<WorkspaceNode>,
+    node_state: &BTreeMap<String, WorkspaceNodeState>,
 ) -> std::io::Result<WorkspaceNode> {
     let relative_path = to_relative_path(root, path);
+    let state = node_state.get(&relative_path).cloned().unwrap_or_default();
+    let (created_at, updated_at) = read_node_timestamps(path)?;
 
     Ok(WorkspaceNode {
         id: relative_path.clone(),
@@ -2102,12 +2270,25 @@ fn build_directory_node(
         relative_path,
         absolute_path: path.to_string_lossy().to_string(),
         title: None,
+        created_at,
+        updated_at,
+        pinned: state.pinned,
+        locked: state.locked,
         children: Some(children),
     })
 }
 
-fn build_document_node(root: &Path, path: &Path, name: String) -> std::io::Result<WorkspaceNode> {
+fn build_document_node(
+    root: &Path,
+    path: &Path,
+    name: String,
+    node_state: &BTreeMap<String, WorkspaceNodeState>,
+) -> std::io::Result<WorkspaceNode> {
     let relative_path = to_relative_path(root, path);
+    let state = node_state.get(&relative_path).cloned().unwrap_or_default();
+    let (created_at, updated_at) = read_markdown_document_timestamps(path)
+        .or_else(|| read_node_timestamps(path).ok())
+        .unwrap_or((0, 0));
     let title = read_markdown_document_title(path).unwrap_or_else(|| {
         path.file_stem()
             .and_then(|name| name.to_str())
@@ -2122,6 +2303,10 @@ fn build_document_node(root: &Path, path: &Path, name: String) -> std::io::Resul
         relative_path,
         absolute_path: path.to_string_lossy().to_string(),
         title: Some(title),
+        created_at,
+        updated_at,
+        pinned: state.pinned,
+        locked: state.locked,
         children: None,
     })
 }
@@ -2401,6 +2586,7 @@ mod tests {
 
         assert_eq!(metadata.daily_notes.selected_date, None);
         assert!(metadata.daily_notes.entries.is_empty());
+        assert!(metadata.node_state.is_empty());
     }
 
     #[test]
@@ -2714,6 +2900,53 @@ mod tests {
         assert_eq!(snapshot.nodes[0].name, "README.md");
         assert_eq!(snapshot.nodes[0].kind, WorkspaceNodeKind::Document);
         assert_eq!(snapshot.nodes[0].title.as_deref(), Some("项目说明"));
+    }
+
+    #[test]
+    fn set_workspace_node_state_persists_snapshot_flags_and_clears_empty_state() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let document_path = temp_dir.path().join("README.md");
+
+        fs::write(&document_path, "# 项目说明\n").expect("写入 Markdown 失败");
+        ensure_workspace(temp_dir.path().to_string_lossy().to_string()).expect("初始化工作区失败");
+
+        let snapshot = set_workspace_node_state(
+            temp_dir.path().to_string_lossy().to_string(),
+            document_path.to_string_lossy().to_string(),
+            Some(true),
+            Some(true),
+        )
+        .expect("写入节点状态失败");
+
+        assert_eq!(snapshot.nodes[0].relative_path, "README.md");
+        assert!(snapshot.nodes[0].pinned);
+        assert!(snapshot.nodes[0].locked);
+
+        let raw = fs::read_to_string(temp_dir.path().join(".madora/workspace.json"))
+            .expect("读取 workspace.json 失败");
+        let metadata: WorkspaceMetadata =
+            serde_json::from_str(&raw).expect("解析 workspace.json 失败");
+        assert_eq!(
+            metadata.node_state.get("README.md"),
+            Some(&WorkspaceNodeState {
+                pinned: true,
+                locked: true,
+            }),
+        );
+
+        set_workspace_node_state(
+            temp_dir.path().to_string_lossy().to_string(),
+            document_path.to_string_lossy().to_string(),
+            Some(false),
+            Some(false),
+        )
+        .expect("清理节点状态失败");
+
+        let raw = fs::read_to_string(temp_dir.path().join(".madora/workspace.json"))
+            .expect("读取 workspace.json 失败");
+        let metadata: WorkspaceMetadata =
+            serde_json::from_str(&raw).expect("解析 workspace.json 失败");
+        assert!(metadata.node_state.is_empty());
     }
 
     #[test]

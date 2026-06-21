@@ -16,6 +16,7 @@ import {
   type MardoraTocItem,
 } from 'mardora/editor';
 import { allPlugins } from 'mardora/plugins';
+import { generateCSS, preview } from 'mardora/preview';
 
 import {
   parseFrontmatter,
@@ -32,6 +33,7 @@ interface MarkdownEditorProps {
   pageWidthMode?: PageWidthMode;
   onSaveRequested?: () => void;
   onMarkdownChange?: (markdown: string) => void;
+  readOnly?: boolean;
   workspaceRootPath?: string | null;
 }
 
@@ -74,6 +76,7 @@ export function MarkdownEditor({
   pageWidthMode = 'wide',
   onSaveRequested,
   onMarkdownChange,
+  readOnly = false,
   workspaceRootPath = null,
 }: MarkdownEditorProps) {
   const { resolvedTheme } = useTheme();
@@ -81,6 +84,10 @@ export function MarkdownEditor({
   const activeTocItemRef = React.useRef<HTMLButtonElement | null>(null);
   const [backToTopVisible, setBackToTopVisible] = React.useState(false);
   const [tocItems, setTocItems] = React.useState<MardoraTocItem[]>([]);
+  const [previewState, setPreviewState] = React.useState<{
+    css: string;
+    html: string;
+  }>({ css: '', html: '' });
 
   const isDark = resolvedTheme === 'dark';
   const cmTheme = isDark ? githubDark : githubLight;
@@ -177,6 +184,10 @@ export function MarkdownEditor({
   // 回到顶部按钮的可见性监听绑定到 CodeMirror scrollDOM。
   // react-codemirror 首次渲染时 view 可能尚未就绪，用 rAF 轮询兜底。
   React.useEffect(() => {
+    if (readOnly) {
+      return;
+    }
+
     let frame = 0;
     let cleanup: (() => void) | null = null;
     let attempts = 0;
@@ -205,7 +216,48 @@ export function MarkdownEditor({
       }
       cleanup?.();
     };
-  }, []);
+  }, [readOnly]);
+
+  React.useEffect(() => {
+    if (!readOnly) {
+      return;
+    }
+
+    let cancelled = false;
+    const config = {
+      plugins: allPlugins,
+      theme: mardoraTheme,
+      wrapperClass: 'mardora-preview',
+    };
+
+    const css = generateCSS({
+      ...config,
+      includeBase: true,
+    });
+
+    void preview(frontmatterView.body, config)
+      .then((html) => {
+        if (cancelled) {
+          return;
+        }
+
+        setPreviewState({ css, html });
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setPreviewState({
+          css,
+          html: '<article class="mardora-preview"><p>预览渲染失败</p></article>',
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [frontmatterView.body, mardoraTheme, readOnly]);
 
   const extensions = React.useMemo<Extension[]>(
     () =>
@@ -262,24 +314,42 @@ export function MarkdownEditor({
           }
         }}
       >
-        <CodeMirror
-          className="min-h-0 w-full flex-1"
-          height="100%"
-          ref={editorRef}
-          value={frontmatterView.body}
-          theme={cmTheme}
-          extensions={extensions}
-          basicSetup={false}
-          onChange={handleMarkdownChange}
-        />
+        {readOnly ? (
+          <div
+            className={cn(
+              'min-h-0 flex-1 overflow-auto px-8 py-8',
+              pageWidthMode === 'standard' &&
+                '[&_.mardora-preview]:mx-auto [&_.mardora-preview]:max-w-[64rem]',
+            )}
+            data-testid="markdown-editor-preview"
+          >
+            <style>{previewState.css}</style>
+            <div
+              dangerouslySetInnerHTML={{ __html: previewState.html }}
+            />
+          </div>
+        ) : (
+          <>
+            <CodeMirror
+              className="min-h-0 w-full flex-1"
+              height="100%"
+              ref={editorRef}
+              value={frontmatterView.body}
+              theme={cmTheme}
+              extensions={extensions}
+              basicSetup={false}
+              onChange={handleMarkdownChange}
+            />
 
-        <MardoraTocOverlay
-          activeItemRef={activeTocItemRef}
-          items={tocItems}
-          onSelectItem={handleSelectTocItem}
-        />
+            <MardoraTocOverlay
+              activeItemRef={activeTocItemRef}
+              items={tocItems}
+              onSelectItem={handleSelectTocItem}
+            />
+          </>
+        )}
 
-        {backToTopVisible ? (
+        {backToTopVisible && !readOnly ? (
           <button
             aria-label="回到顶部"
             className="absolute right-4 bottom-4 z-40 flex size-8 items-center justify-center rounded-md border bg-background/95 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted hover:text-foreground"

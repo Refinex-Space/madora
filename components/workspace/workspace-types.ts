@@ -11,6 +11,10 @@ export interface WorkspaceNode {
   relativePath: string;
   absolutePath: string;
   title?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  pinned?: boolean;
+  locked?: boolean;
   children?: WorkspaceNode[];
 }
 
@@ -45,6 +49,12 @@ export interface WorkspaceMetadata {
   expandedPaths: string[];
   sortOrder: Record<string, unknown>;
   dailyNotes?: WorkspaceDailyNotes;
+  nodeState?: Record<string, WorkspaceNodeState>;
+}
+
+export interface WorkspaceNodeState {
+  pinned: boolean;
+  locked: boolean;
 }
 
 export interface WorkspaceDailyNotes {

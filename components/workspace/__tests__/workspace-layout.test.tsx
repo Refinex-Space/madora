@@ -39,6 +39,7 @@ import {
   saveAppSettings,
   selectWorkspaceAssetDownloadPath,
   selectWorkspaceParentDirectory,
+  setWorkspaceNodeState,
   closeAppWindow,
   cancelAiTurn,
   minimizeAppWindow,
@@ -88,15 +89,18 @@ vi.mock('@/components/editor/markdown-editor', () => ({
     documentKey,
     markdown,
     pageWidthMode,
+    readOnly,
   }: {
     documentKey?: string;
     markdown?: string;
     pageWidthMode?: string;
+    readOnly?: boolean;
   }) => (
     <button
       data-document-key={documentKey}
       data-page-width-mode={pageWidthMode}
       data-markdown={markdown}
+      data-read-only={String(Boolean(readOnly))}
       data-testid="markdown-editor"
       type="button"
     >
@@ -156,6 +160,7 @@ vi.mock('../workspace-api', async (importOriginal) => {
     saveAppSettings: vi.fn(),
     selectWorkspaceAssetDownloadPath: vi.fn(),
     selectWorkspaceParentDirectory: vi.fn(),
+    setWorkspaceNodeState: vi.fn(),
     setAppWindowTitle: vi.fn(),
     closeAppWindow: vi.fn(),
     cancelAiTurn: vi.fn(),
@@ -211,6 +216,7 @@ const selectWorkspaceAssetDownloadPathMock = vi.mocked(
 const selectWorkspaceParentDirectoryMock = vi.mocked(
   selectWorkspaceParentDirectory,
 );
+const setWorkspaceNodeStateMock = vi.mocked(setWorkspaceNodeState);
 const closeAppWindowMock = vi.mocked(closeAppWindow);
 const cancelAiTurnMock = vi.mocked(cancelAiTurn);
 const minimizeAppWindowMock = vi.mocked(minimizeAppWindow);
@@ -493,6 +499,7 @@ describe('WorkspaceLayout', () => {
     saveAppSettingsMock.mockReset();
     selectWorkspaceAssetDownloadPathMock.mockReset();
     selectWorkspaceParentDirectoryMock.mockReset();
+    setWorkspaceNodeStateMock.mockReset();
     closeAppWindowMock.mockReset();
     cancelAiTurnMock.mockReset();
     minimizeAppWindowMock.mockReset();
@@ -743,6 +750,189 @@ describe('WorkspaceLayout', () => {
       expect(openDailyNoteMock).toHaveBeenCalledWith('/repo', today);
     });
     expect(await screen.findByRole('tab', { name: new RegExp(today) })).toBeTruthy();
+  });
+
+  it('opens the workspace views page from the sidebar system entry', async () => {
+    const user = userEvent.setup();
+    const viewsSnapshot = {
+      ...multiDocumentSnapshot,
+      nodes: multiDocumentSnapshot.nodes.map((node, index) => ({
+        ...node,
+        createdAt: index === 0 ? 10 : 20,
+        updatedAt: index === 0 ? 30 : 40,
+        pinned: index === 1,
+        locked: index === 0,
+      })),
+    } as WorkspaceSnapshot;
+    loadWorkspaceTreeMock.mockResolvedValue(viewsSnapshot);
+
+    render(<WorkspaceLayout initialSnapshot={viewsSnapshot} />);
+
+    await user.click(screen.getByTestId('workspace-views-entry'));
+
+    expect(screen.getByRole('heading', { name: '视图' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /名称/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /位置/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /创建时间/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /更新时间/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /置顶/ })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: /锁定/ })).toBeTruthy();
+    expect(screen.getByTestId('workspace-view-sort-icon-name')).toBeTruthy();
+    expect(screen.getByTestId('workspace-view-sort-icon-pinned')).toBeTruthy();
+
+    const viewsPage = screen.getByTestId('workspace-views-page');
+    const documentLink = within(viewsPage).getByRole('button', { name: '文档 A' });
+
+    expect(documentLink.getAttribute('data-variant')).toBe('link');
+    expect(within(viewsPage).getByText('已置顶').closest('button')?.getAttribute('data-variant'))
+      .toBe('pill');
+    expect(within(viewsPage).getByText('只读').closest('button')?.getAttribute('data-variant'))
+      .toBe('pill');
+
+    const refreshButton = screen.getByRole('button', { name: '刷新视图' });
+
+    expect(refreshButton.getAttribute('data-align')).toBe('right-rail');
+    await user.click(refreshButton);
+    expect(refreshButton.getAttribute('data-refreshing')).toBe('true');
+
+    await user.click(screen.getByRole('button', { name: '搜索视图' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索视图' }), '文档 B');
+
+    expect(within(viewsPage).getByText('文档 B')).toBeTruthy();
+    expect(within(viewsPage).queryByText('文档 A')).toBeNull();
+  });
+
+  it('opens pinned items from the macOS chrome and unpins them inline', async () => {
+    const user = userEvent.setup();
+    const pinnedSnapshot = {
+      ...directorySnapshot,
+      nodes: [
+        {
+          ...directorySnapshot.nodes[0],
+          children: directorySnapshot.nodes[0].children?.map((child) =>
+            child.id === 'advanced' ? { ...child, pinned: true } : child,
+          ),
+        },
+        {
+          id: 'readme',
+          name: 'README.md',
+          kind: 'document',
+          relativePath: 'README.md',
+          absolutePath: '/repo/README.md',
+          title: '项目说明',
+          pinned: true,
+        },
+      ],
+    } as WorkspaceSnapshot;
+    setWorkspaceNodeStateMock.mockResolvedValueOnce({
+      ...pinnedSnapshot,
+      nodes: pinnedSnapshot.nodes.map((node) =>
+        node.id === 'readme' ? { ...node, pinned: false } : node,
+      ),
+    });
+    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
+      path: '/repo/README.md',
+      title: '项目说明',
+    }));
+
+    render(<WorkspaceLayout initialSnapshot={pinnedSnapshot} />);
+
+    expect(screen.queryByTestId('tree-row-advanced')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '打开置顶内容' }));
+
+    const pinnedMenu = screen.getByTestId('pinned-chrome-menu');
+
+    expect(within(pinnedMenu).getByText('置顶')).toBeTruthy();
+    expect(within(pinnedMenu).getByRole('button', { name: '打开目录 Advanced' }))
+      .toBeTruthy();
+
+    await user.click(within(pinnedMenu).getByRole('button', {
+      name: '打开文档 项目说明',
+    }));
+
+    expect(await screen.findByRole('tab', { name: '项目说明' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '打开置顶内容' }));
+    await user.click(within(screen.getByTestId('pinned-chrome-menu')).getByRole(
+      'button',
+      { name: '打开目录 Advanced' },
+    ));
+
+    expect(await screen.findByTestId('tree-row-advanced')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '打开置顶内容' }));
+    const item = within(screen.getByTestId('pinned-chrome-menu')).getByRole(
+      'button',
+      { name: '打开文档 项目说明' },
+    );
+
+    await user.hover(item);
+    await user.click(within(screen.getByTestId('pinned-chrome-menu')).getByRole(
+      'button',
+      { name: '取消置顶 项目说明' },
+    ));
+
+    expect(setWorkspaceNodeStateMock).toHaveBeenCalledWith(
+      '/repo',
+      '/repo/README.md',
+      { pinned: false },
+    );
+  });
+
+  it('opens locked documents in read-only editor mode and switches back from metadata status', async () => {
+    const user = userEvent.setup();
+    const lockedSnapshot = {
+      ...snapshot,
+      nodes: [
+        {
+          ...snapshot.nodes[0],
+          locked: true,
+        },
+      ],
+    } as WorkspaceSnapshot;
+
+    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
+      path: '/repo/README.md',
+      title: '项目说明',
+    }));
+    setWorkspaceNodeStateMock.mockResolvedValueOnce({
+      ...lockedSnapshot,
+      nodes: [
+        {
+          ...snapshot.nodes[0],
+          locked: false,
+        },
+      ],
+    });
+
+    render(<WorkspaceLayout initialSnapshot={lockedSnapshot} />);
+
+    await user.click(screen.getByText('项目说明'));
+
+    expect(
+      (await screen.findByTestId('markdown-editor')).getAttribute(
+        'data-read-only',
+      ),
+    ).toBe('true');
+
+    await user.click(screen.getByRole('button', { name: '展开元信息面板' }));
+
+    const metaPanel = await screen.findByTestId('document-meta-panel');
+
+    expect(within(metaPanel).getByText('模式')).toBeTruthy();
+    const metaPanelText = metaPanel.textContent ?? '';
+
+    expect(metaPanelText.indexOf('编码')).toBeLessThan(
+      metaPanelText.indexOf('模式'),
+    );
+
+    await user.click(within(metaPanel).getByRole('button', {
+      name: '切换为编辑模式',
+    }));
+
+    expect(screen.getByTestId('markdown-editor').getAttribute('data-read-only'))
+      .toBe('false');
   });
 
   it('opens documents in tabs and switches from the tab bar', async () => {

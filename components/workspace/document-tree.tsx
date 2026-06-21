@@ -9,6 +9,7 @@ import {
   FolderPlus,
   MoreHorizontal,
   Pencil,
+  Pin,
   Trash2,
 } from 'lucide-react';
 
@@ -83,12 +84,14 @@ interface DocumentTreeProps {
   onImportMarkdown: (targetDir: string) => void;
   onMoveNode?: (request: WorkspaceMoveRequest) => Promise<void> | void;
   onPendingRenameConsumed?: () => void;
+  revealDirectoryPath?: string | null;
   onSelectDirectory?: (node: WorkspaceNode) => Promise<void> | void;
   onRenameNode: (
     node: WorkspaceNode,
     newName: string,
   ) => Promise<WorkspaceNode | null | void> | WorkspaceNode | null | void;
   onSelectDocument: (node: WorkspaceNode) => void;
+  onTogglePinned?: (node: WorkspaceNode) => void;
 }
 
 export function DocumentTree({
@@ -105,9 +108,11 @@ export function DocumentTree({
   onImportMarkdown,
   onMoveNode,
   onPendingRenameConsumed,
+  revealDirectoryPath,
   onSelectDirectory,
   onRenameNode,
   onSelectDocument,
+  onTogglePinned,
 }: DocumentTreeProps) {
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
   const [editingNodeId, setEditingNodeId] = React.useState<string | null>(null);
@@ -124,6 +129,32 @@ export function DocumentTree({
   const visibleNodes = filterWorkspaceNodes(nodes, searchQuery);
   const forceExpanded = searchQuery.trim().length > 0;
   const dragDisabled = searchQuery.trim().length > 0 || !onMoveNode;
+
+  React.useEffect(() => {
+    if (!revealDirectoryPath) {
+      return;
+    }
+
+    const revealIds = findDirectoryRevealIds(nodes, revealDirectoryPath);
+
+    if (revealIds.length === 0) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setExpanded((previous) => {
+        const next = new Set(previous);
+
+        for (const id of revealIds) {
+          next.add(id);
+        }
+
+        return next;
+      });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [nodes, revealDirectoryPath]);
 
   const startEditingNode = React.useCallback((node: WorkspaceNode) => {
     setEditingNodeId(node.id);
@@ -291,6 +322,7 @@ export function DocumentTree({
             onRenameSubmit={handleRenameNode}
             onResolveDraggedNode={resolveDraggedNode}
             onSelectDirectory={onSelectDirectory}
+            onTogglePinned={onTogglePinned}
             onTreeDragEnd={handleDragEnd}
             onTreeDragStart={handleDragStart}
             onSelectDocument={onSelectDocument}
@@ -349,6 +381,7 @@ function TreeNode({
   onRenameRequest,
   onRenameSubmit,
   onResolveDraggedNode,
+  onTogglePinned,
   onTreeDragEnd,
   onTreeDragStart,
   onSelectDocument,
@@ -585,6 +618,7 @@ function TreeNode({
               onExportNode={onExportNode}
               onImportDocuments={onImportDocuments}
               onRenameRequest={onRenameRequest}
+              onTogglePinned={onTogglePinned}
             />
           </div>
         </ContextMenuTrigger>
@@ -600,6 +634,7 @@ function TreeNode({
             onExportNode={onExportNode}
             onImportDocuments={onImportDocuments}
             onRenameRequest={onRenameRequest}
+            onTogglePinned={onTogglePinned}
           />
         </ContextMenuContent>
       </ContextMenu>
@@ -632,6 +667,7 @@ function TreeNode({
               onRenameSubmit={onRenameSubmit}
               onResolveDraggedNode={onResolveDraggedNode}
               onSelectDirectory={onSelectDirectory}
+              onTogglePinned={onTogglePinned}
               onTreeDragEnd={onTreeDragEnd}
               onTreeDragStart={onTreeDragStart}
               onSelectDocument={onSelectDocument}
@@ -677,6 +713,7 @@ interface TreeNodeProps {
   onResolveDraggedNode: (
     event: React.DragEvent<HTMLElement>,
   ) => WorkspaceNode | null;
+  onTogglePinned?: (node: WorkspaceNode) => void;
   onTreeDragEnd: () => void;
   onTreeDragStart: (node: WorkspaceNode) => void;
   onSelectDocument: (node: WorkspaceNode) => void;
@@ -826,6 +863,7 @@ function NodeActionDropdown({
   onExportNode,
   onImportDocuments,
   onRenameRequest,
+  onTogglePinned,
 }: NodeActionProps) {
   return (
     <DropdownMenu>
@@ -853,6 +891,7 @@ function NodeActionDropdown({
           onExportNode={onExportNode}
           onImportDocuments={onImportDocuments}
           onRenameRequest={onRenameRequest}
+          onTogglePinned={onTogglePinned}
         />
       </DropdownMenuContent>
     </DropdownMenu>
@@ -875,6 +914,7 @@ interface NodeActionProps {
     format: WorkspaceImportFormat,
   ) => Promise<void> | void;
   onRenameRequest: (node: WorkspaceNode) => void;
+  onTogglePinned?: (node: WorkspaceNode) => void;
 }
 
 function NodeDropdownActions({
@@ -885,10 +925,17 @@ function NodeDropdownActions({
   onExportNode,
   onImportDocuments,
   onRenameRequest,
+  onTogglePinned,
 }: NodeActionProps) {
   if (node.kind === 'directory') {
     return (
       <>
+        {onTogglePinned ? (
+          <DropdownMenuItem onSelect={() => onTogglePinned(node)}>
+            <Pin />
+            {node.pinned ? '取消置顶' : '置顶'}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem
           onSelect={() => void onCreateDocument(node.relativePath)}
         >
@@ -953,6 +1000,12 @@ function NodeDropdownActions({
 
   return (
     <>
+      {onTogglePinned ? (
+        <DropdownMenuItem onSelect={() => onTogglePinned(node)}>
+          <Pin />
+          {node.pinned ? '取消置顶' : '置顶'}
+        </DropdownMenuItem>
+      ) : null}
       <DropdownMenuItem onSelect={() => onRenameRequest(node)}>
         <Pencil />
         重命名
@@ -993,10 +1046,17 @@ function NodeContextActions({
   onExportNode,
   onImportDocuments,
   onRenameRequest,
+  onTogglePinned,
 }: NodeActionProps) {
   if (node.kind === 'directory') {
     return (
       <>
+        {onTogglePinned ? (
+          <ContextMenuItem onSelect={() => onTogglePinned(node)}>
+            <Pin />
+            {node.pinned ? '取消置顶' : '置顶'}
+          </ContextMenuItem>
+        ) : null}
         <ContextMenuItem
           onSelect={() => void onCreateDocument(node.relativePath)}
         >
@@ -1061,6 +1121,12 @@ function NodeContextActions({
 
   return (
     <>
+      {onTogglePinned ? (
+        <ContextMenuItem onSelect={() => onTogglePinned(node)}>
+          <Pin />
+          {node.pinned ? '取消置顶' : '置顶'}
+        </ContextMenuItem>
+      ) : null}
       <ContextMenuItem onSelect={() => onRenameRequest(node)}>
         <Pencil />
         重命名
@@ -1152,6 +1218,29 @@ function hasDescendantByAbsolutePath(
       child.absolutePath === absolutePath ||
       hasDescendantByAbsolutePath(child, absolutePath),
   );
+}
+
+function findDirectoryRevealIds(
+  nodes: WorkspaceNode[],
+  absolutePath: string,
+): string[] {
+  for (const node of nodes) {
+    if (node.kind !== 'directory') {
+      continue;
+    }
+
+    if (node.absolutePath === absolutePath) {
+      return [node.id];
+    }
+
+    const childIds = findDirectoryRevealIds(node.children ?? [], absolutePath);
+
+    if (childIds.length > 0) {
+      return [node.id, ...childIds];
+    }
+  }
+
+  return [];
 }
 
 function findNodeByAbsolutePath(

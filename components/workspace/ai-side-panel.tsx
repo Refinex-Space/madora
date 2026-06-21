@@ -42,10 +42,12 @@ export interface DocumentPanelData {
 interface RightSidePanelProps {
   currentDocument: WorkspaceNode | null;
   documentPanelData: DocumentPanelData | null;
+  documentReadOnly: boolean;
   mode: RightPanelMode;
   settingsVersion: number;
   width: number;
   workspaceRootPath: string | null;
+  onToggleDocumentReadOnly?: () => void;
   onOpenSettings: () => void;
 }
 
@@ -65,10 +67,12 @@ interface RightToolRailProps {
 export function RightSidePanel({
   currentDocument,
   documentPanelData,
+  documentReadOnly,
   mode,
   settingsVersion,
   width,
   workspaceRootPath,
+  onToggleDocumentReadOnly,
   onOpenSettings,
 }: RightSidePanelProps) {
   if (!mode) {
@@ -93,7 +97,9 @@ export function RightSidePanel({
         <DocumentMetaPanel
           currentDocument={currentDocument}
           documentPanelData={documentPanelData}
+          readOnly={documentReadOnly}
           workspaceRootPath={workspaceRootPath}
+          onToggleReadOnly={onToggleDocumentReadOnly}
         />
       )}
     </aside>

@@ -67,6 +67,7 @@ import { EditorPane, type RecentWorkspaceDocument } from './editor-pane';
 import { GitDiffView } from './git-diff-view';
 import { GitLogDrawer } from './git-log-drawer';
 import { GitPanel } from './git-panel';
+import { PinnedChromeMenu } from './pinned-chrome-menu';
 import { TerminalPanel, type TerminalTab } from './terminal-panel';
 import { useWorkspace } from './use-workspace';
 import { WorkspaceGlobalSearchDialog } from './workspace-global-search-dialog';
@@ -115,6 +116,7 @@ import {
 } from './workspace-settings';
 import { WorkspaceResizeHandle } from './workspace-resize-handle';
 import { WorkspaceSidebar } from './workspace-sidebar';
+import { WorkspaceViewsPage } from './workspace-views-page';
 import {
   countMarkdownCharacters,
   countMarkdownLines,
@@ -145,6 +147,7 @@ type LeftPanelMode = 'workspace' | 'git';
 type BottomPanelMode = 'git-log' | 'terminal' | null;
 type GlobalSearchIndexStatus = 'error' | 'idle' | 'indexing' | 'ready';
 type ThemeMode = 'dark' | 'light' | 'system';
+type WorkspaceSystemPage = 'views' | null;
 
 interface GlobalSearchState {
   index: WorkspaceSearchIndex | null;
@@ -410,6 +413,10 @@ export function WorkspaceLayout({
   );
   const [leftPanelMode, setLeftPanelMode] =
     React.useState<LeftPanelMode>('workspace');
+  const [systemPage, setSystemPage] = React.useState<WorkspaceSystemPage>(null);
+  const [revealedDirectoryPath, setRevealedDirectoryPath] = React.useState<
+    string | null
+  >(null);
   const [bottomPanelMode, setBottomPanelMode] =
     React.useState<BottomPanelMode>(null);
   const [gitProbeState, setGitProbeState] = React.useState<GitProbe | null>(
@@ -1278,6 +1285,7 @@ export function WorkspaceLayout({
         return;
       }
 
+      setSystemPage(null);
       clearPendingDocumentOpen();
       setDocumentEditorLayout((current) => openDocumentInGroup(current, node));
       setActiveEditorDocumentPath(node.absolutePath);
@@ -1348,6 +1356,7 @@ export function WorkspaceLayout({
         return;
       }
 
+      setSystemPage(null);
       const nextMonth = createDateFromDailyDate(date);
 
       setSelectedDailyDate(date);
@@ -1362,6 +1371,83 @@ export function WorkspaceLayout({
       void loadDailyNotesForMonth(nextMonth);
     },
     [loadDailyNotesForMonth, openDocumentNode, workspace, workspaceRootPath],
+  );
+
+  const handleOpenViewsPage = React.useCallback(() => {
+    setSystemPage('views');
+    workspace.clearCurrentDocument();
+  }, [workspace]);
+
+  const handleToggleNodePinned = React.useCallback(
+    (node: WorkspaceNode) => {
+      void workspace.updateNodeState(node, { pinned: !node.pinned });
+    },
+    [workspace],
+  );
+
+  const handleUnpinNode = React.useCallback(
+    (node: WorkspaceNode) => {
+      void workspace.updateNodeState(node, { pinned: false });
+    },
+    [workspace],
+  );
+
+  const handleToggleNodeLocked = React.useCallback(
+    (node: WorkspaceNode) => {
+      void workspace.updateNodeState(node, { locked: !node.locked });
+    },
+    [workspace],
+  );
+
+  const handleOpenWorkspaceViewNode = React.useCallback(
+    (node: WorkspaceNode) => {
+      setSystemPage(null);
+
+      if (node.kind === 'directory') {
+        setRevealedDirectoryPath(node.absolutePath);
+        void workspace.selectDirectory(node);
+        return;
+      }
+
+      void openDocumentNode(node);
+    },
+    [openDocumentNode, workspace],
+  );
+
+  const handleSelectWorkspaceDirectory = React.useCallback(
+    (node: WorkspaceNode) => {
+      setSystemPage(null);
+      void workspace.selectDirectory(node);
+    },
+    [workspace],
+  );
+
+  const getDocumentReadOnly = React.useCallback(
+    (documentPath: string) => {
+      const node = findWorkspaceDocumentByPath(
+        workspace.snapshot?.nodes ?? [],
+        documentPath,
+      );
+
+      return Boolean(node?.locked);
+    },
+    [workspace.snapshot?.nodes],
+  );
+
+  const handleToggleDocumentReadOnly = React.useCallback(
+    (documentPath: string) => {
+      const node = findWorkspaceDocumentByPath(
+        workspace.snapshot?.nodes ?? [],
+        documentPath,
+      );
+
+      if (!node) {
+        return;
+      }
+
+      void workspace.updateNodeState(node, { locked: !node.locked });
+    },
+    [workspace],
   );
 
   const openActiveDocumentForLayout = React.useCallback(
@@ -1494,6 +1580,8 @@ export function WorkspaceLayout({
   );
 
   const openGitPanel = React.useCallback(() => {
+    setSystemPage(null);
+
     if (leftPanelMode === 'git') {
       setLeftPanelMode('workspace');
       workspace.setSidebarCollapsed(false);
@@ -1526,6 +1614,12 @@ export function WorkspaceLayout({
   const toggleLeftSidebar = React.useCallback(() => {
     workspace.setSidebarCollapsed(!workspace.isSidebarCollapsed);
   }, [workspace]);
+  const pinnedNodes = React.useMemo(
+    () => flattenWorkspaceNodes(workspace.snapshot?.nodes ?? []).filter(
+      (node) => node.pinned,
+    ),
+    [workspace.snapshot?.nodes],
+  );
 
   return (
     <main
@@ -1545,7 +1639,10 @@ export function WorkspaceLayout({
 
       <SidebarChromeToggle
         collapsed={workspace.isSidebarCollapsed}
+        pinnedNodes={pinnedNodes}
         onToggle={toggleLeftSidebar}
+        onOpenPinnedNode={handleOpenWorkspaceViewNode}
+        onUnpinNode={handleUnpinNode}
       />
 
       <WorkspaceGlobalSearchDialog
@@ -1587,8 +1684,13 @@ export function WorkspaceLayout({
                 onOpenDailyNote={() =>
                   void handleOpenDailyNote(formatDailyDate(new Date()))
                 }
+                onOpenViews={handleOpenViewsPage}
                 onOpenSettings={() => openSettingsDialog('appearance')}
+                revealDirectoryPath={revealedDirectoryPath}
+                onSelectDirectory={handleSelectWorkspaceDirectory}
                 onSelectDocument={openDocumentNode}
+                onTogglePinned={handleToggleNodePinned}
+                systemPage={systemPage}
               />
             ) : workspace.isSidebarCollapsed ? null : (
               <div className="h-full shrink-0" style={{ width: leftSidebarWidth }}>
@@ -1670,7 +1772,17 @@ export function WorkspaceLayout({
 
                 <div className="flex min-h-0 flex-1 overflow-hidden">
                   <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-                    {leftPanelMode === 'git' ? (
+                    {systemPage === 'views' && workspace.snapshot ? (
+                      <WorkspaceViewsPage
+                        nodes={filterRegularWorkspaceNodes(
+                          workspace.snapshot.nodes,
+                        )}
+                        onOpenNode={handleOpenWorkspaceViewNode}
+                        onRefresh={() => void workspace.refreshWorkspaceTree()}
+                        onToggleLocked={handleToggleNodeLocked}
+                        onTogglePinned={handleToggleNodePinned}
+                      />
+                    ) : leftPanelMode === 'git' ? (
                       <GitDiffView
                         diff={gitDiffState}
                         error={gitError}
@@ -1690,6 +1802,7 @@ export function WorkspaceLayout({
                         editorSessions={editorSessions}
                         pageWidthMode={pageWidthMode}
                         workspaceRootPath={workspace.snapshot?.rootPath ?? null}
+                        getDocumentReadOnly={getDocumentReadOnly}
                         onActivateGroup={activateDocumentEditorGroup}
                         onCloseAllTabs={handleCloseAllDocumentTabs}
                         onCloseOtherTabs={handleCloseOtherDocumentTabs}
@@ -1757,10 +1870,23 @@ export function WorkspaceLayout({
                   <RightSidePanel
                     currentDocument={activePanelDocument}
                     documentPanelData={documentPanelData}
+                    documentReadOnly={
+                      activePanelDocument
+                        ? getDocumentReadOnly(activePanelDocument.absolutePath)
+                        : false
+                    }
                     mode={workspace.rightPanelMode}
                     settingsVersion={settingsVersion}
                     width={rightPanelWidth}
                     workspaceRootPath={workspaceRootPath}
+                    onToggleDocumentReadOnly={
+                      activePanelDocument
+                        ? () =>
+                            handleToggleDocumentReadOnly(
+                              activePanelDocument.absolutePath,
+                            )
+                        : undefined
+                    }
                     onOpenSettings={() => openSettingsDialog('ai')}
                   />
                 </div>
@@ -1871,16 +1997,22 @@ function useIsTauriRuntime() {
 
 function SidebarChromeToggle({
   collapsed,
+  pinnedNodes,
   onToggle,
+  onOpenPinnedNode,
+  onUnpinNode,
 }: {
   collapsed: boolean;
+  pinnedNodes: WorkspaceNode[];
   onToggle: () => void;
+  onOpenPinnedNode: (node: WorkspaceNode) => void;
+  onUnpinNode: (node: WorkspaceNode) => void;
 }) {
   const label = collapsed ? '展开侧边栏' : '折叠侧边栏';
 
   return (
     <div
-      className="absolute left-[80px] top-0 z-50"
+      className="absolute left-[80px] top-0 z-50 flex h-8 items-center gap-1"
       data-testid="sidebar-chrome-toggle"
     >
       <TooltipProvider>
@@ -1901,6 +2033,11 @@ function SidebarChromeToggle({
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
+      <PinnedChromeMenu
+        nodes={pinnedNodes}
+        onOpenNode={onOpenPinnedNode}
+        onUnpinNode={onUnpinNode}
+      />
     </div>
   );
 }
@@ -2220,6 +2357,7 @@ function DocumentEditorSurface({
   editorSessions,
   pageWidthMode,
   workspaceRootPath,
+  getDocumentReadOnly,
   onActivateGroup,
   onCloseAllTabs,
   onCloseOtherTabs,
@@ -2242,6 +2380,7 @@ function DocumentEditorSurface({
   editorSessions: Record<string, DocumentEditorSession>;
   pageWidthMode: PageWidthMode;
   workspaceRootPath: string | null;
+  getDocumentReadOnly: (documentPath: string) => boolean;
   onActivateGroup: (groupId: string, tabPath: string) => void;
   onCloseAllTabs: (groupId: string) => void;
   onCloseOtherTabs: (groupId: string, tabPath: string) => void;
@@ -2331,6 +2470,7 @@ function DocumentEditorSurface({
                 pageWidthMode,
                 isActiveGroup,
                 workspaceRootPath,
+                getDocumentReadOnly,
                 onMarkdownChange,
                 onRetryDocument,
                 onSaveRequested,
@@ -2354,6 +2494,7 @@ function renderDocumentEditorGroupContent({
   isActiveGroup,
   pageWidthMode,
   workspaceRootPath,
+  getDocumentReadOnly,
   onMarkdownChange,
   onRetryDocument,
   onSaveRequested,
@@ -2368,6 +2509,7 @@ function renderDocumentEditorGroupContent({
   isActiveGroup: boolean;
   pageWidthMode: PageWidthMode;
   workspaceRootPath: string | null;
+  getDocumentReadOnly: (documentPath: string) => boolean;
   onMarkdownChange: (documentPath: string, markdown: string) => void;
   onRetryDocument: () => void;
   onSaveRequested: () => void;
@@ -2439,6 +2581,7 @@ function renderDocumentEditorGroupContent({
       documentPath={activeTab.absolutePath}
       editorSession={editorSession}
       pageWidthMode={pageWidthMode}
+      readOnly={getDocumentReadOnly(activeTab.absolutePath)}
       workspaceRootPath={workspaceRootPath}
       onMarkdownChange={onMarkdownChange}
       onSaveRequested={onSaveRequested}
@@ -2451,6 +2594,7 @@ function DocumentEditorInstance({
   documentPath,
   editorSession,
   pageWidthMode,
+  readOnly,
   workspaceRootPath,
   onMarkdownChange,
   onSaveRequested,
@@ -2459,6 +2603,7 @@ function DocumentEditorInstance({
   documentPath: string;
   editorSession: DocumentEditorSession;
   pageWidthMode: PageWidthMode;
+  readOnly: boolean;
   workspaceRootPath: string | null;
   onMarkdownChange: (documentPath: string, markdown: string) => void;
   onSaveRequested: () => void;
@@ -2469,14 +2614,17 @@ function DocumentEditorInstance({
   );
 
   return (
-    <MarkdownEditor
-      documentKey={`${documentPath}:${groupId}:${editorSession.documentVersion}`}
-      markdown={editorSession.markdown}
-      pageWidthMode={pageWidthMode}
-      workspaceRootPath={workspaceRootPath}
-      onMarkdownChange={handleMarkdownChange}
-      onSaveRequested={onSaveRequested}
-    />
+    <div className="relative h-full min-h-0">
+      <MarkdownEditor
+        documentKey={`${documentPath}:${groupId}:${editorSession.documentVersion}:${readOnly ? 'view' : 'live'}`}
+        markdown={editorSession.markdown}
+        pageWidthMode={pageWidthMode}
+        readOnly={readOnly}
+        workspaceRootPath={workspaceRootPath}
+        onMarkdownChange={handleMarkdownChange}
+        onSaveRequested={onSaveRequested}
+      />
+    </div>
   );
 }
 
@@ -2698,6 +2846,25 @@ function findWorkspaceDocumentByPath(
   }
 
   return null;
+}
+
+function flattenWorkspaceNodes(nodes: WorkspaceNode[]): WorkspaceNode[] {
+  return nodes.flatMap((node) => [
+    node,
+    ...flattenWorkspaceNodes(node.children ?? []),
+  ]);
+}
+
+function filterRegularWorkspaceNodes(nodes: WorkspaceNode[]) {
+  return nodes.filter((node) => !isDailyRootDirectory(node));
+}
+
+function isDailyRootDirectory(node: WorkspaceNode) {
+  return (
+    node.kind === 'directory' &&
+    node.name === 'Daily' &&
+    node.relativePath === 'Daily'
+  );
 }
 
 function readStoredPanelWidth(

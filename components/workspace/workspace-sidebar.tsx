@@ -1,4 +1,4 @@
-import { CalendarDays, RefreshCw, Search, Settings } from 'lucide-react';
+import { CalendarDays, RefreshCw, Search, Settings, Sheet } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -16,8 +16,13 @@ interface WorkspaceSidebarProps {
   workspace: ReturnType<typeof useWorkspace>;
   onCreateDocument?: (parentPath: string) => Promise<WorkspaceNode | null> | void;
   onOpenDailyNote?: () => void;
+  onOpenViews?: () => void;
   onOpenSettings?: () => void;
+  revealDirectoryPath?: string | null;
+  onSelectDirectory?: (node: WorkspaceNode) => Promise<void> | void;
   onSelectDocument?: (node: WorkspaceNode) => void;
+  onTogglePinned?: (node: WorkspaceNode) => void;
+  systemPage?: 'views' | null;
 }
 
 export function WorkspaceSidebar({
@@ -26,10 +31,16 @@ export function WorkspaceSidebar({
   workspace,
   onCreateDocument,
   onOpenDailyNote,
+  onOpenViews,
   onOpenSettings,
+  revealDirectoryPath,
+  onSelectDirectory,
   onSelectDocument,
+  onTogglePinned,
+  systemPage = null,
 }: WorkspaceSidebarProps) {
   const createDocument = onCreateDocument ?? workspace.createDocument;
+  const selectDirectory = onSelectDirectory ?? workspace.selectDirectory;
   const selectDocument = onSelectDocument ?? workspace.openDocument;
   const regularNodes = useMemo(
     () => filterRegularWorkspaceNodes(workspace.snapshot?.nodes ?? []),
@@ -85,6 +96,21 @@ export function WorkspaceSidebar({
               <CalendarDays size={15} strokeWidth={1.75} />
               <span className="truncate">日程</span>
             </button>
+            <button
+              aria-current={systemPage === 'views' ? 'page' : undefined}
+              className={cn(
+                'mt-1 flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors',
+                systemPage === 'views'
+                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                  : 'text-sidebar-foreground/85 hover:bg-sidebar-accent/75 hover:text-sidebar-accent-foreground',
+              )}
+              data-testid="workspace-views-entry"
+              type="button"
+              onClick={onOpenViews}
+            >
+              <Sheet size={15} strokeWidth={1.75} />
+              <span className="truncate">视图</span>
+            </button>
           </div>
         ) : null}
 
@@ -107,9 +133,11 @@ export function WorkspaceSidebar({
               onImportMarkdown={workspace.importMarkdownDocuments}
               onMoveNode={workspace.moveNode}
               onPendingRenameConsumed={workspace.clearPendingRenameNode}
+              revealDirectoryPath={revealDirectoryPath}
               onRenameNode={workspace.renameNode}
-              onSelectDirectory={workspace.selectDirectory}
+              onSelectDirectory={selectDirectory}
               onSelectDocument={selectDocument}
+              onTogglePinned={onTogglePinned}
             />
           ) : null}
         </div>
