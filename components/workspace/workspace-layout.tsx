@@ -1355,6 +1355,22 @@ export function WorkspaceLayout({
     pendingDocumentOpenTimerRef.current = null;
   }, []);
 
+  React.useEffect(() => {
+    if (workspaceRootPath) {
+      return;
+    }
+
+    clearPendingDocumentOpen();
+    const timer = window.setTimeout(() => {
+      setDocumentEditorLayout(closeAllDocumentTabs());
+      setActiveEditorDocumentPath(null);
+      setEditorSessions({});
+      setRecentDocuments([]);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [clearPendingDocumentOpen, workspaceRootPath]);
+
   const openDocumentByPath = React.useCallback(
     async (documentPath: string) => {
       if (documentPath === currentDocumentPath) {

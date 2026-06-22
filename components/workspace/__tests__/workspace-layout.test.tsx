@@ -2778,6 +2778,10 @@ describe('WorkspaceLayout', () => {
 
   it('removes a workspace from recent workspace menu', async () => {
     const user = userEvent.setup();
+    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
+      path: '/repo/README.md',
+      title: '项目说明',
+    }));
     window.localStorage.setItem(
       'madora:workspace-history',
       JSON.stringify([
@@ -2790,14 +2794,23 @@ describe('WorkspaceLayout', () => {
     );
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
+    await user.click(screen.getByTestId('tree-row-readme'));
+
+    expect(await screen.findByRole('tab', { name: '项目说明' })).toBeTruthy();
+    expect(await screen.findByTestId('markdown-editor')).toBeTruthy();
+
     await user.click(screen.getByRole('button', { name: '打开工作区菜单' }));
     await user.click(screen.getByRole('button', { name: '移除工作区 repo' }));
 
     expect(
       screen.queryByRole('button', { name: '移除工作区 repo' }),
     ).toBeNull();
-    expect(screen.getByText('还没有打开过的工作区')).toBeTruthy();
-    expect(screen.queryByText('项目说明')).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByText('还没有打开过的工作区')).toBeTruthy();
+      expect(screen.queryByText('项目说明')).toBeNull();
+      expect(screen.queryByRole('tab', { name: '项目说明' })).toBeNull();
+      expect(screen.queryByTestId('markdown-editor')).toBeNull();
+    });
     expect(screen.queryByText('/repo')).toBeNull();
     expect(screen.getByText('打开一个工作区')).toBeTruthy();
   });
