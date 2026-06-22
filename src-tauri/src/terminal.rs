@@ -1,6 +1,4 @@
-use portable_pty::{
-    native_pty_system, Child, CommandBuilder, MasterPty, PtySize,
-};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::env;
@@ -177,10 +175,7 @@ pub fn terminal_resize(
 }
 
 #[tauri::command]
-pub fn terminal_kill(
-    state: State<'_, TerminalState>,
-    session_id: String,
-) -> Result<(), String> {
+pub fn terminal_kill(state: State<'_, TerminalState>, session_id: String) -> Result<(), String> {
     let mut sessions = state
         .sessions
         .lock()
