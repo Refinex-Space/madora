@@ -33,6 +33,7 @@ import {
   listenTerminalExit,
   loadWorkspaceTree,
   openDailyNote,
+  openPathInFileManager,
   readAppSettings,
   readMarkdownDocument,
   readWorkspaceAssetData,
@@ -189,6 +190,7 @@ vi.mock('../workspace-api', async (importOriginal) => {
     listenTerminalExit: vi.fn(),
     loadWorkspaceTree: vi.fn(),
     openDailyNote: vi.fn(),
+    openPathInFileManager: vi.fn(),
     readMarkdownDocument: vi.fn(),
     readWorkspaceAssetData: vi.fn(),
     recordRecentDocument: vi.fn(),
@@ -245,6 +247,7 @@ const listenTerminalErrorMock = vi.mocked(listenTerminalError);
 const listenTerminalExitMock = vi.mocked(listenTerminalExit);
 const loadWorkspaceTreeMock = vi.mocked(loadWorkspaceTree);
 const openDailyNoteMock = vi.mocked(openDailyNote);
+const openPathInFileManagerMock = vi.mocked(openPathInFileManager);
 const readAppSettingsMock = vi.mocked(readAppSettings);
 const readMarkdownDocumentMock = vi.mocked(readMarkdownDocument);
 const readWorkspaceAssetDataMock = vi.mocked(readWorkspaceAssetData);
@@ -538,6 +541,7 @@ describe('WorkspaceLayout', () => {
     listenTerminalExitMock.mockReset();
     loadWorkspaceTreeMock.mockReset();
     openDailyNoteMock.mockReset();
+    openPathInFileManagerMock.mockReset();
     readAppSettingsMock.mockReset();
     readMarkdownDocumentMock.mockReset();
     readWorkspaceAssetDataMock.mockReset();
@@ -758,6 +762,19 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('button', { name: '打开设置' }).className).toContain(
       'w-[calc(100%-0.75rem)]',
     );
+  });
+
+  it('opens a sidebar document in the file manager from the context menu', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.pointer({
+      keys: '[MouseRight]',
+      target: screen.getByText('项目说明'),
+    });
+    await user.click(screen.getByRole('menuitem', { name: '在文件夹中打开' }));
+
+    expect(openPathInFileManagerMock).toHaveBeenCalledWith('/repo/README.md');
   });
 
   it('renders the selected daily calendar day without a square today backing', () => {

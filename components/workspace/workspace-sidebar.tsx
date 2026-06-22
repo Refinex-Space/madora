@@ -16,6 +16,7 @@ interface WorkspaceSidebarProps {
   workspace: ReturnType<typeof useWorkspace>;
   onCreateDocument?: (parentPath: string) => Promise<WorkspaceNode | null> | void;
   onOpenDailyNote?: () => void;
+  onOpenInFileManager?: (node: WorkspaceNode) => void;
   onOpenViews?: () => void;
   onOpenSettings?: () => void;
   revealDirectoryPath?: string | null;
@@ -31,6 +32,7 @@ export function WorkspaceSidebar({
   workspace,
   onCreateDocument,
   onOpenDailyNote,
+  onOpenInFileManager,
   onOpenViews,
   onOpenSettings,
   revealDirectoryPath,
@@ -132,6 +134,7 @@ export function WorkspaceSidebar({
               onDeleteNode={workspace.deleteNode}
               onImportMarkdown={workspace.importMarkdownDocuments}
               onMoveNode={workspace.moveNode}
+              onOpenInFileManager={onOpenInFileManager}
               onPendingRenameConsumed={workspace.clearPendingRenameNode}
               revealDirectoryPath={revealDirectoryPath}
               onRenameNode={workspace.renameNode}

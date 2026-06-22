@@ -104,6 +104,7 @@ import {
   saveWorkspaceGitSyncSettings,
   minimizeAppWindow,
   openDailyNote,
+  openPathInFileManager,
   setAppWindowTitle,
   toggleMaximizeAppWindow,
   terminalKill,
@@ -1414,6 +1415,17 @@ export function WorkspaceLayout({
     [cacheEditorSession, clearPendingDocumentOpen, rememberRecentDocument, workspace],
   );
 
+  const handleOpenNodeInFileManager = React.useCallback(
+    (node: WorkspaceNode) => {
+      void Promise.resolve(openPathInFileManager(node.absolutePath)).catch(
+        (error: unknown) => {
+          console.error('Failed to open workspace node in file manager', error);
+        },
+      );
+    },
+    [],
+  );
+
   const handleOpenRecentDocument = React.useCallback(
     (documentPath: string) => {
       const node = findWorkspaceDocumentByPath(
@@ -1798,6 +1810,7 @@ export function WorkspaceLayout({
                   void handleOpenDailyNote(formatDailyDate(new Date()))
                 }
                 onOpenViews={handleOpenViewsPage}
+                onOpenInFileManager={handleOpenNodeInFileManager}
                 onOpenSettings={() => openSettingsPage('appearance')}
                 revealDirectoryPath={revealedDirectoryPath}
                 onSelectDirectory={handleSelectWorkspaceDirectory}

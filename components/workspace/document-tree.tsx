@@ -6,6 +6,7 @@ import {
   FileInput,
   FilePlus2,
   FolderClosed,
+  FolderOpen,
   FolderPlus,
   MoreHorizontal,
   Pencil,
@@ -83,6 +84,7 @@ interface DocumentTreeProps {
   ) => Promise<void> | void;
   onImportMarkdown: (targetDir: string) => void;
   onMoveNode?: (request: WorkspaceMoveRequest) => Promise<void> | void;
+  onOpenInFileManager?: (node: WorkspaceNode) => Promise<void> | void;
   onPendingRenameConsumed?: () => void;
   revealDirectoryPath?: string | null;
   onSelectDirectory?: (node: WorkspaceNode) => Promise<void> | void;
@@ -107,6 +109,7 @@ export function DocumentTree({
   onImportDocuments,
   onImportMarkdown,
   onMoveNode,
+  onOpenInFileManager,
   onPendingRenameConsumed,
   revealDirectoryPath,
   onSelectDirectory,
@@ -314,6 +317,7 @@ export function DocumentTree({
             onDeleteRequest={setDeleteTarget}
             onExportNode={onExportNode}
             onImportDocuments={onImportDocuments}
+            onOpenInFileManager={onOpenInFileManager}
             onDropPreviewChange={setDropPreview}
             onExpandedChange={setExpanded}
             onMoveNode={onMoveNode}
@@ -373,6 +377,7 @@ function TreeNode({
   onDeleteRequest,
   onExportNode,
   onImportDocuments,
+  onOpenInFileManager,
   onDropPreviewChange,
   onExpandedChange,
   onMoveNode,
@@ -617,6 +622,7 @@ function TreeNode({
               onDeleteRequest={onDeleteRequest}
               onExportNode={onExportNode}
               onImportDocuments={onImportDocuments}
+              onOpenInFileManager={onOpenInFileManager}
               onRenameRequest={onRenameRequest}
               onTogglePinned={onTogglePinned}
             />
@@ -633,6 +639,7 @@ function TreeNode({
             onDeleteRequest={onDeleteRequest}
             onExportNode={onExportNode}
             onImportDocuments={onImportDocuments}
+            onOpenInFileManager={onOpenInFileManager}
             onRenameRequest={onRenameRequest}
             onTogglePinned={onTogglePinned}
           />
@@ -659,6 +666,7 @@ function TreeNode({
               onDeleteRequest={onDeleteRequest}
               onExportNode={onExportNode}
               onImportDocuments={onImportDocuments}
+              onOpenInFileManager={onOpenInFileManager}
               onDropPreviewChange={onDropPreviewChange}
               onExpandedChange={onExpandedChange}
               onMoveNode={onMoveNode}
@@ -703,6 +711,7 @@ interface TreeNodeProps {
     targetDir: string,
     format: WorkspaceImportFormat,
   ) => Promise<void> | void;
+  onOpenInFileManager?: (node: WorkspaceNode) => Promise<void> | void;
   onDropPreviewChange: (preview: DropPreview | null) => void;
   onExpandedChange: React.Dispatch<React.SetStateAction<Set<string>>>;
   onMoveNode?: (request: WorkspaceMoveRequest) => Promise<void> | void;
@@ -862,6 +871,7 @@ function NodeActionDropdown({
   onDeleteRequest,
   onExportNode,
   onImportDocuments,
+  onOpenInFileManager,
   onRenameRequest,
   onTogglePinned,
 }: NodeActionProps) {
@@ -890,6 +900,7 @@ function NodeActionDropdown({
           onDeleteRequest={onDeleteRequest}
           onExportNode={onExportNode}
           onImportDocuments={onImportDocuments}
+          onOpenInFileManager={onOpenInFileManager}
           onRenameRequest={onRenameRequest}
           onTogglePinned={onTogglePinned}
         />
@@ -913,6 +924,7 @@ interface NodeActionProps {
     targetDir: string,
     format: WorkspaceImportFormat,
   ) => Promise<void> | void;
+  onOpenInFileManager?: (node: WorkspaceNode) => Promise<void> | void;
   onRenameRequest: (node: WorkspaceNode) => void;
   onTogglePinned?: (node: WorkspaceNode) => void;
 }
@@ -924,6 +936,7 @@ function NodeDropdownActions({
   onDeleteRequest,
   onExportNode,
   onImportDocuments,
+  onOpenInFileManager,
   onRenameRequest,
   onTogglePinned,
 }: NodeActionProps) {
@@ -952,6 +965,14 @@ function NodeDropdownActions({
           <Pencil />
           重命名
         </DropdownMenuItem>
+        {onOpenInFileManager ? (
+          <DropdownMenuItem
+            onSelect={() => void onOpenInFileManager(node)}
+          >
+            <FolderOpen />
+            在文件夹中打开
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem
           variant="destructive"
           onSelect={() => onDeleteRequest(node)}
@@ -1010,6 +1031,14 @@ function NodeDropdownActions({
         <Pencil />
         重命名
       </DropdownMenuItem>
+      {onOpenInFileManager ? (
+        <DropdownMenuItem
+          onSelect={() => void onOpenInFileManager(node)}
+        >
+          <FolderOpen />
+          在文件夹中打开
+        </DropdownMenuItem>
+      ) : null}
       <DropdownMenuItem
         variant="destructive"
         onSelect={() => onDeleteRequest(node)}
@@ -1045,6 +1074,7 @@ function NodeContextActions({
   onDeleteRequest,
   onExportNode,
   onImportDocuments,
+  onOpenInFileManager,
   onRenameRequest,
   onTogglePinned,
 }: NodeActionProps) {
@@ -1073,6 +1103,14 @@ function NodeContextActions({
           <Pencil />
           重命名
         </ContextMenuItem>
+        {onOpenInFileManager ? (
+          <ContextMenuItem
+            onSelect={() => void onOpenInFileManager(node)}
+          >
+            <FolderOpen />
+            在文件夹中打开
+          </ContextMenuItem>
+        ) : null}
         <ContextMenuItem
           variant="destructive"
           onSelect={() => onDeleteRequest(node)}
@@ -1131,6 +1169,14 @@ function NodeContextActions({
         <Pencil />
         重命名
       </ContextMenuItem>
+      {onOpenInFileManager ? (
+        <ContextMenuItem
+          onSelect={() => void onOpenInFileManager(node)}
+        >
+          <FolderOpen />
+          在文件夹中打开
+        </ContextMenuItem>
+      ) : null}
       <ContextMenuItem
         variant="destructive"
         onSelect={() => onDeleteRequest(node)}

@@ -181,6 +181,63 @@ describe('DocumentTree', () => {
     expect(screen.getByRole('menuitem', { name: '导出' })).toBeTruthy();
   });
 
+  it('opens a document from the node action menu in the file manager', async () => {
+    const user = userEvent.setup();
+    const onOpenInFileManager = vi.fn();
+
+    render(
+      <DocumentTree
+        currentDocumentPath={null}
+        nodes={nodes}
+        searchQuery=""
+        onCreateDirectory={vi.fn()}
+        onCreateDocument={vi.fn()}
+        onDeleteNode={vi.fn()}
+        onImportMarkdown={vi.fn()}
+        onOpenInFileManager={onOpenInFileManager}
+        onRenameNode={vi.fn()}
+        onSelectDocument={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('打开 README.md 操作菜单'));
+    await user.click(screen.getByRole('menuitem', { name: '在文件夹中打开' }));
+
+    expect(onOpenInFileManager).toHaveBeenCalledWith(
+      expect.objectContaining({ absolutePath: '/repo/README.md' }),
+    );
+  });
+
+  it('opens a directory from the context menu in the file manager', async () => {
+    const user = userEvent.setup();
+    const onOpenInFileManager = vi.fn();
+
+    render(
+      <DocumentTree
+        currentDocumentPath={null}
+        nodes={nodes}
+        searchQuery=""
+        onCreateDirectory={vi.fn()}
+        onCreateDocument={vi.fn()}
+        onDeleteNode={vi.fn()}
+        onImportMarkdown={vi.fn()}
+        onOpenInFileManager={onOpenInFileManager}
+        onRenameNode={vi.fn()}
+        onSelectDocument={vi.fn()}
+      />,
+    );
+
+    await user.pointer({
+      keys: '[MouseRight]',
+      target: screen.getByText('Guides'),
+    });
+    await user.click(screen.getByRole('menuitem', { name: '在文件夹中打开' }));
+
+    expect(onOpenInFileManager).toHaveBeenCalledWith(
+      expect.objectContaining({ absolutePath: '/repo/Guides' }),
+    );
+  });
+
   it('starts inline rename after creating a directory', async () => {
     const user = userEvent.setup();
     const onCreateDirectory = vi.fn().mockResolvedValue({

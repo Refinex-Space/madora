@@ -348,6 +348,16 @@ export async function writeExportFile(targetPath: string, base64Data: string) {
   });
 }
 
+export async function openPathInFileManager(path: string) {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+
+  await revealItemInDir(path);
+}
+
 export async function readAppSettings() {
   const { invoke } = await import('@tauri-apps/api/core');
 
