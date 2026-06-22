@@ -93,6 +93,7 @@ interface WorkspaceSettingsPageProps {
 }
 
 type SettingsSectionId = 'appearance' | 'storage' | 'git-sync' | 'ai';
+const AI_SETTINGS_AVAILABLE = false;
 
 const APPEARANCE_SEARCH_TERMS = [
   '外观',
@@ -450,15 +451,19 @@ export function WorkspaceSettingsPage({
     hasSearchQuery && matchingAiFields.length > 0 && !aiSectionMatches
       ? matchingAiFields
       : AI_FIELD_DEFINITIONS;
-  const visibleSections = SETTINGS_SECTIONS.filter((section) =>
-    section.id === 'appearance'
+  const visibleSections = SETTINGS_SECTIONS.filter((section) => {
+    if (section.id === 'ai' && !AI_SETTINGS_AVAILABLE) {
+      return false;
+    }
+
+    return section.id === 'appearance'
       ? shouldShowAppearanceSection
       : section.id === 'storage'
         ? shouldShowStorageSection
         : section.id === 'git-sync'
           ? shouldShowGitSyncSection
-          : shouldShowAiSection,
-  );
+          : shouldShowAiSection;
+  });
   const activeSection = visibleSections.some(
     (section) => section.id === activeSectionId,
   )
@@ -470,7 +475,11 @@ export function WorkspaceSettingsPage({
 
     async function loadSettings() {
       setSearchQuery('');
-      setActiveSectionId(initialSectionId);
+      setActiveSectionId(
+        initialSectionId === 'ai' && !AI_SETTINGS_AVAILABLE
+          ? 'appearance'
+          : initialSectionId,
+      );
       setLoadState('loading');
       setSaveState('idle');
       setErrorMessage(null);

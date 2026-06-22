@@ -10,6 +10,7 @@ import {
   Minus,
   Moon,
   Palette,
+  RefreshCw,
   Search,
   Sun,
   SquareTerminal,
@@ -1717,6 +1718,21 @@ export function WorkspaceLayout({
     ),
     [workspace.snapshot?.nodes],
   );
+  const [isRefreshingWorkspaceTree, setIsRefreshingWorkspaceTree] =
+    React.useState(false);
+  const refreshWorkspaceTreeFromChrome = React.useCallback(() => {
+    if (isRefreshingWorkspaceTree) {
+      return;
+    }
+
+    setIsRefreshingWorkspaceTree(true);
+    void workspace
+      .refreshWorkspaceTree()
+      .catch(() => null)
+      .finally(() => {
+        setIsRefreshingWorkspaceTree(false);
+      });
+  }, [isRefreshingWorkspaceTree, workspace]);
 
   return (
     <main
@@ -1737,10 +1753,12 @@ export function WorkspaceLayout({
       {systemPage === 'settings' ? null : (
         <SidebarChromeToggle
           collapsed={workspace.isSidebarCollapsed}
+          refreshing={isRefreshingWorkspaceTree}
           windowsChromeInset={isTauriRuntime && isWindowsRuntime}
           pinnedNodes={pinnedNodes}
           onToggle={toggleLeftSidebar}
           onOpenPinnedNode={handleOpenWorkspaceViewNode}
+          onRefresh={refreshWorkspaceTreeFromChrome}
           onUnpinNode={handleUnpinNode}
         />
       )}
@@ -2115,17 +2133,21 @@ function useIsTauriRuntime() {
 
 function SidebarChromeToggle({
   collapsed,
+  refreshing,
   windowsChromeInset,
   pinnedNodes,
   onToggle,
   onOpenPinnedNode,
+  onRefresh,
   onUnpinNode,
 }: {
   collapsed: boolean;
+  refreshing: boolean;
   windowsChromeInset: boolean;
   pinnedNodes: WorkspaceNode[];
   onToggle: () => void;
   onOpenPinnedNode: (node: WorkspaceNode) => void;
+  onRefresh: () => void;
   onUnpinNode: (node: WorkspaceNode) => void;
 }) {
   const label = collapsed ? '展开侧边栏' : '折叠侧边栏';
@@ -2161,6 +2183,27 @@ function SidebarChromeToggle({
         onOpenNode={onOpenPinnedNode}
         onUnpinNode={onUnpinNode}
       />
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              aria-label="刷新工作区"
+              className="-ml-1 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              data-refreshing={refreshing ? 'true' : 'false'}
+              type="button"
+              onClick={onRefresh}
+            >
+              <RefreshCw
+                className={cn('size-4', refreshing && 'animate-spin')}
+                strokeWidth={1.85}
+              />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={8}>
+            刷新工作区
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   );
 }

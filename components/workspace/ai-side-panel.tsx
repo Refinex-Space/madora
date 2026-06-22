@@ -31,6 +31,8 @@ import type {
   WorkspaceNode,
 } from './workspace-types';
 
+const AI_PANEL_AVAILABLE = false;
+
 export interface DocumentPanelData {
   frontmatter: Record<string, string>;
   markdown: string;
@@ -120,14 +122,17 @@ export function RightToolRail({
         )}
         data-testid="right-tool-rail"
       >
-        <RightToolTooltip
-          label={mode === 'ai' ? '折叠 AI 面板' : '展开 AI 面板'}
-          orientation={orientation}
-        >
+        <RightToolTooltip label="AI 面板暂不可用" orientation={orientation}>
           <button
-            aria-label={mode === 'ai' ? '折叠 AI 面板' : '展开 AI 面板'}
-            className={rightToolButtonClassName()}
+            aria-label="AI 面板暂不可用"
+            className={cn(
+              rightToolButtonClassName(),
+              !AI_PANEL_AVAILABLE &&
+                'cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground',
+            )}
             data-testid="ai-panel-icon-button"
+            disabled={!AI_PANEL_AVAILABLE}
+            title="AI 面板暂不可用"
             type="button"
             onClick={() => onModeChange(nextMode('ai'))}
           >
