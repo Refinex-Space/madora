@@ -222,6 +222,12 @@ export interface AiPanelMessage {
   content: string;
 }
 
+export interface AiConversationMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export type AiPanelToolStatus =
   | 'running'
   | 'success'
@@ -272,6 +278,38 @@ export interface AiPanelRunState {
   error?: string;
 }
 
+export interface AiConversationRecord {
+  id: string;
+  title: string;
+  profileId: string;
+  profileLabel: string;
+  providerId: string;
+  providerLabel: string;
+  createdAt: number;
+  updatedAt: number;
+  documentPath?: string;
+  documentTitle?: string;
+  messages: AiConversationMessage[];
+  tools: AiPanelToolCall[];
+  permissions: AiPanelPermissionRequest[];
+  usage?: AiPanelUsage | null;
+  runState?: AiPanelRunState | null;
+}
+
+export interface AiConversationSummary {
+  id: string;
+  title: string;
+  profileId: string;
+  profileLabel: string;
+  providerId: string;
+  providerLabel: string;
+  createdAt: number;
+  updatedAt: number;
+  documentPath?: string;
+  documentTitle?: string;
+  messageCount: number;
+}
+
 export type AiPanelStatus =
   | 'idle'
   | 'connecting'
@@ -301,6 +339,7 @@ export type AiPanelAction =
   | { type: 'profileSelected'; profileId: string }
   | { type: 'connectRequested' }
   | { type: 'userMessageSubmitted'; id: string; content: string }
+  | { type: 'conversationRestored'; conversation: AiConversationRecord }
   | { type: 'runtimeEventReceived'; event: AiRuntimeEvent }
   | { type: 'errorRaised'; message: string }
   | { type: 'sessionCleared' }

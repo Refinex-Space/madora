@@ -2,6 +2,8 @@ import type {
   AiAssistantAccount,
   AiAgentProfile,
   AiDetectedModel,
+  AiConversationRecord,
+  AiConversationSummary,
   AiRuntimeEvent,
   AiSessionInfo,
   RespondAiPermissionInput,
@@ -611,6 +613,38 @@ export async function listAiAgentModels(rootPath: string) {
   const { invoke } = await import('@tauri-apps/api/core');
 
   return invoke<AiDetectedModel[]>('list_ai_agent_models', { rootPath });
+}
+
+export async function listAiConversations(rootPath: string) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<AiConversationSummary[]>('list_ai_conversations', {
+    rootPath,
+  });
+}
+
+export async function readAiConversation(
+  rootPath: string,
+  conversationId: string,
+) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<AiConversationRecord>('read_ai_conversation', {
+    conversationId,
+    rootPath,
+  });
+}
+
+export async function saveAiConversation(
+  rootPath: string,
+  record: AiConversationRecord,
+) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<AiConversationSummary>('save_ai_conversation', {
+    record,
+    rootPath,
+  });
 }
 
 export interface AiProviderSecretStatus {

@@ -22,6 +22,7 @@ referenced_by: AGENTS.md#knowledge-map
 - `system_fonts.rs` should expose only system font family names and recommendation metadata; do not return font file paths, file contents, or user-local font directory details to the frontend.
 - Desktop-only network features should use Tauri commands instead of depending on `app/api`, because desktop production builds statically export the frontend and remove Next API routes.
 - Keep TypeScript request/response types aligned with Rust command payloads.
+- AI panel conversation history uses Tauri commands in `agent_runtime.rs` and frontend wrappers in `workspace-api.ts`; persisted records stay inside the selected workspace at `.madora/ai-sessions/`.
 
 ## Local Files And Assets
 

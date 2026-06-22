@@ -29,6 +29,7 @@ import {
   gitStatus,
   gitUnstage,
   listAiAgentProfiles,
+  listAiConversations,
   listenAiEvents,
   listenTerminalData,
   listenTerminalError,
@@ -39,6 +40,7 @@ import {
   openPathInFileManager,
   readMarkdownSourceFiles,
   readAppSettings,
+  readAiConversation,
   readWorkspaceAssetData,
   recordRecentDocument,
   resolveWorkspaceAsset,
@@ -49,6 +51,7 @@ import {
   requestAiChat,
   requestAiProviderJson,
   saveAppSettings,
+  saveAiConversation,
   saveAiProviderSecret,
   sendAiPrompt,
   startAiSession,
@@ -528,6 +531,23 @@ describe('workspace-api AI runtime commands', () => {
       prompt: 'hello',
       sessionId: 'ai-1',
     });
+    await listAiConversations('/repo');
+    await readAiConversation('/repo', 'conversation-1');
+    await saveAiConversation('/repo', {
+      createdAt: 1,
+      documentPath: 'guide.md',
+      documentTitle: 'Guide',
+      id: 'conversation-1',
+      messages: [{ content: 'hello', id: 'm1', role: 'user' }],
+      permissions: [],
+      profileId: 'fake-echo',
+      profileLabel: 'Fake Echo',
+      providerId: 'local',
+      providerLabel: 'Local',
+      title: 'hello',
+      tools: [],
+      updatedAt: 2,
+    });
     await cancelAiTurn('ai-1');
     await respondAiPermission({
       behavior: 'allow',
@@ -570,10 +590,35 @@ describe('workspace-api AI runtime commands', () => {
         sessionId: 'ai-1',
       },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(5, 'cancel_ai_turn', {
+    expect(invokeMock).toHaveBeenNthCalledWith(5, 'list_ai_conversations', {
+      rootPath: '/repo',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(6, 'read_ai_conversation', {
+      conversationId: 'conversation-1',
+      rootPath: '/repo',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(7, 'save_ai_conversation', {
+      record: {
+        createdAt: 1,
+        documentPath: 'guide.md',
+        documentTitle: 'Guide',
+        id: 'conversation-1',
+        messages: [{ content: 'hello', id: 'm1', role: 'user' }],
+        permissions: [],
+        profileId: 'fake-echo',
+        profileLabel: 'Fake Echo',
+        providerId: 'local',
+        providerLabel: 'Local',
+        title: 'hello',
+        tools: [],
+        updatedAt: 2,
+      },
+      rootPath: '/repo',
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(8, 'cancel_ai_turn', {
       sessionId: 'ai-1',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(6, 'respond_ai_permission', {
+    expect(invokeMock).toHaveBeenNthCalledWith(9, 'respond_ai_permission', {
       input: {
         behavior: 'allow',
         requestId: 'req-1',
@@ -581,20 +626,20 @@ describe('workspace-api AI runtime commands', () => {
         updatedInput: { command: 'pwd' },
       },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(7, 'stop_ai_session', {
+    expect(invokeMock).toHaveBeenNthCalledWith(10, 'stop_ai_session', {
       sessionId: 'ai-1',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(8, 'get_ai_provider_secret_status', {
+    expect(invokeMock).toHaveBeenNthCalledWith(11, 'get_ai_provider_secret_status', {
       providerId: 'openai',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(9, 'save_ai_provider_secret', {
+    expect(invokeMock).toHaveBeenNthCalledWith(12, 'save_ai_provider_secret', {
       providerId: 'openai',
       secret: 'sk-test',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(10, 'delete_ai_provider_secret', {
+    expect(invokeMock).toHaveBeenNthCalledWith(13, 'delete_ai_provider_secret', {
       providerId: 'openai',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(11, 'request_ai_provider_json', {
+    expect(invokeMock).toHaveBeenNthCalledWith(14, 'request_ai_provider_json', {
       request: {
         headers: {},
         method: 'GET',
@@ -602,7 +647,7 @@ describe('workspace-api AI runtime commands', () => {
         url: 'https://api.openai.com/v1/models',
       },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(12, 'request_ai_chat', {
+    expect(invokeMock).toHaveBeenNthCalledWith(15, 'request_ai_chat', {
       request: {
         body: '{"model":"gpt-5.4","input":"hello"}',
         headers: { 'OpenAI-Beta': 'responses=v1' },

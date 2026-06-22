@@ -15,7 +15,7 @@ Madora is a desktop-first local knowledge-base app. The default page renders `Wo
 - Editor: `components/editor/markdown-editor.tsx` wraps `mardora` and CodeMirror-oriented Markdown behavior.
 - Desktop shell: Tauri v2 from `src-tauri`, with `src-tauri/tauri.conf.json` pointing production desktop builds at `../out`.
 - Native boundary: React calls Tauri commands through `components/workspace/workspace-api.ts`; command implementations live in `src-tauri/src`.
-- Local state: app settings are persisted by `src-tauri/src/settings.rs`; browser panel widths use local storage keys in `workspace-layout.tsx`.
+- Local state: app settings are persisted by `src-tauri/src/settings.rs`; browser panel widths use local storage keys in `workspace-layout.tsx`; AI panel conversation history is persisted per workspace under `.madora/ai-sessions/`.
 
 ## Main Modules
 

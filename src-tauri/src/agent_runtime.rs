@@ -1,16 +1,19 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::env;
+use std::fs;
+use std::io;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{mpsc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 const CODEX_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const CODEX_MODEL_LIST_TIMEOUT: Duration = Duration::from_secs(10);
+const AI_SESSIONS_DIR: &str = "ai-sessions";
 
 static CODEX_MODEL_CACHE: OnceLock<Mutex<Option<CachedCodexModels>>> = OnceLock::new();
 
@@ -315,6 +318,54 @@ pub enum AiRuntimeEvent {
     },
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConversationMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConversationRecord {
+    pub id: String,
+    pub title: String,
+    pub profile_id: String,
+    pub profile_label: String,
+    pub provider_id: String,
+    pub provider_label: String,
+    pub created_at: u128,
+    pub updated_at: u128,
+    pub document_path: Option<String>,
+    pub document_title: Option<String>,
+    pub messages: Vec<AiConversationMessage>,
+    #[serde(default)]
+    pub tools: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub permissions: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub usage: Option<serde_json::Value>,
+    #[serde(default)]
+    pub run_state: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConversationSummary {
+    pub id: String,
+    pub title: String,
+    pub profile_id: String,
+    pub profile_label: String,
+    pub provider_id: String,
+    pub provider_label: String,
+    pub created_at: u128,
+    pub updated_at: u128,
+    pub document_path: Option<String>,
+    pub document_title: Option<String>,
+    pub message_count: usize,
+}
+
 #[tauri::command]
 pub fn list_ai_agent_profiles(root_path: String) -> Result<Vec<AiAgentProfile>, String> {
     validate_agent_root(&root_path)?;
@@ -349,6 +400,62 @@ pub fn list_ai_agent_models(root_path: String) -> Result<Vec<AiDetectedModel>, S
     }
 
     Ok(models)
+}
+
+#[tauri::command]
+pub fn list_ai_conversations(root_path: String) -> Result<Vec<AiConversationSummary>, String> {
+    let root = validate_agent_root(&root_path)?;
+    let directory = ai_conversations_dir(&root);
+
+    if !directory.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut summaries = Vec::new();
+    for entry in fs::read_dir(&directory).map_err(|_| "无法读取 AI 会话历史".to_string())? {
+        let entry = entry.map_err(|_| "无法读取 AI 会话历史".to_string())?;
+        let path = entry.path();
+
+        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+            continue;
+        }
+
+        let record = read_ai_conversation_file(&path)
+            .map_err(|_| "无法解析 AI 会话历史".to_string())?;
+        summaries.push(conversation_summary(&record));
+    }
+
+    summaries.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+    Ok(summaries)
+}
+
+#[tauri::command]
+pub fn read_ai_conversation(
+    root_path: String,
+    conversation_id: String,
+) -> Result<AiConversationRecord, String> {
+    let root = validate_agent_root(&root_path)?;
+    let id = validate_conversation_id(&conversation_id)?;
+    let path = ai_conversation_path(&root, id);
+
+    read_ai_conversation_file(&path).map_err(|_| "无法读取 AI 会话".to_string())
+}
+
+#[tauri::command]
+pub fn save_ai_conversation(
+    root_path: String,
+    mut record: AiConversationRecord,
+) -> Result<AiConversationSummary, String> {
+    let root = validate_agent_root(&root_path)?;
+    validate_conversation_id(&record.id)?;
+    normalize_conversation_record(&mut record);
+
+    let directory = ai_conversations_dir(&root);
+    fs::create_dir_all(&directory).map_err(|_| "无法创建 AI 会话目录".to_string())?;
+    write_json_pretty(&ai_conversation_path(&root, &record.id), &record)
+        .map_err(|_| "无法保存 AI 会话".to_string())?;
+
+    Ok(conversation_summary(&record))
 }
 
 #[tauri::command]
@@ -2428,6 +2535,100 @@ fn run_command_output(path: &Path, args: &[&str]) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
+fn ai_conversations_dir(root: &Path) -> PathBuf {
+    root.join(".madora").join(AI_SESSIONS_DIR)
+}
+
+fn ai_conversation_path(root: &Path, conversation_id: &str) -> PathBuf {
+    ai_conversations_dir(root).join(format!("{conversation_id}.json"))
+}
+
+fn read_ai_conversation_file(path: &Path) -> io::Result<AiConversationRecord> {
+    let raw = fs::read_to_string(path)?;
+    serde_json::from_str(&raw).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+}
+
+fn write_json_pretty<T: Serialize>(path: &Path, value: &T) -> io::Result<()> {
+    let raw = serde_json::to_string_pretty(value)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    fs::write(path, raw)
+}
+
+fn validate_conversation_id(conversation_id: &str) -> Result<&str, String> {
+    let valid = !conversation_id.is_empty()
+        && conversation_id.len() <= 120
+        && conversation_id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'));
+
+    if valid {
+        Ok(conversation_id)
+    } else {
+        Err("AI 会话 ID 无效".to_string())
+    }
+}
+
+fn normalize_conversation_record(record: &mut AiConversationRecord) {
+    let now = current_time_millis();
+
+    if record.created_at == 0 {
+        record.created_at = now;
+    }
+
+    if record.updated_at == 0 {
+        record.updated_at = now;
+    }
+
+    if record.title.trim().is_empty() {
+        record.title = record
+            .messages
+            .iter()
+            .find(|message| message.role == "user")
+            .map(|message| trim_conversation_title(&message.content))
+            .unwrap_or_else(|| "New Chat".to_string());
+    } else {
+        record.title = trim_conversation_title(&record.title);
+    }
+}
+
+fn conversation_summary(record: &AiConversationRecord) -> AiConversationSummary {
+    AiConversationSummary {
+        created_at: record.created_at,
+        document_path: record.document_path.clone(),
+        document_title: record.document_title.clone(),
+        id: record.id.clone(),
+        message_count: record.messages.len(),
+        profile_id: record.profile_id.clone(),
+        profile_label: record.profile_label.clone(),
+        provider_id: record.provider_id.clone(),
+        provider_label: record.provider_label.clone(),
+        title: record.title.clone(),
+        updated_at: record.updated_at,
+    }
+}
+
+fn trim_conversation_title(value: &str) -> String {
+    let trimmed = value.trim();
+    let mut title = trimmed.chars().take(40).collect::<String>();
+
+    if trimmed.chars().count() > 40 {
+        title.push('…');
+    }
+
+    if title.is_empty() {
+        "New Chat".to_string()
+    } else {
+        title
+    }
+}
+
+fn current_time_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}
+
 fn build_fake_response(input: &SendAiPromptInput) -> String {
     match input.context.document.as_ref() {
         Some(document) => format!(
@@ -3093,6 +3294,110 @@ mod tests {
         assert_eq!(deny["behavior"], "deny");
         assert_eq!(deny["message"], "no");
         assert_eq!(deny["interrupt"], true);
+    }
+
+    fn test_conversation_record(id: &str, title: &str, updated_at: u128) -> AiConversationRecord {
+        AiConversationRecord {
+            created_at: updated_at,
+            document_path: None,
+            document_title: None,
+            id: id.to_string(),
+            messages: vec![AiConversationMessage {
+                content: title.to_string(),
+                id: format!("{id}-user"),
+                role: "user".to_string(),
+            }],
+            permissions: Vec::new(),
+            profile_id: "codex:local".to_string(),
+            profile_label: "Codex".to_string(),
+            provider_id: "codex".to_string(),
+            provider_label: "Codex".to_string(),
+            run_state: None,
+            title: title.to_string(),
+            tools: Vec::new(),
+            updated_at,
+            usage: None,
+        }
+    }
+
+    #[test]
+    fn persists_ai_conversations_inside_workspace_private_directory() {
+        let temp_dir = TempDir::new().expect("创建临时目录失败");
+        let root_path = temp_dir.path().to_string_lossy().to_string();
+        let record = AiConversationRecord {
+            created_at: 100,
+            document_path: Some("guide.md".to_string()),
+            document_title: Some("指南".to_string()),
+            id: "conversation-1".to_string(),
+            messages: vec![
+                AiConversationMessage {
+                    content: "总结".to_string(),
+                    id: "user-1".to_string(),
+                    role: "user".to_string(),
+                },
+                AiConversationMessage {
+                    content: "好的".to_string(),
+                    id: "assistant-1".to_string(),
+                    role: "assistant".to_string(),
+                },
+            ],
+            permissions: Vec::new(),
+            profile_id: "claude:local".to_string(),
+            profile_label: "Claude Code".to_string(),
+            provider_id: "claude".to_string(),
+            provider_label: "Claude".to_string(),
+            run_state: None,
+            title: "总结".to_string(),
+            tools: Vec::new(),
+            updated_at: 200,
+            usage: Some(serde_json::json!({
+                "inputTokens": 1,
+                "outputTokens": 2
+            })),
+        };
+
+        save_ai_conversation(root_path.clone(), record.clone()).expect("保存会话失败");
+
+        let saved_path = temp_dir
+            .path()
+            .join(".madora")
+            .join("ai-sessions")
+            .join("conversation-1.json");
+        assert!(saved_path.is_file());
+
+        let history = list_ai_conversations(root_path.clone()).expect("读取历史失败");
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].id, "conversation-1");
+        assert_eq!(history[0].title, "总结");
+        assert_eq!(history[0].message_count, 2);
+
+        let restored =
+            read_ai_conversation(root_path, "conversation-1".to_string()).expect("恢复会话失败");
+        assert_eq!(restored, record);
+    }
+
+    #[test]
+    fn lists_ai_conversations_by_recent_update_and_rejects_invalid_ids() {
+        let temp_dir = TempDir::new().expect("创建临时目录失败");
+        let root_path = temp_dir.path().to_string_lossy().to_string();
+        let first = test_conversation_record("older", "Older", 100);
+        let second = test_conversation_record("newer", "Newer", 200);
+
+        save_ai_conversation(root_path.clone(), first).expect("保存旧会话失败");
+        save_ai_conversation(root_path.clone(), second).expect("保存新会话失败");
+
+        let history = list_ai_conversations(root_path.clone()).expect("读取历史失败");
+        assert_eq!(
+            history
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["newer", "older"]
+        );
+
+        let error = read_ai_conversation(root_path, "../outside".to_string())
+            .expect_err("非法会话 ID 应失败");
+        assert!(error.contains("会话 ID"));
     }
 
     #[test]

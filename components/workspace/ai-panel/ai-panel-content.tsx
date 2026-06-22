@@ -2,16 +2,23 @@
 
 import * as React from 'react';
 import {
+  AlertTriangle,
   Check,
+  ChevronDown,
+  CircleCheck,
   Download,
   FileText,
   History,
+  LoaderCircle,
   Plus,
   Search,
   Send,
   Settings,
+  ShieldAlert,
   Sparkles,
   Square,
+  Terminal,
+  Wrench,
   X,
 } from 'lucide-react';
 
@@ -22,8 +29,12 @@ import {
   isTauriRuntime,
   listAiAgentModels,
   listAiAgentProfiles,
+  listAiConversations,
   listenAiEvents,
   readAppSettings,
+  readAiConversation,
+  respondAiPermission,
+  saveAiConversation,
   sendAiPrompt,
   startAiSession,
 } from '@/components/workspace/workspace-api';
@@ -39,7 +50,15 @@ import {
   createInitialAiPanelState,
   reduceAiPanelState,
 } from './ai-reducer';
-import type { AiDetectedModel, AiIntent } from './ai-types';
+import type {
+  AiConversationRecord,
+  AiConversationSummary,
+  AiDetectedModel,
+  AiIntent,
+  AiPanelPermissionRequest,
+  AiPanelToolCall,
+  AiPanelUsage,
+} from './ai-types';
 
 interface AiPanelContentProps {
   currentDocument: WorkspaceNode | null;
@@ -73,6 +92,16 @@ export function AiPanelContent({
   >(null);
   const [modelSearch, setModelSearch] = React.useState('');
   const [historySearch, setHistorySearch] = React.useState('');
+  const [conversationHistory, setConversationHistory] = React.useState<
+    AiConversationSummary[]
+  >([]);
+  const [historyLoading, setHistoryLoading] = React.useState(false);
+  const [activeConversationId, setActiveConversationId] = React.useState<
+    string | null
+  >(null);
+  const [conversationCreatedAt, setConversationCreatedAt] = React.useState<
+    number | null
+  >(null);
   const [selectedModelId, setSelectedModelId] = React.useState<string | null>(
     null,
   );
@@ -166,11 +195,22 @@ export function AiPanelContent({
   const runtimeReady = profileReady;
   const profileMetadata = selectedProfile ?? selectedSettingsProfile;
   const effectiveSelectedModelId = selectedModelId ?? profileMetadata?.modelId ?? null;
+  const modelOptions = React.useMemo(
+    () => buildModelOptions(models, state.profiles),
+    [models, state.profiles],
+  );
   const selectedModel =
-    models.find((model) => model.id === effectiveSelectedModelId) ?? null;
+    modelOptions.find((model) => model.id === effectiveSelectedModelId) ??
+    null;
   const settingsDisabled =
     Boolean(workspaceRootPath) &&
     !profileReady;
+  const hasRuntimeActivity =
+    state.messages.length > 0 ||
+    state.tools.length > 0 ||
+    state.permissions.length > 0 ||
+    Boolean(state.usage) ||
+    Boolean(state.runState);
 
   const loadModels = React.useCallback(async () => {
     if (!workspaceRootPath || modelsLoadedForRoot === workspaceRootPath) {
@@ -191,6 +231,70 @@ export function AiPanelContent({
       });
     }
   }, [modelsLoadedForRoot, workspaceRootPath]);
+
+  const loadConversationHistory = React.useCallback(async () => {
+    if (!workspaceRootPath) {
+      return;
+    }
+
+    setHistoryLoading(true);
+    try {
+      setConversationHistory(await listAiConversations(workspaceRootPath));
+    } catch (error) {
+      dispatch({
+        message:
+          error instanceof Error ? error.message : '无法读取 AI 会话历史',
+        type: 'errorRaised',
+      });
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [workspaceRootPath]);
+
+  React.useEffect(() => {
+    if (
+      !workspaceRootPath ||
+      !activeConversationId ||
+      !profileMetadata ||
+      !hasRuntimeActivity
+    ) {
+      return;
+    }
+
+    const handle = window.setTimeout(() => {
+      const record = buildConversationRecord({
+        activeConversationId,
+        conversationCreatedAt,
+        currentDocument,
+        profileMetadata,
+        state,
+      });
+
+      void saveAiConversation(workspaceRootPath, record)
+        .then((summary) => {
+          setConversationHistory((current) =>
+            upsertConversationSummary(current, summary),
+          );
+        })
+        .catch((error) => {
+          dispatch({
+            message:
+              error instanceof Error ? error.message : '无法保存 AI 会话',
+            type: 'errorRaised',
+          });
+        });
+    }, 250);
+
+    return () => window.clearTimeout(handle);
+  }, [
+    activeConversationId,
+    conversationCreatedAt,
+    currentDocument,
+    hasRuntimeActivity,
+    profileMetadata,
+    state,
+    workspaceRootPath,
+  ]);
 
   const submitPrompt = React.useCallback(
     async (content: string, intent: AiIntent = 'chat') => {
@@ -227,6 +331,8 @@ export function AiPanelContent({
           }));
 
         if (!state.session) {
+          setActiveConversationId((current) => current ?? session.sessionId);
+          setConversationCreatedAt((current) => current ?? Date.now());
           dispatch({
             event: { session, type: 'sessionStarted' },
             type: 'runtimeEventReceived',
@@ -285,6 +391,8 @@ export function AiPanelContent({
           ariaLabel="新会话"
           onClick={() => {
             dispatch({ type: 'sessionCleared' });
+            setActiveConversationId(null);
+            setConversationCreatedAt(null);
             setSessionNotice('New session');
             setActivePopover(null);
           }}
@@ -294,9 +402,14 @@ export function AiPanelContent({
         <IconToolButton
           active={activePopover === 'history'}
           ariaLabel="历史会话"
-          onClick={() =>
-            setActivePopover(activePopover === 'history' ? null : 'history')
-          }
+          onClick={() => {
+            const nextPopover = activePopover === 'history' ? null : 'history';
+            setActivePopover(nextPopover);
+
+            if (nextPopover === 'history') {
+              void loadConversationHistory();
+            }
+          }}
         >
           <History size={17} />
         </IconToolButton>
@@ -335,19 +448,75 @@ export function AiPanelContent({
             <Download size={16} />
           </div>
           <div className="grid gap-1 p-2 text-sm">
-            <p className="px-2 py-1 text-xs text-muted-foreground">2w ago</p>
-            {SESSION_HISTORY.filter((item) =>
+            <p className="px-2 py-1 text-xs text-muted-foreground">
+              {historyLoading ? 'Loading...' : 'Recent'}
+            </p>
+            {conversationHistory.filter((item) =>
               item.title.toLowerCase().includes(historySearch.toLowerCase()),
             ).map((item) => (
               <button
-                className="grid h-10 grid-cols-[minmax(0,1fr)_auto] items-center rounded-md px-2 text-left hover:bg-muted"
+                aria-label={`恢复会话 ${item.title}`}
+                className={cn(
+                  'grid min-h-10 grid-cols-[minmax(0,1fr)_auto] items-center rounded-md px-2 py-1 text-left hover:bg-muted',
+                  activeConversationId === item.id && 'bg-muted',
+                )}
                 key={item.id}
                 type="button"
+                onClick={async () => {
+                  if (!workspaceRootPath) {
+                    return;
+                  }
+
+                  try {
+                    const conversation = await readAiConversation(
+                      workspaceRootPath,
+                      item.id,
+                    );
+
+                    setActiveConversationId(conversation.id);
+                    setConversationCreatedAt(conversation.createdAt);
+                    if (
+                      state.profiles.some(
+                        (profile) => profile.id === conversation.profileId,
+                      )
+                    ) {
+                      dispatch({
+                        profileId: conversation.profileId,
+                        type: 'profileSelected',
+                      });
+                    }
+                    dispatch({
+                      conversation,
+                      type: 'conversationRestored',
+                    });
+                    setActivePopover(null);
+                    setSessionNotice(null);
+                  } catch (error) {
+                    dispatch({
+                      message:
+                        error instanceof Error
+                          ? error.message
+                          : '无法恢复 AI 会话',
+                      type: 'errorRaised',
+                    });
+                  }
+                }}
               >
-                <span className="truncate">{item.title}</span>
-                {item.active ? <Check size={16} /> : null}
+                <span className="min-w-0">
+                  <span className="block truncate">{item.title}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {item.profileLabel}
+                    {item.documentTitle ? ` · ${item.documentTitle}` : ''}
+                  </span>
+                </span>
+                {activeConversationId === item.id ? <Check size={16} /> : null}
               </button>
             ))}
+            {!historyLoading && conversationHistory.length === 0 ? (
+              <p className="px-2 py-4 text-sm text-muted-foreground">
+                暂无真实会话历史。
+              </p>
+            ) : null}
           </div>
         </FloatingPanel>
       ) : null}
@@ -383,25 +552,23 @@ export function AiPanelContent({
               打开 AI 设置
             </Button>
           </div>
-        ) : state.messages.length === 0 ? (
+        ) : !hasRuntimeActivity ? (
           <div className="flex min-h-[260px] flex-col justify-center text-sm text-muted-foreground">
             <p>{sessionNotice ?? '选择一个操作，或直接输入问题。'}</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {state.messages.map((message) => (
-              <div
-                className={cn(
-                  'whitespace-pre-wrap rounded-md px-3 py-2 text-sm leading-6',
-                  message.role === 'user'
-                    ? 'ml-auto max-w-[88%] bg-primary text-primary-foreground'
-                    : 'mr-auto max-w-[92%] border bg-muted/20',
-                )}
-                key={message.id}
-              >
-                {message.content}
-              </div>
-            ))}
+          <div className="space-y-4">
+            <RuntimeSummary
+              runState={state.runState}
+              status={state.status}
+              usage={state.usage}
+            />
+            <MessageList messages={state.messages} />
+            <RuntimeActivity
+              permissions={state.permissions}
+              sessionId={state.session?.sessionId ?? null}
+              tools={state.tools}
+            />
           </div>
         )}
       </div>
@@ -421,7 +588,7 @@ export function AiPanelContent({
             <Search size={16} />
           </div>
           <ModelList
-            models={models}
+            models={modelOptions}
             query={modelSearch}
             selectedModelId={effectiveSelectedModelId}
             onSelect={(model) => {
@@ -479,6 +646,7 @@ export function AiPanelContent({
                 <span className="truncate">
                   {selectedModel?.label ?? profileMetadata?.label ?? '选择模型'}
                 </span>
+                <ChevronDown className="ml-auto" size={13} />
               </Button>
               <span className="truncate rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
                 Current Note {documentPanelData?.markdown?.length ?? 0} ch
@@ -553,18 +721,81 @@ function selectInitialProfileId(
   );
 }
 
-const SESSION_HISTORY = [
-  {
-    active: true,
-    id: 'permissions-context',
-    title: '权限上下文代码注释补充',
-  },
-  {
-    active: false,
-    id: 'mermaid-layout',
-    title: 'Mermaid流程图排版优化',
-  },
-];
+function buildConversationRecord({
+  activeConversationId,
+  conversationCreatedAt,
+  currentDocument,
+  profileMetadata,
+  state,
+}: {
+  activeConversationId: string;
+  conversationCreatedAt: number | null;
+  currentDocument: WorkspaceNode | null;
+  profileMetadata: {
+    id: string;
+    label: string;
+    providerId: string;
+    providerLabel: string;
+  };
+  state: ReturnType<typeof createInitialAiPanelState>;
+}): AiConversationRecord {
+  const now = Date.now();
+  const firstUserMessage = state.messages.find(
+    (message) => message.role === 'user',
+  );
+
+  const record: AiConversationRecord = {
+    createdAt: conversationCreatedAt ?? now,
+    id: activeConversationId,
+    messages: state.messages,
+    permissions: state.permissions,
+    profileId: profileMetadata.id,
+    profileLabel: profileMetadata.label,
+    providerId: profileMetadata.providerId,
+    providerLabel: profileMetadata.providerLabel,
+    runState: state.runState,
+    title: buildConversationTitle(
+      firstUserMessage?.content ??
+        currentDocument?.title ??
+        currentDocument?.name ??
+        'New Chat',
+    ),
+    tools: state.tools,
+    updatedAt: now,
+    usage: state.usage,
+  };
+
+  if (currentDocument?.relativePath) {
+    record.documentPath = currentDocument.relativePath;
+  }
+
+  const documentTitle = currentDocument?.title ?? currentDocument?.name;
+  if (documentTitle) {
+    record.documentTitle = documentTitle;
+  }
+
+  return record;
+}
+
+function buildConversationTitle(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return 'New Chat';
+  }
+
+  return trimmed.length > 40 ? `${trimmed.slice(0, 40)}…` : trimmed;
+}
+
+function upsertConversationSummary(
+  summaries: AiConversationSummary[],
+  nextSummary: AiConversationSummary,
+) {
+  return [
+    nextSummary,
+    ...summaries.filter((summary) => summary.id !== nextSummary.id),
+  ].sort((left, right) => right.updatedAt - left.updatedAt);
+}
 
 function FloatingPanel({
   children,
@@ -610,6 +841,289 @@ function IconToolButton({
     >
       {children}
     </Button>
+  );
+}
+
+function RuntimeSummary({
+  runState,
+  status,
+  usage,
+}: {
+  runState: { error?: string; state: string } | null;
+  status: string;
+  usage: AiPanelUsage | null;
+}) {
+  if (!runState && !usage) {
+    return null;
+  }
+
+  const running = runState?.state === 'running' || status === 'streaming';
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      {runState ? (
+        <span
+          className={cn(
+            'inline-flex items-center gap-1 rounded-md border px-2 py-1',
+            running && 'border-amber-200 bg-amber-50 text-amber-700',
+            runState.state === 'failed' &&
+              'border-destructive/30 bg-destructive/10 text-destructive',
+            runState.state === 'completed' &&
+              'border-emerald-200 bg-emerald-50 text-emerald-700',
+          )}
+        >
+          {running ? (
+            <LoaderCircle className="animate-spin" size={13} />
+          ) : runState.state === 'failed' ? (
+            <AlertTriangle size={13} />
+          ) : (
+            <CircleCheck size={13} />
+          )}
+          {formatRunState(runState.state)}
+        </span>
+      ) : null}
+      {usage ? (
+        <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1">
+          {usage.model ? `${usage.model} · ` : null}
+          {usage.inputTokens + usage.outputTokens} tokens
+          {typeof usage.totalCostUsd === 'number'
+            ? ` · $${usage.totalCostUsd.toFixed(4)}`
+            : null}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function MessageList({
+  messages,
+}: {
+  messages: Array<{ content: string; id: string; role: 'user' | 'assistant' }>;
+}) {
+  if (messages.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3">
+      {messages.map((message) => (
+        <div
+          className={cn(
+            'whitespace-pre-wrap rounded-md px-3 py-2 text-sm leading-6',
+            message.role === 'user'
+              ? 'ml-auto max-w-[88%] bg-primary text-primary-foreground'
+              : 'mr-auto max-w-[92%] border bg-muted/20',
+          )}
+          key={message.id}
+        >
+          {message.content}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RuntimeActivity({
+  permissions,
+  sessionId,
+  tools,
+}: {
+  permissions: AiPanelPermissionRequest[];
+  sessionId: string | null;
+  tools: AiPanelToolCall[];
+}) {
+  if (tools.length === 0 && permissions.length === 0) {
+    return null;
+  }
+
+  const permissionByToolId = new Map(
+    permissions.map((permission) => [permission.toolCallId, permission]),
+  );
+  const standalonePermissions = permissions.filter(
+    (permission) => !tools.some((tool) => tool.id === permission.toolCallId),
+  );
+
+  return (
+    <div className="space-y-2">
+      {tools.map((tool) => (
+        <ToolCard
+          key={tool.id}
+          permission={permissionByToolId.get(tool.id) ?? null}
+          sessionId={sessionId}
+          tool={tool}
+        />
+      ))}
+      {standalonePermissions.map((permission) => (
+        <PermissionCard
+          key={permission.requestId}
+          permission={permission}
+          sessionId={sessionId}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ToolCard({
+  permission,
+  sessionId,
+  tool,
+}: {
+  permission: AiPanelPermissionRequest | null;
+  sessionId: string | null;
+  tool: AiPanelToolCall;
+}) {
+  const diff = extractDiffText(tool.output) ?? extractDiffText(tool.input);
+
+  return (
+    <div className="rounded-md border bg-background">
+      <div className="flex min-w-0 items-center justify-between gap-2 border-b px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {tool.name.toLowerCase().includes('bash') ? (
+            <Terminal size={15} />
+          ) : (
+            <Wrench size={15} />
+          )}
+          <span className="truncate text-sm font-medium">{tool.name}</span>
+        </div>
+        <ToolStatusBadge status={tool.status} />
+      </div>
+      <div className="space-y-2 p-3">
+        {diff ? <DiffPreview diff={diff} /> : <JsonPreview value={tool.input} />}
+        {tool.partialJson ? (
+          <pre className="max-h-28 overflow-auto rounded-md bg-muted p-2 text-xs leading-5 text-muted-foreground">
+            {tool.partialJson}
+          </pre>
+        ) : null}
+        {tool.output ? <JsonPreview label="Output" value={tool.output} /> : null}
+        {permission ? (
+          <PermissionCard permission={permission} sessionId={sessionId} />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function DiffPreview({ diff }: { diff: string }) {
+  return (
+    <div className="overflow-hidden rounded-md border bg-background">
+      <div className="border-b bg-muted/50 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Diff
+      </div>
+      <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words px-2 py-2 font-mono text-xs leading-5">
+        {diff}
+      </pre>
+    </div>
+  );
+}
+
+function PermissionCard({
+  permission,
+  sessionId,
+}: {
+  permission: AiPanelPermissionRequest;
+  sessionId: string | null;
+}) {
+  const disabled = !sessionId;
+
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50/70 p-3 text-sm">
+      <div className="flex min-w-0 items-start gap-2">
+        <ShieldAlert className="mt-0.5 text-amber-700" size={16} />
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-amber-900">
+            {permission.toolName} 需要确认
+          </div>
+          <div className="mt-1 text-xs leading-5 text-amber-800">
+            {permission.reason}
+          </div>
+          <JsonPreview className="mt-2 bg-background/70" value={permission.toolInput} />
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <Button
+              aria-label={`拒绝 ${permission.toolName}`}
+              disabled={disabled}
+              size="sm"
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (!sessionId) {
+                  return;
+                }
+
+                void respondAiPermission({
+                  behavior: 'deny',
+                  denyMessage: 'User denied permission',
+                  interrupt: true,
+                  requestId: permission.requestId,
+                  sessionId,
+                });
+              }}
+            >
+              拒绝
+            </Button>
+            <Button
+              aria-label={`允许 ${permission.toolName}`}
+              disabled={disabled}
+              size="sm"
+              type="button"
+              onClick={() => {
+                if (!sessionId) {
+                  return;
+                }
+
+                void respondAiPermission({
+                  behavior: 'allow',
+                  requestId: permission.requestId,
+                  sessionId,
+                  updatedInput: permission.toolInput,
+                });
+              }}
+            >
+              允许
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ToolStatusBadge({ status }: { status: AiPanelToolCall['status'] }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs',
+        status === 'running' && 'bg-amber-50 text-amber-700',
+        status === 'success' && 'bg-emerald-50 text-emerald-700',
+        status === 'error' && 'bg-destructive/10 text-destructive',
+        status === 'denied' && 'bg-muted text-muted-foreground',
+        status === 'permissionPrompt' && 'bg-amber-100 text-amber-800',
+      )}
+    >
+      {status === 'running' ? <LoaderCircle className="animate-spin" size={12} /> : null}
+      {formatToolStatus(status)}
+    </span>
+  );
+}
+
+function JsonPreview({
+  className,
+  label = 'Input',
+  value,
+}: {
+  className?: string;
+  label?: string;
+  value: Record<string, unknown>;
+}) {
+  return (
+    <div className={cn('rounded-md bg-muted p-2', className)}>
+      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words text-xs leading-5">
+        {formatJson(value)}
+      </pre>
+    </div>
   );
 }
 
@@ -687,4 +1201,105 @@ function ModelList({
       ) : null}
     </div>
   );
+}
+
+function buildModelOptions(
+  models: AiDetectedModel[],
+  profiles: Array<{
+    detection: { status: string };
+    id: string;
+    isTestRuntime: boolean;
+    label: string;
+    modelId: string;
+    modelLabel: string;
+    providerId: string;
+    providerLabel: string;
+  }>,
+) {
+  const providersWithModels = new Set(models.map((model) => model.providerId));
+  const fallbackModels = profiles
+    .filter(
+      (profile) =>
+        !profile.isTestRuntime &&
+        profile.detection.status === 'available' &&
+        !providersWithModels.has(profile.providerId),
+    )
+    .map<AiDetectedModel>((profile) => ({
+      available: true,
+      id: profile.modelId || profile.id,
+      label: profile.modelLabel || profile.label,
+      profileId: profile.id,
+      providerId: profile.providerId,
+      providerLabel: profile.providerLabel,
+    }));
+
+  return [...models, ...fallbackModels];
+}
+
+function formatJson(value: Record<string, unknown>) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function extractDiffText(value: Record<string, unknown> | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  for (const key of ['diff', 'patch', 'changes']) {
+    const entry = value[key];
+
+    if (typeof entry === 'string' && entry.trim()) {
+      return entry;
+    }
+
+    if (Array.isArray(entry) && entry.length > 0) {
+      return entry
+        .map((item) =>
+          typeof item === 'string' ? item : JSON.stringify(item, null, 2),
+        )
+        .join('\n');
+    }
+
+    if (entry && typeof entry === 'object') {
+      return JSON.stringify(entry, null, 2);
+    }
+  }
+
+  return null;
+}
+
+function formatRunState(state: string) {
+  switch (state) {
+    case 'running':
+      return 'Running';
+    case 'completed':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'stopped':
+      return 'Stopped';
+    default:
+      return state;
+  }
+}
+
+function formatToolStatus(status: AiPanelToolCall['status']) {
+  switch (status) {
+    case 'running':
+      return 'Running';
+    case 'success':
+      return 'Done';
+    case 'error':
+      return 'Error';
+    case 'denied':
+      return 'Denied';
+    case 'permissionPrompt':
+      return 'Waiting';
+  }
 }

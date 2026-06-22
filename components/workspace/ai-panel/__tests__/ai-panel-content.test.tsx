@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,8 +13,12 @@ const mocks = vi.hoisted(() => ({
   isTauriRuntime: vi.fn(),
   listAiAgentModels: vi.fn(),
   listAiAgentProfiles: vi.fn(),
+  listAiConversations: vi.fn(),
   readAppSettings: vi.fn(),
+  readAiConversation: vi.fn(),
   requestAiChat: vi.fn(),
+  respondAiPermission: vi.fn(),
+  saveAiConversation: vi.fn(),
   sendAiPrompt: vi.fn(),
   startAiSession: vi.fn(),
   stopAiSession: vi.fn(),
@@ -26,6 +30,8 @@ vi.mock('@/components/workspace/workspace-api', () => ({
   listAiAgentProfiles: (...args: unknown[]) =>
     mocks.listAiAgentProfiles(...args),
   listAiAgentModels: (...args: unknown[]) => mocks.listAiAgentModels(...args),
+  listAiConversations: (...args: unknown[]) =>
+    mocks.listAiConversations(...args),
   listenAiEvents: (handler: (event: AiRuntimeEvent) => void) => {
     mocks.aiHandlers.push(handler);
 
@@ -38,7 +44,11 @@ vi.mock('@/components/workspace/workspace-api', () => ({
     });
   },
   readAppSettings: (...args: unknown[]) => mocks.readAppSettings(...args),
+  readAiConversation: (...args: unknown[]) => mocks.readAiConversation(...args),
   requestAiChat: (...args: unknown[]) => mocks.requestAiChat(...args),
+  respondAiPermission: (...args: unknown[]) =>
+    mocks.respondAiPermission(...args),
+  saveAiConversation: (...args: unknown[]) => mocks.saveAiConversation(...args),
   sendAiPrompt: (...args: unknown[]) => mocks.sendAiPrompt(...args),
   startAiSession: (...args: unknown[]) => mocks.startAiSession(...args),
   stopAiSession: (...args: unknown[]) => mocks.stopAiSession(...args),
@@ -103,6 +113,26 @@ const codexProfile = {
   providerLabel: 'Codex',
 };
 
+const claudeProfile = {
+  capabilities: {
+    diff: true,
+    models: true,
+    readWorkspace: true,
+    shell: false,
+    slashCommands: true,
+    writeWorkspace: true,
+  },
+  detection: { status: 'available' },
+  id: 'claude:local',
+  isTestRuntime: false,
+  kind: 'claude_cli',
+  label: 'Claude Code',
+  modelId: 'claude:local',
+  modelLabel: 'Claude Code',
+  providerId: 'claude',
+  providerLabel: 'Claude',
+};
+
 const defaultAppSettings = {
   ai: {
     enabledProfileId: 'fake-echo',
@@ -134,9 +164,13 @@ describe('AiPanelContent', () => {
     mocks.aiHandlers.splice(0, mocks.aiHandlers.length);
     mocks.listAiAgentProfiles.mockReset();
     mocks.listAiAgentModels.mockReset();
+    mocks.listAiConversations.mockReset();
     mocks.isTauriRuntime.mockReset();
     mocks.readAppSettings.mockReset();
+    mocks.readAiConversation.mockReset();
     mocks.requestAiChat.mockReset();
+    mocks.respondAiPermission.mockReset();
+    mocks.saveAiConversation.mockReset();
     mocks.startAiSession.mockReset();
     mocks.sendAiPrompt.mockReset();
     mocks.cancelAiTurn.mockReset();
@@ -161,11 +195,45 @@ describe('AiPanelContent', () => {
         providerLabel: 'Codex',
       },
     ]);
+    mocks.listAiConversations.mockResolvedValue([]);
     mocks.isTauriRuntime.mockReturnValue(true);
     mocks.readAppSettings.mockResolvedValue(defaultAppSettings);
     mocks.requestAiChat.mockResolvedValue({
       body: { output_text: 'Provider response' },
       status: 200,
+    });
+    mocks.respondAiPermission.mockResolvedValue(undefined);
+    mocks.readAiConversation.mockResolvedValue({
+      createdAt: 1,
+      documentPath: 'guide.md',
+      documentTitle: '指南',
+      id: 'conversation-1',
+      messages: [
+        { content: '之前的问题', id: 'm1', role: 'user' },
+        { content: '之前的回答', id: 'm2', role: 'assistant' },
+      ],
+      permissions: [],
+      profileId: 'fake-echo',
+      profileLabel: 'Fake Echo',
+      providerId: 'local',
+      providerLabel: 'Local',
+      title: '真实会话',
+      tools: [],
+      updatedAt: 2,
+      usage: null,
+    });
+    mocks.saveAiConversation.mockResolvedValue({
+      createdAt: 1,
+      documentPath: 'guide.md',
+      documentTitle: '指南',
+      id: 'session-1',
+      messageCount: 1,
+      profileId: 'fake-echo',
+      profileLabel: 'Fake Echo',
+      providerId: 'local',
+      providerLabel: 'Local',
+      title: '总结此页面',
+      updatedAt: 2,
     });
     mocks.startAiSession.mockResolvedValue({
       profileId: 'fake-echo',
@@ -265,6 +333,32 @@ describe('AiPanelContent', () => {
     );
   });
 
+  it('falls back to detected local assistants when runtime model list is empty', async () => {
+    const user = userEvent.setup();
+
+    mocks.listAiAgentProfiles.mockResolvedValueOnce([
+      fakeEchoProfile,
+      claudeProfile,
+    ]);
+    mocks.listAiAgentModels.mockResolvedValueOnce([]);
+
+    render(
+      <AiPanelContent
+        currentDocument={currentDocument}
+        documentPanelData={documentPanelData}
+        workspaceRootPath="/repo"
+      />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '选择模型' }));
+
+    expect(await screen.findByText('Claude Models')).toBeTruthy();
+    expect(screen.getAllByText('Claude Code').length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText('当前本地助手没有返回可选择模型。'),
+    ).toBeNull();
+  });
+
   it('places model controls and send action inside the composer footer', async () => {
     render(
       <AiPanelContent
@@ -302,10 +396,54 @@ describe('AiPanelContent', () => {
 
     await user.click(screen.getByRole('button', { name: '历史会话' }));
     expect(await screen.findByPlaceholderText('Search...')).toBeTruthy();
-    expect(screen.getByText('权限上下文代码注释补充')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '新会话' }));
     expect(screen.getByText('New session')).toBeTruthy();
+  });
+
+  it('loads real conversation history and restores a selected conversation', async () => {
+    const user = userEvent.setup();
+
+    mocks.listAiConversations.mockResolvedValueOnce([
+      {
+        createdAt: 1,
+        documentPath: 'guide.md',
+        documentTitle: '指南',
+        id: 'conversation-1',
+        messageCount: 2,
+        profileId: 'fake-echo',
+        profileLabel: 'Fake Echo',
+        providerId: 'local',
+        providerLabel: 'Local',
+        title: '真实会话',
+        updatedAt: 2,
+      },
+    ]);
+
+    render(
+      <AiPanelContent
+        currentDocument={currentDocument}
+        documentPanelData={documentPanelData}
+        workspaceRootPath="/repo"
+      />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: '历史会话' }));
+
+    await waitFor(() =>
+      expect(mocks.listAiConversations).toHaveBeenCalledWith('/repo'),
+    );
+    expect(await screen.findByText('真实会话')).toBeTruthy();
+    expect(screen.queryByText('权限上下文代码注释补充')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '恢复会话 真实会话' }));
+
+    expect(mocks.readAiConversation).toHaveBeenCalledWith(
+      '/repo',
+      'conversation-1',
+    );
+    expect(await screen.findByText('之前的问题')).toBeTruthy();
+    expect(screen.getByText('之前的回答')).toBeTruthy();
   });
 
   it('blocks prompts when no local AI profile is available', async () => {
@@ -391,6 +529,22 @@ describe('AiPanelContent', () => {
       }),
     );
     expect(screen.getAllByText('总结此页面')).toHaveLength(1);
+    await waitFor(() =>
+      expect(mocks.saveAiConversation).toHaveBeenCalledWith(
+        '/repo',
+        expect.objectContaining({
+          documentPath: 'guide.md',
+          documentTitle: '指南',
+          messages: expect.arrayContaining([
+            expect.objectContaining({
+              content: '总结此页面',
+              role: 'user',
+            }),
+          ]),
+          title: '总结此页面',
+        }),
+      ),
+    );
   });
 
   it('does not submit prompts through configured provider runtime', async () => {
@@ -493,6 +647,86 @@ describe('AiPanelContent', () => {
     });
 
     expect(await screen.findByText('Echo: hello')).toBeTruthy();
+  });
+
+  it('renders tool, permission, usage, and run state cards from runtime events', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AiPanelContent
+        currentDocument={currentDocument}
+        documentPanelData={documentPanelData}
+        workspaceRootPath="/repo"
+      />,
+    );
+
+    await waitFor(() => expect(mocks.aiHandlers).toHaveLength(1));
+    act(() => {
+      mocks.aiHandlers[0]({
+        session: {
+          profileId: 'claude:local',
+          rootPath: '/repo',
+          sessionId: 'ai-1',
+          status: 'running',
+        },
+        type: 'sessionStarted',
+      });
+      mocks.aiHandlers[0]({
+        error: undefined,
+        sessionId: 'ai-1',
+        state: 'running',
+        type: 'runState',
+      });
+      mocks.aiHandlers[0]({
+        input: { command: 'pnpm test' },
+        sessionId: 'ai-1',
+        toolCallId: 'tool-1',
+        toolName: 'Bash',
+        type: 'toolStarted',
+      });
+      mocks.aiHandlers[0]({
+        reason: 'needs approval',
+        requestId: 'req-1',
+        sessionId: 'ai-1',
+        toolCallId: 'tool-1',
+        toolInput: { command: 'pnpm test' },
+        toolName: 'Bash',
+        type: 'permissionPrompt',
+      });
+      mocks.aiHandlers[0]({
+        cacheReadTokens: 3,
+        inputTokens: 10,
+        model: 'claude-sonnet',
+        outputTokens: 12,
+        sessionId: 'ai-1',
+        totalCostUsd: 0.01,
+        type: 'usageUpdated',
+      });
+      mocks.aiHandlers[0]({
+        input: { changes: [{ diff: '--- README.md\n+++ README.md' }] },
+        sessionId: 'ai-1',
+        toolCallId: 'tool-2',
+        toolName: 'Edit',
+        type: 'toolStarted',
+      });
+    });
+
+    expect(await screen.findByText('Bash')).toBeTruthy();
+    expect(screen.getAllByText(/pnpm test/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Diff')).toBeTruthy();
+    expect(screen.getByText(/README.md/)).toBeTruthy();
+    expect(screen.getByText('needs approval')).toBeTruthy();
+    expect(screen.getByText(/claude-sonnet/)).toBeTruthy();
+    expect(screen.getAllByText(/Running/).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: '允许 Bash' }));
+
+    expect(mocks.respondAiPermission).toHaveBeenCalledWith({
+      behavior: 'allow',
+      requestId: 'req-1',
+      sessionId: 'ai-1',
+      updatedInput: { command: 'pnpm test' },
+    });
   });
 
   it('cancels the current turn', async () => {

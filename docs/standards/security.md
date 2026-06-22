@@ -23,3 +23,4 @@ referenced_by: AGENTS.md#knowledge-map
 
 - UploadThing accepts broad file categories for editor uploads. Validate any expansion of upload behavior against user data exposure and storage expectations.
 - AI route changes must preserve abort handling and must not expose keys or raw upstream errors to the client.
+- AI conversation history may contain user prompts, assistant output, tool inputs, and local command/file references. Store it only inside the selected workspace metadata area and never include API keys, auth tokens, or provider secrets.

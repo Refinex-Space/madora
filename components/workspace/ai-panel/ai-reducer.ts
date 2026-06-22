@@ -66,6 +66,18 @@ export function reduceAiPanelState(
         ],
         status: 'streaming',
       };
+    case 'conversationRestored':
+      return {
+        ...state,
+        error: null,
+        messages: action.conversation.messages,
+        permissions: action.conversation.permissions,
+        runState: action.conversation.runState ?? null,
+        session: null,
+        status: 'idle',
+        tools: action.conversation.tools,
+        usage: action.conversation.usage ?? null,
+      };
     case 'runtimeEventReceived':
       return applyRuntimeEvent(state, action.event);
     case 'errorRaised':
