@@ -45,6 +45,7 @@ import {
   recordWorkspaceHistory,
   removeWorkspaceHistory,
   renameWorkspaceNode,
+  respondAiPermission,
   requestAiChat,
   requestAiProviderJson,
   saveAppSettings,
@@ -528,6 +529,12 @@ describe('workspace-api AI runtime commands', () => {
       sessionId: 'ai-1',
     });
     await cancelAiTurn('ai-1');
+    await respondAiPermission({
+      behavior: 'allow',
+      requestId: 'req-1',
+      sessionId: 'ai-1',
+      updatedInput: { command: 'pwd' },
+    });
     await stopAiSession('ai-1');
     await getAiProviderSecretStatus('openai');
     await saveAiProviderSecret('openai', 'sk-test');
@@ -566,20 +573,28 @@ describe('workspace-api AI runtime commands', () => {
     expect(invokeMock).toHaveBeenNthCalledWith(5, 'cancel_ai_turn', {
       sessionId: 'ai-1',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(6, 'stop_ai_session', {
+    expect(invokeMock).toHaveBeenNthCalledWith(6, 'respond_ai_permission', {
+      input: {
+        behavior: 'allow',
+        requestId: 'req-1',
+        sessionId: 'ai-1',
+        updatedInput: { command: 'pwd' },
+      },
+    });
+    expect(invokeMock).toHaveBeenNthCalledWith(7, 'stop_ai_session', {
       sessionId: 'ai-1',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(7, 'get_ai_provider_secret_status', {
+    expect(invokeMock).toHaveBeenNthCalledWith(8, 'get_ai_provider_secret_status', {
       providerId: 'openai',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(8, 'save_ai_provider_secret', {
+    expect(invokeMock).toHaveBeenNthCalledWith(9, 'save_ai_provider_secret', {
       providerId: 'openai',
       secret: 'sk-test',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(9, 'delete_ai_provider_secret', {
+    expect(invokeMock).toHaveBeenNthCalledWith(10, 'delete_ai_provider_secret', {
       providerId: 'openai',
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(10, 'request_ai_provider_json', {
+    expect(invokeMock).toHaveBeenNthCalledWith(11, 'request_ai_provider_json', {
       request: {
         headers: {},
         method: 'GET',
@@ -587,7 +602,7 @@ describe('workspace-api AI runtime commands', () => {
         url: 'https://api.openai.com/v1/models',
       },
     });
-    expect(invokeMock).toHaveBeenNthCalledWith(11, 'request_ai_chat', {
+    expect(invokeMock).toHaveBeenNthCalledWith(12, 'request_ai_chat', {
       request: {
         body: '{"model":"gpt-5.4","input":"hello"}',
         headers: { 'OpenAI-Beta': 'responses=v1' },

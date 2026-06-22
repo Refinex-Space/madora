@@ -4,6 +4,7 @@ import type {
   AiDetectedModel,
   AiRuntimeEvent,
   AiSessionInfo,
+  RespondAiPermissionInput,
   SendAiPromptInput,
   StartAiSessionInput,
 } from './ai-panel/ai-types';
@@ -685,6 +686,12 @@ export async function cancelAiTurn(sessionId: string) {
   const { invoke } = await import('@tauri-apps/api/core');
 
   return invoke<void>('cancel_ai_turn', { sessionId });
+}
+
+export async function respondAiPermission(input: RespondAiPermissionInput) {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  return invoke<void>('respond_ai_permission', { input });
 }
 
 export async function stopAiSession(sessionId: string) {

@@ -30,6 +30,7 @@ pub struct AgentRuntimeState {
 struct AgentRuntime {
     sessions: HashMap<String, AiSessionInfo>,
     codex_actors: HashMap<String, CodexSessionActor>,
+    claude_actors: HashMap<String, ClaudeSessionActor>,
 }
 
 #[derive(Clone)]
@@ -40,6 +41,21 @@ struct CodexSessionActor {
 enum CodexActorCommand {
     SendPrompt { prompt: String },
     Interrupt,
+    Stop,
+}
+
+#[derive(Clone)]
+struct ClaudeSessionActor {
+    sender: mpsc::Sender<ClaudeActorCommand>,
+}
+
+enum ClaudeActorCommand {
+    SendPrompt { prompt: String },
+    Interrupt,
+    RespondPermission {
+        request_id: String,
+        response: serde_json::Value,
+    },
     Stop,
 }
 
@@ -134,6 +150,18 @@ pub struct SendAiPromptInput {
     pub session_id: String,
     pub prompt: String,
     pub context: AiContextPack,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RespondAiPermissionInput {
+    pub session_id: String,
+    pub request_id: String,
+    pub behavior: String,
+    pub updated_input: Option<serde_json::Value>,
+    pub updated_permissions: Option<Vec<serde_json::Value>>,
+    pub deny_message: Option<String>,
+    pub interrupt: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -341,12 +369,17 @@ pub fn start_ai_session(
     } else {
         None
     };
+    let claude_actor = if input.profile_id == "claude:local" {
+        Some(start_claude_actor(&app, &root, &session.session_id)?)
+    } else {
+        None
+    };
 
     let mut runtime = state
         .runtime
         .lock()
         .map_err(|_| "AI runtime 状态锁已损坏".to_string())?;
-    runtime.insert_session(session.clone(), codex_actor);
+    runtime.insert_session(session.clone(), codex_actor, claude_actor);
     emit_ai_event(
         &app,
         AiRuntimeEvent::SessionStarted {
@@ -381,13 +414,22 @@ pub fn send_ai_prompt(
 
     drop(runtime);
 
-    if let Some(actor) = runtime_actor_for_session(&state, &input.session_id)? {
+    if let Some(actor) = runtime_codex_actor_for_session(&state, &input.session_id)? {
         actor
             .sender
             .send(CodexActorCommand::SendPrompt {
                 prompt: build_assistant_prompt(&input),
             })
             .map_err(|_| "Codex 会话已停止".to_string())?;
+        return Ok(());
+    }
+    if let Some(actor) = runtime_claude_actor_for_session(&state, &input.session_id)? {
+        actor
+            .sender
+            .send(ClaudeActorCommand::SendPrompt {
+                prompt: build_assistant_prompt(&input),
+            })
+            .map_err(|_| "Claude Code 会话已停止".to_string())?;
         return Ok(());
     }
 
@@ -426,8 +468,12 @@ pub fn cancel_ai_turn(
     state: State<'_, AgentRuntimeState>,
     session_id: String,
 ) -> Result<(), String> {
-    if let Some(actor) = runtime_actor_for_session(&state, &session_id)? {
+    if let Some(actor) = runtime_codex_actor_for_session(&state, &session_id)? {
         let _ = actor.sender.send(CodexActorCommand::Interrupt);
+        return Ok(());
+    }
+    if let Some(actor) = runtime_claude_actor_for_session(&state, &session_id)? {
+        let _ = actor.sender.send(ClaudeActorCommand::Interrupt);
         return Ok(());
     }
 
@@ -440,6 +486,25 @@ pub fn cancel_ai_turn(
     );
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn respond_ai_permission(
+    state: State<'_, AgentRuntimeState>,
+    input: RespondAiPermissionInput,
+) -> Result<(), String> {
+    let Some(actor) = runtime_claude_actor_for_session(&state, &input.session_id)? else {
+        return Err("Claude Code 会话不存在或已停止".to_string());
+    };
+    let response = build_claude_permission_response(&input)?;
+
+    actor
+        .sender
+        .send(ClaudeActorCommand::RespondPermission {
+            request_id: input.request_id,
+            response,
+        })
+        .map_err(|_| "Claude Code 会话已停止".to_string())
 }
 
 #[tauri::command]
@@ -460,9 +525,17 @@ pub fn stop_ai_session(
 }
 
 impl AgentRuntime {
-    fn insert_session(&mut self, session: AiSessionInfo, codex_actor: Option<CodexSessionActor>) {
+    fn insert_session(
+        &mut self,
+        session: AiSessionInfo,
+        codex_actor: Option<CodexSessionActor>,
+        claude_actor: Option<ClaudeSessionActor>,
+    ) {
         if let Some(actor) = codex_actor {
             self.codex_actors.insert(session.session_id.clone(), actor);
+        }
+        if let Some(actor) = claude_actor {
+            self.claude_actors.insert(session.session_id.clone(), actor);
         }
         self.sessions
             .insert(session.session_id.clone(), session.clone());
@@ -475,6 +548,9 @@ impl AgentRuntime {
     fn stop_session(&mut self, session_id: &str) -> Result<(), String> {
         if let Some(actor) = self.codex_actors.remove(session_id) {
             let _ = actor.sender.send(CodexActorCommand::Stop);
+        }
+        if let Some(actor) = self.claude_actors.remove(session_id) {
+            let _ = actor.sender.send(ClaudeActorCommand::Stop);
         }
         self.sessions
             .remove(session_id)
@@ -492,7 +568,7 @@ fn create_session_info(profile_id: String, root: PathBuf) -> AiSessionInfo {
     }
 }
 
-fn runtime_actor_for_session(
+fn runtime_codex_actor_for_session(
     state: &State<'_, AgentRuntimeState>,
     session_id: &str,
 ) -> Result<Option<CodexSessionActor>, String> {
@@ -502,6 +578,18 @@ fn runtime_actor_for_session(
         .map_err(|_| "AI runtime 状态锁已损坏".to_string())?;
 
     Ok(runtime.codex_actors.get(session_id).cloned())
+}
+
+fn runtime_claude_actor_for_session(
+    state: &State<'_, AgentRuntimeState>,
+    session_id: &str,
+) -> Result<Option<ClaudeSessionActor>, String> {
+    let runtime = state
+        .runtime
+        .lock()
+        .map_err(|_| "AI runtime 状态锁已损坏".to_string())?;
+
+    Ok(runtime.claude_actors.get(session_id).cloned())
 }
 
 fn fake_echo_profile() -> AiAgentProfile {
@@ -1252,6 +1340,329 @@ fn emit_codex_actor_error(app: &AppHandle, session_id: &str, message: String) {
     );
 }
 
+fn start_claude_actor(
+    app: &AppHandle,
+    root: &Path,
+    session_id: &str,
+) -> Result<ClaudeSessionActor, String> {
+    let accounts = detect_ai_accounts_raw();
+    let account = accounts
+        .iter()
+        .find(|account| account.id == "claude" && account.status == "connected")
+        .ok_or_else(|| "Claude Code 本地助手不可用".to_string())?;
+    let command_path = account
+        .command_path
+        .as_deref()
+        .ok_or_else(|| "Claude Code 命令不可用".to_string())?;
+    let root_arg = root.to_string_lossy().to_string();
+
+    let mut child = Command::new(command_path)
+        .args([
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--input-format",
+            "stream-json",
+            "--verbose",
+            "--permission-prompt-tool",
+            "stdio",
+            "--add-dir",
+            &root_arg,
+        ])
+        .current_dir(root)
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("ANTHROPIC_AUTH_TOKEN")
+        .env_remove("CLAUDECODE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("无法启动 Claude Code stream-json: {error}"))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "无法写入 Claude Code".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "无法读取 Claude Code 输出".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "无法读取 Claude Code 诊断输出".to_string())?;
+    let (sender, receiver) = mpsc::channel();
+    let actor = ClaudeSessionActor {
+        sender: sender.clone(),
+    };
+    let app = app.clone();
+    let session_id = session_id.to_string();
+
+    std::thread::spawn(move || {
+        run_claude_actor(app, session_id, child, stdin, stdout, stderr, receiver);
+    });
+
+    Ok(actor)
+}
+
+fn run_claude_actor(
+    app: AppHandle,
+    session_id: String,
+    mut child: Child,
+    mut stdin: ChildStdin,
+    stdout: ChildStdout,
+    stderr: ChildStderr,
+    receiver: mpsc::Receiver<ClaudeActorCommand>,
+) {
+    let (message_sender, message_receiver) = mpsc::channel::<serde_json::Value>();
+    start_claude_stdout_reader(stdout, message_sender);
+    start_claude_stderr_reader(app.clone(), session_id.clone(), stderr);
+
+    let mut running = true;
+    while running {
+        while let Ok(message) = message_receiver.try_recv() {
+            handle_claude_actor_message(&app, &session_id, message);
+        }
+
+        match receiver.recv_timeout(Duration::from_millis(50)) {
+            Ok(ClaudeActorCommand::SendPrompt { prompt }) => {
+                emit_ai_event(
+                    &app,
+                    AiRuntimeEvent::RunState {
+                        error: None,
+                        exit_code: None,
+                        session_id: session_id.clone(),
+                        state: "running".to_string(),
+                    },
+                );
+                if let Err(error) = write_claude_user_prompt(&mut stdin, &prompt) {
+                    emit_claude_actor_error(&app, &session_id, error);
+                }
+            }
+            Ok(ClaudeActorCommand::Interrupt) => {
+                if let Err(error) = write_claude_interrupt(&mut stdin) {
+                    emit_claude_actor_error(&app, &session_id, error);
+                    let _ = child.kill();
+                    running = false;
+                }
+            }
+            Ok(ClaudeActorCommand::RespondPermission {
+                request_id,
+                response,
+            }) => {
+                if let Err(error) =
+                    write_claude_control_response(&mut stdin, &request_id, response)
+                {
+                    emit_claude_actor_error(&app, &session_id, error);
+                }
+            }
+            Ok(ClaudeActorCommand::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                running = false;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    emit_claude_actor_error(
+                        &app,
+                        &session_id,
+                        format!(
+                            "Claude Code 已退出{}",
+                            status
+                                .code()
+                                .map(|code| format!("，exit code={code}"))
+                                .unwrap_or_default()
+                        ),
+                    );
+                }
+                running = false;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                emit_claude_actor_error(
+                    &app,
+                    &session_id,
+                    format!("无法读取 Claude Code 进程状态: {error}"),
+                );
+                running = false;
+            }
+        }
+    }
+
+    while let Ok(message) = message_receiver.try_recv() {
+        handle_claude_actor_message(&app, &session_id, message);
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn start_claude_stdout_reader(stdout: ChildStdout, sender: mpsc::Sender<serde_json::Value>) {
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else {
+                break;
+            };
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            if sender.send(value).is_err() {
+                break;
+            }
+        }
+    });
+}
+
+fn start_claude_stderr_reader(app: AppHandle, session_id: String, stderr: ChildStderr) {
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines() {
+            let Ok(line) = line else {
+                break;
+            };
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if line.contains("error")
+                || line.contains("Error")
+                || line.contains("ERROR")
+                || line.contains("ZodError")
+            {
+                emit_claude_actor_error(&app, &session_id, line.to_string());
+            }
+        }
+    });
+}
+
+fn handle_claude_actor_message(app: &AppHandle, session_id: &str, message: serde_json::Value) {
+    for event in map_claude_message_to_runtime_events(session_id, &message) {
+        emit_ai_event(app, event);
+    }
+}
+
+fn write_claude_user_prompt(stdin: &mut ChildStdin, prompt: &str) -> Result<(), String> {
+    write_claude_json_line(stdin, build_claude_user_payload(prompt))
+}
+
+fn write_claude_interrupt(stdin: &mut ChildStdin) -> Result<(), String> {
+    write_claude_json_line(
+        stdin,
+        serde_json::json!({
+            "type": "control_request",
+            "request_id": format!("madora_interrupt_{}", Uuid::new_v4()),
+            "request": {
+                "subtype": "interrupt"
+            }
+        }),
+    )
+}
+
+fn write_claude_control_response(
+    stdin: &mut ChildStdin,
+    request_id: &str,
+    response: serde_json::Value,
+) -> Result<(), String> {
+    write_claude_json_line(
+        stdin,
+        serde_json::json!({
+            "type": "control_response",
+            "response": {
+                "subtype": "success",
+                "request_id": request_id,
+                "response": response,
+            }
+        }),
+    )
+}
+
+fn write_claude_json_line(stdin: &mut ChildStdin, value: serde_json::Value) -> Result<(), String> {
+    let mut line = serde_json::to_string(&value).map_err(|error| error.to_string())?;
+    line.push('\n');
+    stdin
+        .write_all(line.as_bytes())
+        .map_err(|error| format!("无法写入 Claude Code: {error}"))?;
+    stdin
+        .flush()
+        .map_err(|error| format!("无法刷新 Claude Code 请求: {error}"))
+}
+
+fn build_claude_user_payload(prompt: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "user",
+        "uuid": Uuid::new_v4().to_string(),
+        "message": {
+            "role": "user",
+            "content": prompt,
+        }
+    })
+}
+
+fn build_claude_permission_response(
+    input: &RespondAiPermissionInput,
+) -> Result<serde_json::Value, String> {
+    match input.behavior.as_str() {
+        "allow" => {
+            let mut response = serde_json::json!({
+                "behavior": "allow",
+                "updatedInput": input
+                    .updated_input
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            });
+
+            if let Some(permissions) = input
+                .updated_permissions
+                .as_ref()
+                .filter(|permissions| !permissions.is_empty())
+            {
+                response["updatedPermissions"] = serde_json::Value::Array(permissions.clone());
+            }
+
+            Ok(response)
+        }
+        "deny" => {
+            let mut response = serde_json::json!({
+                "behavior": "deny",
+                "message": input
+                    .deny_message
+                    .clone()
+                    .unwrap_or_else(|| "User denied permission".to_string()),
+            });
+
+            if input.interrupt == Some(true) {
+                response["interrupt"] = serde_json::json!(true);
+            }
+
+            Ok(response)
+        }
+        _ => Err("权限响应 behavior 仅支持 allow 或 deny".to_string()),
+    }
+}
+
+fn emit_claude_actor_error(app: &AppHandle, session_id: &str, message: String) {
+    emit_ai_event(
+        app,
+        AiRuntimeEvent::RunState {
+            error: Some(message.clone()),
+            exit_code: None,
+            session_id: session_id.to_string(),
+            state: "failed".to_string(),
+        },
+    );
+    emit_ai_event(
+        app,
+        AiRuntimeEvent::Error {
+            message,
+            session_id: Some(session_id.to_string()),
+        },
+    );
+}
+
 fn map_codex_message_to_runtime_events(
     session_id: &str,
     value: &serde_json::Value,
@@ -1564,6 +1975,414 @@ fn codex_tool_output(item: &serde_json::Value) -> serde_json::Value {
         }),
         _ => item.clone(),
     }
+}
+
+fn map_claude_message_to_runtime_events(
+    session_id: &str,
+    value: &serde_json::Value,
+) -> Vec<AiRuntimeEvent> {
+    let value = if value.get("type").and_then(|kind| kind.as_str()) == Some("stream_event") {
+        value.get("event").unwrap_or(value)
+    } else {
+        value
+    };
+    let Some(kind) = value.get("type").and_then(|kind| kind.as_str()) else {
+        return Vec::new();
+    };
+
+    match kind {
+        "system" => map_claude_system_event(session_id, value),
+        "content_block_start" => claude_content_block_start_event(session_id, value)
+            .into_iter()
+            .collect(),
+        "content_block_delta" => claude_content_block_delta_event(session_id, value)
+            .into_iter()
+            .collect(),
+        "assistant" => map_claude_assistant_event(session_id, value),
+        "user" => map_claude_user_event(session_id, value),
+        "result" => map_claude_result_event(session_id, value),
+        "control_request" => claude_permission_prompt_event(session_id, value)
+            .into_iter()
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn map_claude_system_event(
+    _session_id: &str,
+    _value: &serde_json::Value,
+) -> Vec<AiRuntimeEvent> {
+    Vec::new()
+}
+
+fn claude_content_block_start_event(
+    session_id: &str,
+    value: &serde_json::Value,
+) -> Option<AiRuntimeEvent> {
+    let block = value.get("content_block")?;
+
+    match block.get("type").and_then(|kind| kind.as_str())? {
+        "tool_use" => {
+            let tool_call_id = block.get("id").and_then(|id| id.as_str())?.to_string();
+            let tool_name = block
+                .get("name")
+                .and_then(|name| name.as_str())
+                .unwrap_or("Tool")
+                .to_string();
+
+            Some(AiRuntimeEvent::ToolStarted {
+                input: block
+                    .get("input")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+                parent_tool_call_id: claude_parent_tool_call_id(value),
+                session_id: session_id.to_string(),
+                tool_call_id,
+                tool_name,
+            })
+        }
+        "thinking" => block
+            .get("thinking")
+            .and_then(|thinking| thinking.as_str())
+            .filter(|thinking| !thinking.is_empty())
+            .map(|delta| AiRuntimeEvent::ThinkingDelta {
+                delta: delta.to_string(),
+                message_id: claude_message_id(value, "reasoning"),
+                parent_tool_call_id: claude_parent_tool_call_id(value),
+                session_id: session_id.to_string(),
+            }),
+        _ => None,
+    }
+}
+
+fn claude_content_block_delta_event(
+    session_id: &str,
+    value: &serde_json::Value,
+) -> Option<AiRuntimeEvent> {
+    let delta = value.get("delta")?;
+
+    match delta.get("type").and_then(|kind| kind.as_str())? {
+        "text_delta" => {
+            let text = delta.get("text").and_then(|text| text.as_str())?;
+
+            Some(AiRuntimeEvent::MessageDelta {
+                delta: text.to_string(),
+                message_id: claude_message_id(value, "assistant"),
+                session_id: session_id.to_string(),
+            })
+        }
+        "thinking_delta" | "thinking" => {
+            let text = delta
+                .get("thinking")
+                .and_then(|thinking| thinking.as_str())?;
+
+            Some(AiRuntimeEvent::ThinkingDelta {
+                delta: text.to_string(),
+                message_id: claude_message_id(value, "reasoning"),
+                parent_tool_call_id: claude_parent_tool_call_id(value),
+                session_id: session_id.to_string(),
+            })
+        }
+        "input_json_delta" => {
+            let partial_json = delta
+                .get("partial_json")
+                .and_then(|partial| partial.as_str())?;
+            let tool_call_id = value
+                .get("tool_use_id")
+                .or_else(|| value.get("content_block").and_then(|block| block.get("id")))
+                .and_then(|id| id.as_str())
+                .unwrap_or("tool")
+                .to_string();
+
+            Some(AiRuntimeEvent::ToolInputDelta {
+                parent_tool_call_id: claude_parent_tool_call_id(value),
+                partial_json: partial_json.to_string(),
+                session_id: session_id.to_string(),
+                tool_call_id,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn map_claude_assistant_event(
+    session_id: &str,
+    value: &serde_json::Value,
+) -> Vec<AiRuntimeEvent> {
+    let message = value.get("message").unwrap_or(value);
+    let message_id = message
+        .get("id")
+        .and_then(|id| id.as_str())
+        .unwrap_or("assistant")
+        .to_string();
+    let mut events = Vec::new();
+    let mut text = String::new();
+
+    if let Some(content) = message.get("content").and_then(|content| content.as_array()) {
+        for block in content {
+            match block.get("type").and_then(|kind| kind.as_str()) {
+                Some("text") => {
+                    if let Some(block_text) = block.get("text").and_then(|text| text.as_str()) {
+                        text.push_str(block_text);
+                    }
+                }
+                Some("tool_use") => {
+                    if let Some(event) = claude_tool_started_event(session_id, block) {
+                        events.push(event);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if !text.is_empty() {
+        events.insert(
+            0,
+            AiRuntimeEvent::MessageDelta {
+                delta: text,
+                message_id: message_id.clone(),
+                session_id: session_id.to_string(),
+            },
+        );
+        events.push(AiRuntimeEvent::MessageCompleted {
+            message_id,
+            session_id: session_id.to_string(),
+        });
+    }
+
+    events
+}
+
+fn claude_tool_started_event(
+    session_id: &str,
+    block: &serde_json::Value,
+) -> Option<AiRuntimeEvent> {
+    let tool_call_id = block.get("id").and_then(|id| id.as_str())?.to_string();
+    let tool_name = block
+        .get("name")
+        .and_then(|name| name.as_str())
+        .unwrap_or("Tool")
+        .to_string();
+    let input = block
+        .get("input")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    Some(AiRuntimeEvent::ToolStarted {
+        input,
+        parent_tool_call_id: None,
+        session_id: session_id.to_string(),
+        tool_call_id,
+        tool_name,
+    })
+}
+
+fn map_claude_user_event(
+    session_id: &str,
+    value: &serde_json::Value,
+) -> Vec<AiRuntimeEvent> {
+    let message = value.get("message").unwrap_or(value);
+    let Some(content) = message.get("content").and_then(|content| content.as_array()) else {
+        return Vec::new();
+    };
+
+    content
+        .iter()
+        .filter_map(|block| {
+            if block.get("type").and_then(|kind| kind.as_str()) != Some("tool_result") {
+                return None;
+            }
+
+            let tool_call_id = block
+                .get("tool_use_id")
+                .and_then(|id| id.as_str())
+                .unwrap_or("tool")
+                .to_string();
+            let status = if block
+                .get("is_error")
+                .and_then(|is_error| is_error.as_bool())
+                .unwrap_or(false)
+            {
+                "error"
+            } else {
+                "success"
+            };
+
+            Some(AiRuntimeEvent::ToolCompleted {
+                duration_ms: None,
+                output: serde_json::json!({
+                    "content": block.get("content").cloned().unwrap_or(serde_json::Value::Null),
+                }),
+                parent_tool_call_id: claude_parent_tool_call_id(value),
+                session_id: session_id.to_string(),
+                status: status.to_string(),
+                tool_call_id,
+                tool_name: "Tool".to_string(),
+            })
+        })
+        .collect()
+}
+
+fn map_claude_result_event(
+    session_id: &str,
+    value: &serde_json::Value,
+) -> Vec<AiRuntimeEvent> {
+    let mut events = Vec::new();
+
+    if let Some(usage) = value.get("usage") {
+        events.push(AiRuntimeEvent::UsageUpdated {
+            cache_read_tokens: usage
+                .get("cache_read_input_tokens")
+                .and_then(|tokens| tokens.as_u64()),
+            cache_write_tokens: usage
+                .get("cache_creation_input_tokens")
+                .and_then(|tokens| tokens.as_u64()),
+            input_tokens: usage
+                .get("input_tokens")
+                .and_then(|tokens| tokens.as_u64())
+                .unwrap_or(0),
+            model: value
+                .get("model")
+                .and_then(|model| model.as_str())
+                .map(|model| model.to_string()),
+            output_tokens: usage
+                .get("output_tokens")
+                .and_then(|tokens| tokens.as_u64())
+                .unwrap_or(0),
+            session_id: session_id.to_string(),
+            total_cost_usd: value
+                .get("total_cost_usd")
+                .or_else(|| value.get("cost_usd"))
+                .and_then(|cost| cost.as_f64()),
+        });
+    }
+
+    if let Some(denials) = value
+        .get("permission_denials")
+        .and_then(|denials| denials.as_array())
+    {
+        for denial in denials {
+            events.push(AiRuntimeEvent::PermissionDenied {
+                session_id: session_id.to_string(),
+                tool_call_id: denial
+                    .get("tool_use_id")
+                    .and_then(|id| id.as_str())
+                    .unwrap_or("tool")
+                    .to_string(),
+                tool_input: denial
+                    .get("tool_input")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+                tool_name: denial
+                    .get("tool_name")
+                    .and_then(|name| name.as_str())
+                    .unwrap_or("Tool")
+                    .to_string(),
+            });
+        }
+    }
+
+    let subtype = value
+        .get("subtype")
+        .and_then(|subtype| subtype.as_str())
+        .unwrap_or("success");
+    let error = subtype.starts_with("error").then(|| {
+        value
+            .get("error")
+            .and_then(|error| error.as_str())
+            .or_else(|| value.get("message").and_then(|message| message.as_str()))
+            .unwrap_or("Claude Code 运行失败")
+            .to_string()
+    });
+
+    events.push(AiRuntimeEvent::RunState {
+        error: error.clone(),
+        exit_code: None,
+        session_id: session_id.to_string(),
+        state: if error.is_some() {
+            "failed".to_string()
+        } else {
+            "completed".to_string()
+        },
+    });
+    events.push(AiRuntimeEvent::TurnCompleted {
+        cancelled: false,
+        session_id: session_id.to_string(),
+    });
+
+    events
+}
+
+fn claude_permission_prompt_event(
+    session_id: &str,
+    value: &serde_json::Value,
+) -> Option<AiRuntimeEvent> {
+    let request = value.get("request").unwrap_or(value);
+    let subtype = request
+        .get("subtype")
+        .and_then(|subtype| subtype.as_str())
+        .unwrap_or_default();
+
+    if !matches!(
+        subtype,
+        "permission_prompt" | "tool_permission" | "permission"
+    ) {
+        return None;
+    }
+
+    let request_id = value
+        .get("request_id")
+        .and_then(|id| id.as_str())
+        .unwrap_or("permission")
+        .to_string();
+    let tool_call_id = request
+        .get("tool_use_id")
+        .and_then(|id| id.as_str())
+        .unwrap_or(&request_id)
+        .to_string();
+    let tool_name = request
+        .get("tool_name")
+        .and_then(|name| name.as_str())
+        .unwrap_or("Tool")
+        .to_string();
+    let tool_input = request
+        .get("tool_input")
+        .or_else(|| request.get("input"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    Some(AiRuntimeEvent::PermissionPrompt {
+        parent_tool_call_id: claude_parent_tool_call_id(value),
+        reason: request
+            .get("reason")
+            .and_then(|reason| reason.as_str())
+            .unwrap_or("需要用户确认")
+            .to_string(),
+        request_id,
+        session_id: session_id.to_string(),
+        suggestions: None,
+        tool_call_id,
+        tool_input,
+        tool_name,
+    })
+}
+
+fn claude_parent_tool_call_id(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("parent_tool_use_id")
+        .and_then(|id| id.as_str())
+        .filter(|id| !id.is_empty())
+        .map(|id| id.to_string())
+}
+
+fn claude_message_id(value: &serde_json::Value, fallback: &str) -> String {
+    value
+        .get("message_id")
+        .or_else(|| value.get("id"))
+        .and_then(|id| id.as_str())
+        .unwrap_or(fallback)
+        .to_string()
 }
 
 fn is_available_detected_profile(profile_id: &str) -> bool {
@@ -2090,6 +2909,193 @@ mod tests {
     }
 
     #[test]
+    fn maps_claude_stream_json_to_runtime_events() {
+        let assistant_events = map_claude_message_to_runtime_events(
+            "ai-1",
+            &serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "id": "msg-1",
+                    "model": "claude-sonnet-4-5",
+                    "content": [
+                        {"type": "text", "text": "hello"},
+                        {"type": "tool_use", "id": "tool-1", "name": "Read", "input": {"file_path": "README.md"}}
+                    ]
+                }
+            }),
+        );
+        let tool_result_events = map_claude_message_to_runtime_events(
+            "ai-1",
+            &serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "tool-1", "content": "file text", "is_error": false}
+                    ]
+                }
+            }),
+        );
+        let usage_events = map_claude_message_to_runtime_events(
+            "ai-1",
+            &serde_json::json!({
+                "type": "result",
+                "subtype": "success",
+                "total_cost_usd": 0.01,
+                "usage": {
+                    "input_tokens": 11,
+                    "output_tokens": 22,
+                    "cache_read_input_tokens": 3,
+                    "cache_creation_input_tokens": 4
+                }
+            }),
+        );
+
+        assert!(assistant_events.iter().any(|event| matches!(
+            event,
+            AiRuntimeEvent::MessageDelta {
+                message_id,
+                delta,
+                ..
+            } if message_id == "msg-1" && delta == "hello"
+        )));
+        assert!(assistant_events.iter().any(|event| matches!(
+            event,
+            AiRuntimeEvent::ToolStarted {
+                tool_call_id,
+                tool_name,
+                input,
+                ..
+            } if tool_call_id == "tool-1"
+                && tool_name == "Read"
+                && input.get("file_path").and_then(|value| value.as_str()) == Some("README.md")
+        )));
+        assert!(tool_result_events.iter().any(|event| matches!(
+            event,
+            AiRuntimeEvent::ToolCompleted {
+                tool_call_id,
+                output,
+                status,
+                ..
+            } if tool_call_id == "tool-1"
+                && status == "success"
+                && output.get("content").and_then(|value| value.as_str()) == Some("file text")
+        )));
+        assert!(usage_events.iter().any(|event| matches!(
+            event,
+            AiRuntimeEvent::UsageUpdated {
+                input_tokens: 11,
+                output_tokens: 22,
+                cache_read_tokens: Some(3),
+                cache_write_tokens: Some(4),
+                total_cost_usd: Some(cost),
+                ..
+            } if (cost - 0.01).abs() < f64::EPSILON
+        )));
+        assert!(usage_events.iter().any(|event| matches!(
+            event,
+            AiRuntimeEvent::TurnCompleted {
+                cancelled: false,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn maps_claude_partial_and_permission_events() {
+        let partial_events = map_claude_message_to_runtime_events(
+            "ai-1",
+            &serde_json::json!({
+                "type": "stream_event",
+                "event": {
+                    "type": "content_block_delta",
+                    "delta": {
+                        "type": "text_delta",
+                        "text": "streamed"
+                    }
+                }
+            }),
+        );
+        let permission_events = map_claude_message_to_runtime_events(
+            "ai-1",
+            &serde_json::json!({
+                "type": "control_request",
+                "request_id": "req-1",
+                "request": {
+                    "subtype": "permission_prompt",
+                    "tool_use_id": "tool-2",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "rm file"},
+                    "reason": "dangerous command"
+                }
+            }),
+        );
+
+        assert!(matches!(
+            partial_events.first(),
+            Some(AiRuntimeEvent::MessageDelta {
+                delta,
+                ..
+            }) if delta == "streamed"
+        ));
+        assert!(matches!(
+            permission_events.first(),
+            Some(AiRuntimeEvent::PermissionPrompt {
+                request_id,
+                tool_call_id,
+                tool_name,
+                tool_input,
+                reason,
+                ..
+            }) if request_id == "req-1"
+                && tool_call_id == "tool-2"
+                && tool_name == "Bash"
+                && reason == "dangerous command"
+                && tool_input.get("command").and_then(|value| value.as_str()) == Some("rm file")
+        ));
+    }
+
+    #[test]
+    fn builds_claude_stream_json_user_payload() {
+        let payload = build_claude_user_payload("hello");
+
+        assert_eq!(payload["type"], "user");
+        assert!(payload["uuid"].as_str().is_some());
+        assert_eq!(payload["message"]["role"], "user");
+        assert_eq!(payload["message"]["content"], "hello");
+    }
+
+    #[test]
+    fn builds_claude_permission_response_shapes() {
+        let allow = build_claude_permission_response(&RespondAiPermissionInput {
+            behavior: "allow".to_string(),
+            deny_message: None,
+            interrupt: None,
+            request_id: "req-1".to_string(),
+            session_id: "ai-1".to_string(),
+            updated_input: Some(serde_json::json!({"command": "pwd"})),
+            updated_permissions: Some(vec![serde_json::json!({"type": "allow"})]),
+        })
+        .expect("allow response should build");
+        let deny = build_claude_permission_response(&RespondAiPermissionInput {
+            behavior: "deny".to_string(),
+            deny_message: Some("no".to_string()),
+            interrupt: Some(true),
+            request_id: "req-1".to_string(),
+            session_id: "ai-1".to_string(),
+            updated_input: None,
+            updated_permissions: None,
+        })
+        .expect("deny response should build");
+
+        assert_eq!(allow["behavior"], "allow");
+        assert_eq!(allow["updatedInput"]["command"], "pwd");
+        assert!(allow["updatedPermissions"].as_array().is_some());
+        assert_eq!(deny["behavior"], "deny");
+        assert_eq!(deny["message"], "no");
+        assert_eq!(deny["interrupt"], true);
+    }
+
+    #[test]
     fn validates_existing_directory_as_agent_root() {
         let temp_dir = TempDir::new().expect("创建临时目录失败");
         let root = validate_agent_root(&temp_dir.path().to_string_lossy()).expect("校验工作区失败");
@@ -2113,7 +3119,7 @@ mod tests {
             "fake-echo".to_string(),
             temp_dir.path().canonicalize().unwrap(),
         );
-        runtime.insert_session(session.clone(), None);
+        runtime.insert_session(session.clone(), None, None);
 
         assert!(runtime.session(&session.session_id).is_some());
         runtime

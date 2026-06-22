@@ -28,6 +28,7 @@ pub fn run() {
             agent_runtime::start_ai_session,
             agent_runtime::send_ai_prompt,
             agent_runtime::cancel_ai_turn,
+            agent_runtime::respond_ai_permission,
             agent_runtime::stop_ai_session,
             ai_http::request_ai_provider_json,
             ai_http::request_ai_chat,

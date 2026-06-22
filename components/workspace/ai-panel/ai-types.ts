@@ -101,6 +101,16 @@ export interface SendAiPromptInput {
   sessionId: string;
 }
 
+export interface RespondAiPermissionInput {
+  sessionId: string;
+  requestId: string;
+  behavior: 'allow' | 'deny';
+  updatedInput?: Record<string, unknown>;
+  updatedPermissions?: Array<Record<string, unknown>>;
+  denyMessage?: string;
+  interrupt?: boolean;
+}
+
 export interface AiSessionInfo {
   profileId: string;
   rootPath: string;
