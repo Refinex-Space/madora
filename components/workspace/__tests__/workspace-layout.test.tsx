@@ -112,24 +112,34 @@ vi.mock('@/components/editor/markdown-editor', () => ({
   MarkdownEditor: ({
     documentKey,
     markdown,
+    onMarkdownChange,
     pageWidthMode,
     readOnly,
   }: {
     documentKey?: string;
     markdown?: string;
+    onMarkdownChange?: (markdown: string) => void;
     pageWidthMode?: string;
     readOnly?: boolean;
   }) => (
-    <button
-      data-document-key={documentKey}
-      data-page-width-mode={pageWidthMode}
-      data-markdown={markdown}
-      data-read-only={String(Boolean(readOnly))}
-      data-testid="markdown-editor"
-      type="button"
-    >
-      editor
-    </button>
+    <div>
+      <button
+        data-document-key={documentKey}
+        data-page-width-mode={pageWidthMode}
+        data-markdown={markdown}
+        data-read-only={String(Boolean(readOnly))}
+        data-testid="markdown-editor"
+        type="button"
+      >
+        editor
+      </button>
+      <button
+        type="button"
+        onClick={() => onMarkdownChange?.(`${markdown ?? ''}\n编辑`)}
+      >
+        模拟编辑器输入
+      </button>
+    </div>
   ),
 }));
 
@@ -1161,32 +1171,7 @@ describe('WorkspaceLayout', () => {
     );
   });
 
-  it('splits a tab into a second editor group', async () => {
-    const user = userEvent.setup();
-    readMarkdownDocumentMock
-      .mockResolvedValueOnce(markdownDocument({
-        path: '/repo/a.md',
-        title: '文档 A',
-      }))
-      .mockResolvedValueOnce(markdownDocument({
-        path: '/repo/b.md',
-        title: '文档 B',
-      }));
-
-    render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
-
-    await user.click(screen.getByText('文档 A'));
-
-    await user.pointer({
-      keys: '[MouseRight]',
-      target: await screen.findByRole('tab', { name: /文档 A/ }),
-    });
-    await user.click(await screen.findByRole('menuitem', { name: '向右拆分' }));
-
-    expect(screen.getAllByTestId(/document-editor-group-/u)).toHaveLength(2);
-  });
-
-  it('does not show split focus ring in a single editor group', async () => {
+  it('does not show split actions in the tab context menu', async () => {
     const user = userEvent.setup();
     readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
       path: '/repo/a.md',
@@ -1197,70 +1182,14 @@ describe('WorkspaceLayout', () => {
 
     await user.click(screen.getByText('文档 A'));
 
-    expect(screen.getByTestId('document-editor-group-group-1').className).not
-      .toContain('ring-1');
-  });
-
-  it('closes a split pane when its last tab is closed', async () => {
-    const user = userEvent.setup();
-    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
-      path: '/repo/a.md',
-      title: '文档 A',
-    }));
-
-    render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
-
-    await user.click(screen.getByText('文档 A'));
     await user.pointer({
       keys: '[MouseRight]',
       target: await screen.findByRole('tab', { name: /文档 A/ }),
     });
-    await user.click(await screen.findByRole('menuitem', { name: '向右拆分' }));
 
-    const [, splitGroup] = screen.getAllByTestId(/document-editor-group-/u);
-    await user.click(
-      within(splitGroup).getByRole('button', { name: /关闭标签页 文档 A/ }),
-    );
-
-    expect(screen.getAllByTestId(/document-editor-group-/u)).toHaveLength(1);
-    expect(screen.queryByText('没有打开的标签页')).toBeNull();
-    expect(screen.getByTestId('document-editor-group-group-1').className).not
-      .toContain('ring-1');
-  });
-
-  it('keeps editor content visible in each split group', async () => {
-    const user = userEvent.setup();
-    readMarkdownDocumentMock
-      .mockResolvedValueOnce(markdownDocument({
-        body: 'A body',
-        path: '/repo/a.md',
-        title: '文档 A',
-      }))
-      .mockResolvedValueOnce(markdownDocument({
-        body: 'B body',
-        path: '/repo/b.md',
-        title: '文档 B',
-      }));
-
-    render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
-
-    await user.click(screen.getByText('文档 A'));
-    await user.click(screen.getByText('文档 B'));
-    await user.pointer({
-      keys: '[MouseRight]',
-      target: await screen.findByRole('tab', { name: /文档 B/ }),
-    });
-    await user.click(await screen.findByRole('menuitem', { name: '向右拆分' }));
-
-    expect(screen.getAllByTestId('markdown-editor')).toHaveLength(2);
-    expect(
-      screen
-        .getAllByTestId('markdown-editor')
-        .map((editor) => editor.getAttribute('data-markdown')),
-    ).toEqual([
-      expect.stringContaining('文档 B'),
-      expect.stringContaining('文档 B'),
-    ]);
+    expect(await screen.findByRole('menuitem', { name: '关闭' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: '向右拆分' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: '向下拆分' })).toBeNull();
   });
 
   it('keeps cached editor visible while reactivating an already opened tab', async () => {
@@ -1301,28 +1230,27 @@ describe('WorkspaceLayout', () => {
     }));
   });
 
-  it('uses unique editor keys for split panes showing the same document', async () => {
+  it('keeps the editor key stable while editing active content', async () => {
     const user = userEvent.setup();
-    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
-      body: 'A body',
-      path: '/repo/a.md',
-      title: '文档 A',
-    }));
+    readMarkdownDocumentMock.mockImplementation(async (_rootPath, documentPath) =>
+      markdownDocument({
+        body: documentPath === '/repo/a.md' ? 'A body' : 'B body',
+        path: documentPath,
+        title: documentPath === '/repo/a.md' ? '文档 A' : '文档 B',
+      }),
+    );
 
     render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
 
     await user.click(screen.getByText('文档 A'));
-    await user.pointer({
-      keys: '[MouseRight]',
-      target: await screen.findByRole('tab', { name: /文档 A/ }),
-    });
-    await user.click(await screen.findByRole('menuitem', { name: '向右拆分' }));
+    await user.click(screen.getByText('文档 B'));
+    const editor = await screen.findByTestId('markdown-editor');
+    const initialKey = editor.getAttribute('data-document-key');
 
-    const editorKeys = screen
-      .getAllByTestId('markdown-editor')
-      .map((editor) => editor.getAttribute('data-document-key'));
+    await user.click(screen.getByText('模拟编辑器输入'));
 
-    expect(new Set(editorKeys).size).toBe(editorKeys.length);
+    expect(screen.getByTestId('markdown-editor').getAttribute('data-document-key'))
+      .toBe(initialKey);
   });
 
   it('shows a polished directory page and opens document cards', async () => {

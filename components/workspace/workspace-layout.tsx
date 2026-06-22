@@ -49,19 +49,16 @@ import {
 } from './daily-notes';
 import { DocumentTabBar } from './document-tab-bar';
 import {
-  closeAllTabsInGroup,
-  closeOtherTabsInGroup,
-  closeTabInGroup,
-  closeTabsToLeftInGroup,
-  closeTabsToRightInGroup,
+  closeAllDocumentTabs,
+  closeDocumentTab,
+  closeDocumentTabsToLeft,
+  closeDocumentTabsToRight,
+  closeOtherDocumentTabs,
   createInitialEditorLayout,
-  getActiveEditorGroup,
   getActiveTab,
-  openDocumentInGroup,
-  selectTabInGroup,
-  splitEditorGroup,
+  openDocumentTab,
+  selectDocumentTab,
   type DocumentEditorLayout,
-  type EditorSplitDirection,
 } from './document-tabs';
 import { EditorPane, type RecentWorkspaceDocument } from './editor-pane';
 import { GitDiffView } from './git-diff-view';
@@ -330,9 +327,7 @@ export function WorkspaceLayout({
           activePanelDocumentPath,
         )
       : workspace.currentDocument;
-  const hasOpenDocumentTabs = documentEditorLayout.groups.some(
-    (group) => group.tabs.length > 0,
-  );
+  const hasOpenDocumentTabs = documentEditorLayout.tabs.length > 0;
   const dailyContentDates = React.useMemo(
     () => getDailyContentDates(dailyNoteEntries),
     [dailyNoteEntries],
@@ -1407,7 +1402,7 @@ export function WorkspaceLayout({
 
       setSystemPage(null);
       clearPendingDocumentOpen();
-      setDocumentEditorLayout((current) => openDocumentInGroup(current, node));
+      setDocumentEditorLayout((current) => openDocumentTab(current, node));
       setActiveEditorDocumentPath(node.absolutePath);
       rememberRecentDocument(node);
       const draft = await workspace.openDocument(node);
@@ -1458,9 +1453,7 @@ export function WorkspaceLayout({
       const created = await workspace.createDocument(parentPath);
 
       if (created) {
-        setDocumentEditorLayout((current) =>
-          openDocumentInGroup(current, created),
-        );
+        setDocumentEditorLayout((current) => openDocumentTab(current, created));
         setActiveEditorDocumentPath(created.absolutePath);
         rememberRecentDocument(created);
       }
@@ -1572,7 +1565,7 @@ export function WorkspaceLayout({
 
   const openActiveDocumentForLayout = React.useCallback(
     (layout: DocumentEditorLayout) => {
-      const activeTab = getActiveTab(getActiveEditorGroup(layout));
+      const activeTab = getActiveTab(layout);
 
       if (!activeTab) {
         clearPendingDocumentOpen();
@@ -1601,7 +1594,7 @@ export function WorkspaceLayout({
         return {
           ...current,
           [documentPath]: {
-            documentVersion: (currentSession?.documentVersion ?? 0) + 1,
+            documentVersion: currentSession?.documentVersion ?? 0,
             markdown,
           },
         };
@@ -1623,81 +1616,49 @@ export function WorkspaceLayout({
     [openActiveDocumentForLayout],
   );
 
-  const activateDocumentEditorGroup = React.useCallback(
-    (groupId: string, tabPath: string) => {
-      const nextLayout = selectTabInGroup(documentEditorLayout, groupId, tabPath);
-
-      if (nextLayout === documentEditorLayout) {
-        return;
-      }
-
-      applyDocumentEditorLayout(nextLayout);
-    },
-    [applyDocumentEditorLayout, documentEditorLayout],
-  );
-
   const handleSelectDocumentTab = React.useCallback(
-    (groupId: string, tabPath: string) => {
-      applyDocumentEditorLayout(
-        selectTabInGroup(documentEditorLayout, groupId, tabPath),
-      );
+    (tabPath: string) => {
+      applyDocumentEditorLayout(selectDocumentTab(documentEditorLayout, tabPath));
     },
     [applyDocumentEditorLayout, documentEditorLayout],
   );
 
   const handleCloseDocumentTab = React.useCallback(
-    (groupId: string, tabPath: string) => {
-      applyDocumentEditorLayout(
-        closeTabInGroup(documentEditorLayout, groupId, tabPath),
-      );
+    (tabPath: string) => {
+      applyDocumentEditorLayout(closeDocumentTab(documentEditorLayout, tabPath));
     },
     [applyDocumentEditorLayout, documentEditorLayout],
   );
 
   const handleCloseOtherDocumentTabs = React.useCallback(
-    (groupId: string, tabPath: string) => {
+    (tabPath: string) => {
       applyDocumentEditorLayout(
-        closeOtherTabsInGroup(documentEditorLayout, groupId, tabPath),
+        closeOtherDocumentTabs(documentEditorLayout, tabPath),
       );
     },
     [applyDocumentEditorLayout, documentEditorLayout],
   );
 
   const handleCloseAllDocumentTabs = React.useCallback(
-    (groupId: string) => {
-      applyDocumentEditorLayout(
-        closeAllTabsInGroup(documentEditorLayout, groupId),
-      );
+    () => {
+      applyDocumentEditorLayout(closeAllDocumentTabs());
     },
-    [applyDocumentEditorLayout, documentEditorLayout],
+    [applyDocumentEditorLayout],
   );
 
   const handleCloseDocumentTabsToLeft = React.useCallback(
-    (groupId: string, tabPath: string) => {
+    (tabPath: string) => {
       applyDocumentEditorLayout(
-        closeTabsToLeftInGroup(documentEditorLayout, groupId, tabPath),
+        closeDocumentTabsToLeft(documentEditorLayout, tabPath),
       );
     },
     [applyDocumentEditorLayout, documentEditorLayout],
   );
 
   const handleCloseDocumentTabsToRight = React.useCallback(
-    (groupId: string, tabPath: string) => {
+    (tabPath: string) => {
       applyDocumentEditorLayout(
-        closeTabsToRightInGroup(documentEditorLayout, groupId, tabPath),
-      );
-    },
-    [applyDocumentEditorLayout, documentEditorLayout],
-  );
-
-  const handleSplitDocumentTab = React.useCallback(
-    (
-      groupId: string,
-      tabPath: string,
-      direction: EditorSplitDirection,
-    ) => {
-      applyDocumentEditorLayout(
-        splitEditorGroup(documentEditorLayout, groupId, tabPath, direction),
+        closeDocumentTabsToRight(documentEditorLayout, tabPath),
       );
     },
     [applyDocumentEditorLayout, documentEditorLayout],
@@ -1948,7 +1909,6 @@ export function WorkspaceLayout({
                         pageWidthMode={pageWidthMode}
                         workspaceRootPath={workspace.snapshot?.rootPath ?? null}
                         getDocumentReadOnly={getDocumentReadOnly}
-                        onActivateGroup={activateDocumentEditorGroup}
                         onCloseAllTabs={handleCloseAllDocumentTabs}
                         onCloseOtherTabs={handleCloseOtherDocumentTabs}
                         onCloseTab={handleCloseDocumentTab}
@@ -1960,7 +1920,6 @@ export function WorkspaceLayout({
                           void workspace.saveCurrentDocumentNow()
                         }
                         onSelectTab={handleSelectDocumentTab}
-                        onSplitTab={handleSplitDocumentTab}
                       />
                     ) : (
                       <EditorPane
@@ -2528,7 +2487,6 @@ function DocumentEditorSurface({
   pageWidthMode,
   workspaceRootPath,
   getDocumentReadOnly,
-  onActivateGroup,
   onCloseAllTabs,
   onCloseOtherTabs,
   onCloseTab,
@@ -2538,7 +2496,6 @@ function DocumentEditorSurface({
   onRetryDocument,
   onSaveRequested,
   onSelectTab,
-  onSplitTab,
 }: {
   activeDocumentPath: string | null;
   currentDocumentPath: string | null;
@@ -2551,117 +2508,73 @@ function DocumentEditorSurface({
   pageWidthMode: PageWidthMode;
   workspaceRootPath: string | null;
   getDocumentReadOnly: (documentPath: string) => boolean;
-  onActivateGroup: (groupId: string, tabPath: string) => void;
-  onCloseAllTabs: (groupId: string) => void;
-  onCloseOtherTabs: (groupId: string, tabPath: string) => void;
-  onCloseTab: (groupId: string, tabPath: string) => void;
-  onCloseTabsToLeft: (groupId: string, tabPath: string) => void;
-  onCloseTabsToRight: (groupId: string, tabPath: string) => void;
+  onCloseAllTabs: () => void;
+  onCloseOtherTabs: (tabPath: string) => void;
+  onCloseTab: (tabPath: string) => void;
+  onCloseTabsToLeft: (tabPath: string) => void;
+  onCloseTabsToRight: (tabPath: string) => void;
   onMarkdownChange: (documentPath: string, markdown: string) => void;
   onRetryDocument: () => void;
   onSaveRequested: () => void;
-  onSelectTab: (groupId: string, tabPath: string) => void;
-  onSplitTab: (
-    groupId: string,
-    tabPath: string,
-    direction: EditorSplitDirection,
-  ) => void;
+  onSelectTab: (tabPath: string) => void;
 }) {
-  const hasSplitGroups = documentEditorLayout.groups.length > 1;
-  const splitClassName =
-    documentEditorLayout.orientation === 'vertical' ? 'flex-col' : 'flex-row';
+  const activeTab = getActiveTab(documentEditorLayout);
+  const activeTabPath = activeTab?.absolutePath ?? null;
+  const cachedSession = activeTabPath
+    ? editorSessions[activeTabPath] ?? null
+    : null;
+  const liveSession =
+    activeTabPath === currentDocumentPath && draftMarkdown !== null
+      ? {
+          documentVersion,
+          markdown: draftMarkdown,
+        }
+      : null;
+  const editorSession = liveSession ?? cachedSession;
 
   return (
     <div
-      className={cn('flex h-full min-h-0 min-w-0', splitClassName)}
+      className="flex h-full min-h-0 min-w-0 flex-col bg-background"
       data-testid="document-editor-surface"
     >
-      {documentEditorLayout.groups.map((group, index) => {
-        const activeTab = getActiveTab(group);
-        const isActiveGroup = group.id === documentEditorLayout.activeGroupId;
-        const activeTabPath = activeTab?.absolutePath ?? null;
-        const cachedSession = activeTabPath
-          ? editorSessions[activeTabPath] ?? null
-          : null;
-        const liveSession =
-          activeTabPath === currentDocumentPath && draftMarkdown !== null
-            ? {
-                documentVersion,
-                markdown: draftMarkdown,
-              }
-            : null;
-        const editorSession = liveSession ?? cachedSession;
-
-        return (
-          <div
-            className={cn(
-              'flex min-h-0 min-w-0 flex-1 flex-col bg-background',
-              documentEditorLayout.orientation === 'horizontal' &&
-                index > 0 &&
-                'border-l',
-              documentEditorLayout.orientation === 'vertical' &&
-                index > 0 &&
-                'border-t',
-              hasSplitGroups &&
-              activeTabPath === activeDocumentPath &&
-                'ring-1 ring-inset ring-[#3574f0]/35',
-            )}
-            data-testid={`document-editor-group-${group.id}`}
-            key={group.id}
-            onFocusCapture={() => {
-              if (activeTabPath) {
-                onActivateGroup(group.id, activeTabPath);
-              }
-            }}
-            onClickCapture={() => {
-              if (activeTabPath) {
-                onActivateGroup(group.id, activeTabPath);
-              }
-            }}
-          >
-            <DocumentTabBar
-              group={group}
-              onCloseAllTabs={onCloseAllTabs}
-              onCloseOtherTabs={onCloseOtherTabs}
-              onCloseTab={onCloseTab}
-              onCloseTabsToLeft={onCloseTabsToLeft}
-              onCloseTabsToRight={onCloseTabsToRight}
-              onSelectTab={onSelectTab}
-              onSplitTab={onSplitTab}
-            />
-            <div className="min-h-0 flex-1 overflow-hidden">
-              {renderDocumentEditorGroupContent({
-                activeTab,
-                currentDocumentPath,
-                documentLoadError,
-                documentLoadState,
-                editorSession,
-                groupId: group.id,
-                pageWidthMode,
-                isActiveGroup,
-                workspaceRootPath,
-                getDocumentReadOnly,
-                onMarkdownChange,
-                onRetryDocument,
-                onSaveRequested,
-                onSelectTab,
-              })}
-            </div>
-          </div>
-        );
-      })}
+      <DocumentTabBar
+        activeTabPath={documentEditorLayout.activeTabPath}
+        tabs={documentEditorLayout.tabs}
+        onCloseAllTabs={onCloseAllTabs}
+        onCloseOtherTabs={onCloseOtherTabs}
+        onCloseTab={onCloseTab}
+        onCloseTabsToLeft={onCloseTabsToLeft}
+        onCloseTabsToRight={onCloseTabsToRight}
+        onSelectTab={onSelectTab}
+      />
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {renderDocumentEditorContent({
+          activeDocumentPath,
+          activeTab,
+          currentDocumentPath,
+          documentLoadError,
+          documentLoadState,
+          editorSession,
+          pageWidthMode,
+          workspaceRootPath,
+          getDocumentReadOnly,
+          onMarkdownChange,
+          onRetryDocument,
+          onSaveRequested,
+          onSelectTab,
+        })}
+      </div>
     </div>
   );
 }
 
-function renderDocumentEditorGroupContent({
+function renderDocumentEditorContent({
+  activeDocumentPath,
   activeTab,
   currentDocumentPath,
   documentLoadError,
   documentLoadState,
   editorSession,
-  groupId,
-  isActiveGroup,
   pageWidthMode,
   workspaceRootPath,
   getDocumentReadOnly,
@@ -2670,20 +2583,19 @@ function renderDocumentEditorGroupContent({
   onSaveRequested,
   onSelectTab,
 }: {
+  activeDocumentPath: string | null;
   activeTab: ReturnType<typeof getActiveTab>;
   currentDocumentPath: string | null;
   documentLoadError: string | null;
   documentLoadState: DocumentLoadState;
   editorSession: DocumentEditorSession | null;
-  groupId: string;
-  isActiveGroup: boolean;
   pageWidthMode: PageWidthMode;
   workspaceRootPath: string | null;
   getDocumentReadOnly: (documentPath: string) => boolean;
   onMarkdownChange: (documentPath: string, markdown: string) => void;
   onRetryDocument: () => void;
   onSaveRequested: () => void;
-  onSelectTab: (groupId: string, tabPath: string) => void;
+  onSelectTab: (tabPath: string) => void;
 }) {
   if (!activeTab) {
     return (
@@ -2694,7 +2606,7 @@ function renderDocumentEditorGroupContent({
   }
 
   if (
-    isActiveGroup &&
+    activeTab.absolutePath === activeDocumentPath &&
     activeTab.absolutePath === currentDocumentPath &&
     documentLoadState === 'loading' &&
     !editorSession
@@ -2707,7 +2619,7 @@ function renderDocumentEditorGroupContent({
   }
 
   if (
-    isActiveGroup &&
+    activeTab.absolutePath === activeDocumentPath &&
     activeTab.absolutePath === currentDocumentPath &&
     documentLoadState === 'error' &&
     !editorSession
@@ -2737,7 +2649,7 @@ function renderDocumentEditorGroupContent({
         <button
           className="max-w-xs truncate rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           type="button"
-          onClick={() => onSelectTab(groupId, activeTab.absolutePath)}
+          onClick={() => onSelectTab(activeTab.absolutePath)}
         >
           打开 {activeTab.title}
         </button>
@@ -2747,7 +2659,6 @@ function renderDocumentEditorGroupContent({
 
   return (
     <DocumentEditorInstance
-      groupId={groupId}
       documentPath={activeTab.absolutePath}
       editorSession={editorSession}
       pageWidthMode={pageWidthMode}
@@ -2760,7 +2671,6 @@ function renderDocumentEditorGroupContent({
 }
 
 function DocumentEditorInstance({
-  groupId,
   documentPath,
   editorSession,
   pageWidthMode,
@@ -2769,7 +2679,6 @@ function DocumentEditorInstance({
   onMarkdownChange,
   onSaveRequested,
 }: {
-  groupId: string;
   documentPath: string;
   editorSession: DocumentEditorSession;
   pageWidthMode: PageWidthMode;
@@ -2786,7 +2695,7 @@ function DocumentEditorInstance({
   return (
     <div className="relative h-full min-h-0">
       <MarkdownEditor
-        documentKey={`${documentPath}:${groupId}:${editorSession.documentVersion}:${pageWidthMode}:${readOnly ? 'view' : 'live'}`}
+        documentKey={`${documentPath}:${pageWidthMode}:${readOnly ? 'view' : 'live'}`}
         markdown={editorSession.markdown}
         pageWidthMode={pageWidthMode}
         readOnly={readOnly}

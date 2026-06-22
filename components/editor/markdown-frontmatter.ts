@@ -26,25 +26,28 @@ export interface SerializeFrontmatterInput {
 }
 
 const FRONTMATTER_DELIMITER = '---';
+const FRONTMATTER_OPENING_PATTERN = /^---\r?\n/;
+const FRONTMATTER_CLOSING_PATTERN = /\r?\n---(?:\r?\n|$)/;
 
 export function parseFrontmatter(raw: string): ParsedFrontmatter {
-  if (!raw.startsWith(`${FRONTMATTER_DELIMITER}\n`)) {
+  const openingMatch = FRONTMATTER_OPENING_PATTERN.exec(raw);
+
+  if (!openingMatch) {
     return { metadata: {}, body: raw.trimStart() };
   }
 
-  const endIndex = raw.indexOf('\n---', FRONTMATTER_DELIMITER.length);
+  const frontmatterStart = openingMatch[0].length;
+  const remaining = raw.slice(frontmatterStart);
+  const closingMatch = FRONTMATTER_CLOSING_PATTERN.exec(remaining);
 
-  if (endIndex === -1) {
+  if (!closingMatch || closingMatch.index === undefined) {
     return { metadata: {}, body: raw.trimStart() };
   }
 
-  const rawFrontmatter = raw.slice(
-    FRONTMATTER_DELIMITER.length + 1,
-    endIndex,
-  );
-  const body = raw
-    .slice(endIndex + FRONTMATTER_DELIMITER.length + 1)
-    .replace(/^\r?\n/, '');
+  const rawFrontmatter = remaining.slice(0, closingMatch.index);
+  const bodyStart =
+    frontmatterStart + closingMatch.index + closingMatch[0].length;
+  const body = raw.slice(bodyStart);
   const frontmatter = parseFrontmatterBlock(rawFrontmatter);
 
   return { metadata: frontmatter, body: body.trimStart() };

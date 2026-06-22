@@ -44,6 +44,8 @@ import type {
   WorkspaceSnapshot,
 } from './workspace-types';
 
+const FRONTMATTER_OPENING_PATTERN = /^---\r?\n/;
+
 export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
   const [snapshot, setSnapshot] = React.useState<WorkspaceSnapshot | null>(
     initialSnapshot ?? null,
@@ -876,7 +878,7 @@ async function compensateMarkdownDocument(
 ): Promise<{ draft: MarkdownDraft; content: MarkdownDocumentContent }> {
   const fileStem = node.name.replace(/\.md$/i, '');
   const parsed = parseMarkdownMetadata(content.content, node.name);
-  const needsFrontmatter = !content.content.startsWith('---\n');
+  const needsFrontmatter = !FRONTMATTER_OPENING_PATTERN.test(content.content);
   const hasH1InBody = /^#{1}\s+\S/m.test(parsed.body);
   const needsH1 = !hasH1InBody;
 

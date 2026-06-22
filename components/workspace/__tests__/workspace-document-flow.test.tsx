@@ -96,6 +96,20 @@ const guideMarkdown =
 const notesMarkdown =
   '---\ntitle: 笔记\ncreatedAt: 2026-05-30T00:00:00.000Z\nupdatedAt: 2026-05-30T00:00:00.000Z\nrefinexDialect: 1\n---\n\n# 笔记\n\n笔记正文\n';
 
+const crlfGuideMarkdown = [
+  '---',
+  'title: 指南',
+  'createdAt: 2026-05-30T00:00:00.000Z',
+  'updatedAt: 2026-05-30T00:00:00.000Z',
+  'refinexDialect: 1',
+  '---',
+  '',
+  '# 指南',
+  '',
+  '正文',
+  '',
+].join('\r\n');
+
 const snapshot: WorkspaceSnapshot = {
   rootPath: '/repo',
   rootName: 'repo',
@@ -153,7 +167,23 @@ describe('Workspace native document flow', () => {
     );
     expect(
       screen.getByTestId('markdown-editor').getAttribute('data-document-key'),
-    ).toContain(':1');
+    ).toContain('/repo/guide.md');
+  });
+
+  it('does not compensate documents that already have CRLF frontmatter', async () => {
+    const user = userEvent.setup();
+    readMarkdownDocumentMock.mockResolvedValueOnce({
+      path: '/repo/guide.md',
+      content: crlfGuideMarkdown,
+      modifiedAt: 1,
+    });
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByText('指南'));
+    await screen.findByTestId('markdown-editor');
+
+    expect(saveMarkdownDocumentMock).not.toHaveBeenCalled();
   });
 
   it('auto saves edited native content after debounce', async () => {

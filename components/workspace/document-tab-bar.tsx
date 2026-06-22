@@ -1,12 +1,11 @@
 'use client';
 
-import { ChevronDown, PanelBottom, PanelRight, X } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import {
@@ -18,31 +17,26 @@ import {
 import { cn } from '@/lib/utils';
 
 import type {
-  DocumentEditorGroup,
   DocumentEditorTab,
-  EditorSplitDirection,
 } from './document-tabs';
 
 interface DocumentTabBarProps {
-  group: DocumentEditorGroup;
+  activeTabPath: string | null;
+  tabs: DocumentEditorTab[];
   visibleTabLimit?: number;
-  onCloseAllTabs: (groupId: string) => void;
-  onCloseOtherTabs: (groupId: string, tabPath: string) => void;
-  onCloseTab: (groupId: string, tabPath: string) => void;
-  onCloseTabsToLeft: (groupId: string, tabPath: string) => void;
-  onCloseTabsToRight: (groupId: string, tabPath: string) => void;
-  onSelectTab: (groupId: string, tabPath: string) => void;
-  onSplitTab: (
-    groupId: string,
-    tabPath: string,
-    direction: EditorSplitDirection,
-  ) => void;
+  onCloseAllTabs: () => void;
+  onCloseOtherTabs: (tabPath: string) => void;
+  onCloseTab: (tabPath: string) => void;
+  onCloseTabsToLeft: (tabPath: string) => void;
+  onCloseTabsToRight: (tabPath: string) => void;
+  onSelectTab: (tabPath: string) => void;
 }
 
 const DEFAULT_VISIBLE_TAB_LIMIT = 8;
 
 export function DocumentTabBar({
-  group,
+  activeTabPath,
+  tabs,
   visibleTabLimit = DEFAULT_VISIBLE_TAB_LIMIT,
   onCloseAllTabs,
   onCloseOtherTabs,
@@ -50,24 +44,23 @@ export function DocumentTabBar({
   onCloseTabsToLeft,
   onCloseTabsToRight,
   onSelectTab,
-  onSplitTab,
 }: DocumentTabBarProps) {
-  const visibleTabs = group.tabs.slice(0, visibleTabLimit);
-  const overflowTabs = group.tabs.slice(visibleTabLimit);
+  const visibleTabs = tabs.slice(0, visibleTabLimit);
+  const overflowTabs = tabs.slice(visibleTabLimit);
 
-  if (group.tabs.length === 0) {
+  if (tabs.length === 0) {
     return null;
   }
 
   return (
     <div
       className="flex h-9 shrink-0 items-center bg-background px-1.5"
-      data-testid={`document-tab-bar-${group.id}`}
+      data-testid="document-tab-bar"
     >
       <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden">
         {visibleTabs.map((tab) => (
           <DocumentTabItem
-            group={group}
+            activeTabPath={activeTabPath}
             key={tab.absolutePath}
             tab={tab}
             onCloseAllTabs={onCloseAllTabs}
@@ -76,7 +69,6 @@ export function DocumentTabBar({
             onCloseTabsToLeft={onCloseTabsToLeft}
             onCloseTabsToRight={onCloseTabsToRight}
             onSelectTab={onSelectTab}
-            onSplitTab={onSplitTab}
           />
         ))}
       </div>
@@ -96,7 +88,7 @@ export function DocumentTabBar({
             {overflowTabs.map((tab) => (
               <DropdownMenuItem
                 key={tab.absolutePath}
-                onSelect={() => onSelectTab(group.id, tab.absolutePath)}
+                onSelect={() => onSelectTab(tab.absolutePath)}
               >
                 <span className="truncate">{tab.title}</span>
               </DropdownMenuItem>
@@ -109,7 +101,7 @@ export function DocumentTabBar({
 }
 
 function DocumentTabItem({
-  group,
+  activeTabPath,
   tab,
   onCloseAllTabs,
   onCloseOtherTabs,
@@ -117,11 +109,10 @@ function DocumentTabItem({
   onCloseTabsToLeft,
   onCloseTabsToRight,
   onSelectTab,
-  onSplitTab,
 }: Omit<DocumentTabBarProps, 'visibleTabLimit'> & {
   tab: DocumentEditorTab;
 }) {
-  const active = group.activeTabPath === tab.absolutePath;
+  const active = activeTabPath === tab.absolutePath;
 
   return (
     <ContextMenu>
@@ -137,11 +128,11 @@ function DocumentTabItem({
           role="tab"
           tabIndex={0}
           title={tab.title}
-          onClick={() => onSelectTab(group.id, tab.absolutePath)}
+          onClick={() => onSelectTab(tab.absolutePath)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
-              onSelectTab(group.id, tab.absolutePath);
+              onSelectTab(tab.absolutePath);
             }
           }}
         >
@@ -155,7 +146,7 @@ function DocumentTabItem({
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              onCloseTab(group.id, tab.absolutePath);
+              onCloseTab(tab.absolutePath);
             }}
           >
             <X size={12} />
@@ -163,39 +154,20 @@ function DocumentTabItem({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-44">
-        <ContextMenuItem onSelect={() => onCloseTab(group.id, tab.absolutePath)}>
+        <ContextMenuItem onSelect={() => onCloseTab(tab.absolutePath)}>
           关闭
         </ContextMenuItem>
-        <ContextMenuItem
-          onSelect={() => onCloseOtherTabs(group.id, tab.absolutePath)}
-        >
+        <ContextMenuItem onSelect={() => onCloseOtherTabs(tab.absolutePath)}>
           关闭其他标签页
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => onCloseAllTabs(group.id)}>
+        <ContextMenuItem onSelect={() => onCloseAllTabs()}>
           关闭所有标签页
         </ContextMenuItem>
-        <ContextMenuItem
-          onSelect={() => onCloseTabsToLeft(group.id, tab.absolutePath)}
-        >
+        <ContextMenuItem onSelect={() => onCloseTabsToLeft(tab.absolutePath)}>
           关闭左侧标签页
         </ContextMenuItem>
-        <ContextMenuItem
-          onSelect={() => onCloseTabsToRight(group.id, tab.absolutePath)}
-        >
+        <ContextMenuItem onSelect={() => onCloseTabsToRight(tab.absolutePath)}>
           关闭右侧标签页
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          onSelect={() => onSplitTab(group.id, tab.absolutePath, 'right')}
-        >
-          <PanelRight size={14} />
-          向右拆分
-        </ContextMenuItem>
-        <ContextMenuItem
-          onSelect={() => onSplitTab(group.id, tab.absolutePath, 'down')}
-        >
-          <PanelBottom size={14} />
-          向下拆分
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

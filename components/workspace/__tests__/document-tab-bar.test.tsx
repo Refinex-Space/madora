@@ -3,25 +3,22 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DocumentTabBar } from '../document-tab-bar';
-import type { DocumentEditorGroup } from '../document-tabs';
+import type { DocumentEditorTab } from '../document-tabs';
 
-function group(): DocumentEditorGroup {
-  return {
-    activeTabPath: '/repo/b.md',
-    id: 'group-1',
-    tabs: [
-      { absolutePath: '/repo/a.md', name: 'a.md', title: 'A' },
-      { absolutePath: '/repo/b.md', name: 'b.md', title: 'B' },
-      { absolutePath: '/repo/c.md', name: 'c.md', title: 'C' },
-    ],
-  };
+function tabs(): DocumentEditorTab[] {
+  return [
+    { absolutePath: '/repo/a.md', name: 'a.md', title: 'A' },
+    { absolutePath: '/repo/b.md', name: 'b.md', title: 'B' },
+    { absolutePath: '/repo/c.md', name: 'c.md', title: 'C' },
+  ];
 }
 
 describe('DocumentTabBar', () => {
   it('renders integrated tabs without hard divider lines', () => {
     render(
       <DocumentTabBar
-        group={group()}
+        activeTabPath="/repo/b.md"
+        tabs={tabs()}
         visibleTabLimit={8}
         onCloseAllTabs={vi.fn()}
         onCloseOtherTabs={vi.fn()}
@@ -29,11 +26,10 @@ describe('DocumentTabBar', () => {
         onCloseTabsToLeft={vi.fn()}
         onCloseTabsToRight={vi.fn()}
         onSelectTab={vi.fn()}
-        onSplitTab={vi.fn()}
       />,
     );
 
-    const tabBar = screen.getByTestId('document-tab-bar-group-1');
+    const tabBar = screen.getByTestId('document-tab-bar');
     const activeTab = screen.getByRole('tab', { name: /B/ });
     const inactiveTab = screen.getByRole('tab', { name: /A/ });
 
@@ -53,7 +49,8 @@ describe('DocumentTabBar', () => {
 
     render(
       <DocumentTabBar
-        group={group()}
+        activeTabPath="/repo/b.md"
+        tabs={tabs()}
         visibleTabLimit={8}
         onCloseAllTabs={vi.fn()}
         onCloseOtherTabs={vi.fn()}
@@ -61,25 +58,24 @@ describe('DocumentTabBar', () => {
         onCloseTabsToLeft={vi.fn()}
         onCloseTabsToRight={vi.fn()}
         onSelectTab={onSelectTab}
-        onSplitTab={vi.fn()}
       />,
     );
 
     await user.click(screen.getByRole('tab', { name: /A/ }));
     await user.click(screen.getByRole('button', { name: '关闭标签页 B' }));
 
-    expect(onSelectTab).toHaveBeenCalledWith('group-1', '/repo/a.md');
-    expect(onCloseTab).toHaveBeenCalledWith('group-1', '/repo/b.md');
+    expect(onSelectTab).toHaveBeenCalledWith('/repo/a.md');
+    expect(onCloseTab).toHaveBeenCalledWith('/repo/b.md');
   });
 
-  it('shows context menu actions', async () => {
+  it('shows context menu actions without split actions', async () => {
     const user = userEvent.setup();
     const onCloseOtherTabs = vi.fn();
-    const onSplitTab = vi.fn();
 
     render(
       <DocumentTabBar
-        group={group()}
+        activeTabPath="/repo/b.md"
+        tabs={tabs()}
         visibleTabLimit={8}
         onCloseAllTabs={vi.fn()}
         onCloseOtherTabs={onCloseOtherTabs}
@@ -87,7 +83,6 @@ describe('DocumentTabBar', () => {
         onCloseTabsToLeft={vi.fn()}
         onCloseTabsToRight={vi.fn()}
         onSelectTab={vi.fn()}
-        onSplitTab={onSplitTab}
       />,
     );
 
@@ -95,15 +90,12 @@ describe('DocumentTabBar', () => {
       keys: '[MouseRight]',
       target: screen.getByRole('tab', { name: /B/ }),
     });
+    expect(await screen.findByRole('menuitem', { name: '关闭其他标签页' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: '向右拆分' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: '向下拆分' })).toBeNull();
     await user.click(await screen.findByRole('menuitem', { name: '关闭其他标签页' }));
-    await user.pointer({
-      keys: '[MouseRight]',
-      target: screen.getByRole('tab', { name: /B/ }),
-    });
-    await user.click(await screen.findByRole('menuitem', { name: '向右拆分' }));
 
-    expect(onCloseOtherTabs).toHaveBeenCalledWith('group-1', '/repo/b.md');
-    expect(onSplitTab).toHaveBeenCalledWith('group-1', '/repo/b.md', 'right');
+    expect(onCloseOtherTabs).toHaveBeenCalledWith('/repo/b.md');
   });
 
   it('moves overflowed tabs into the more menu', async () => {
@@ -112,7 +104,8 @@ describe('DocumentTabBar', () => {
 
     render(
       <DocumentTabBar
-        group={group()}
+        activeTabPath="/repo/b.md"
+        tabs={tabs()}
         visibleTabLimit={2}
         onCloseAllTabs={vi.fn()}
         onCloseOtherTabs={vi.fn()}
@@ -120,7 +113,6 @@ describe('DocumentTabBar', () => {
         onCloseTabsToLeft={vi.fn()}
         onCloseTabsToRight={vi.fn()}
         onSelectTab={onSelectTab}
-        onSplitTab={vi.fn()}
       />,
     );
 
@@ -129,6 +121,6 @@ describe('DocumentTabBar', () => {
     await user.click(screen.getByRole('button', { name: '显示更多打开的文档' }));
     await user.click(await screen.findByRole('menuitem', { name: 'C' }));
 
-    expect(onSelectTab).toHaveBeenCalledWith('group-1', '/repo/c.md');
+    expect(onSelectTab).toHaveBeenCalledWith('/repo/c.md');
   });
 });
