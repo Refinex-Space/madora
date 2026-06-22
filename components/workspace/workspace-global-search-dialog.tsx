@@ -56,19 +56,22 @@ export function WorkspaceGlobalSearchDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="top-[30%] max-w-3xl gap-0 overflow-hidden rounded-xl p-0 sm:max-w-3xl"
+        className="top-4 max-h-[calc(100vh-2rem)] w-[min(calc(100vw-1.5rem),48rem)] max-w-none translate-y-0 gap-0 overflow-hidden rounded-xl p-0 sm:top-[12vh] sm:max-w-none"
         showCloseButton={false}
       >
         <DialogHeader className="sr-only">
           <DialogTitle>搜索文档</DialogTitle>
           <DialogDescription>搜索当前工作区的 Markdown 文档</DialogDescription>
         </DialogHeader>
-        <div className="flex h-12 items-center gap-2 border-b px-3">
+        <div
+          className="flex h-12 min-w-0 items-center gap-2 border-b px-3"
+          data-global-search-header="true"
+        >
           <Search className="shrink-0 text-muted-foreground" size={17} />
           <Input
             ref={inputRef}
             aria-label="搜索文档"
-            className="h-10 border-0 px-0 text-base shadow-none focus-visible:ring-0 md:text-sm"
+            className="h-10 min-w-0 flex-1 border-0 px-0 text-base shadow-none focus-visible:ring-0 md:text-sm"
             placeholder="搜索文档标题、路径或正文"
             role="searchbox"
             value={query}
@@ -95,7 +98,10 @@ export function WorkspaceGlobalSearchDialog({
             ESC
           </kbd>
         </div>
-        <div className="max-h-[520px] overflow-y-auto p-2">
+        <div
+          className="max-h-[calc(100vh-5rem)] overflow-y-auto p-2 sm:max-h-[520px]"
+          data-global-search-results="true"
+        >
           {renderSearchState({
             activeIndex,
             indexStatus,

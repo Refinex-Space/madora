@@ -2990,6 +2990,26 @@ describe('WorkspaceLayout', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('keeps global search inside the viewport on narrow windows', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '搜索文档' }));
+
+    const dialogContent = document.querySelector('[data-slot="dialog-content"]');
+    const searchbox = await screen.findByRole('searchbox', { name: '搜索文档' });
+    const searchHeader = searchbox.closest('[data-global-search-header]');
+    const results = document.querySelector('[data-global-search-results]');
+
+    expect(dialogContent?.className).toContain('w-[min(calc(100vw-1.5rem),48rem)]');
+    expect(dialogContent?.className).toContain('max-h-[calc(100vh-2rem)]');
+    expect(dialogContent?.className).toContain('translate-y-0');
+    expect(searchHeader?.className).toContain('min-w-0');
+    expect(searchbox.className).toContain('min-w-0');
+    expect(searchbox.className).toContain('flex-1');
+    expect(results?.className).toContain('max-h-[calc(100vh-5rem)]');
+  });
+
   it('opens global search from keyboard shortcuts', async () => {
     (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ =
       {};
