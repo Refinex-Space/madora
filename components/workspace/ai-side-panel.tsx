@@ -31,6 +31,8 @@ import type {
   WorkspaceNode,
 } from './workspace-types';
 
+const AI_PANEL_AVAILABLE = false;
+
 export interface DocumentPanelData {
   frontmatter: Record<string, string>;
   markdown: string;
@@ -120,14 +122,17 @@ export function RightToolRail({
         )}
         data-testid="right-tool-rail"
       >
-        <RightToolTooltip
-          label={mode === 'ai' ? '折叠 AI 面板' : '展开 AI 面板'}
-          orientation={orientation}
-        >
+        <RightToolTooltip label="AI 面板暂不可用" orientation={orientation}>
           <button
-            aria-label={mode === 'ai' ? '折叠 AI 面板' : '展开 AI 面板'}
-            className={rightToolButtonClassName(mode === 'ai')}
+            aria-label="AI 面板暂不可用"
+            className={cn(
+              rightToolButtonClassName(),
+              !AI_PANEL_AVAILABLE &&
+                'cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground',
+            )}
             data-testid="ai-panel-icon-button"
+            disabled={!AI_PANEL_AVAILABLE}
+            title="AI 面板暂不可用"
             type="button"
             onClick={() => onModeChange(nextMode('ai'))}
           >
@@ -150,7 +155,7 @@ export function RightToolRail({
         >
           <button
             aria-label={mode === 'meta' ? '折叠元信息面板' : '展开元信息面板'}
-            className={rightToolButtonClassName(mode === 'meta')}
+            className={rightToolButtonClassName()}
             data-testid="document-meta-panel-icon-button"
             type="button"
             onClick={() => onModeChange(nextMode('meta'))}
@@ -167,7 +172,7 @@ export function RightToolRail({
                   <button
                     aria-label="打开设置菜单"
                     className={cn(
-                      rightToolButtonClassName(false),
+                      rightToolButtonClassName(),
                       orientation === 'rail' && 'mt-auto',
                     )}
                     data-testid="settings-menu-button"
@@ -251,10 +256,8 @@ function getRightPanelTestId(mode: Exclude<RightPanelMode, null>) {
   }
 }
 
-function rightToolButtonClassName(active: boolean) {
+function rightToolButtonClassName() {
   return cn(
     'flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-    active &&
-      'bg-[#3574f0] text-white shadow-sm hover:bg-[#3574f0] hover:text-white',
   );
 }

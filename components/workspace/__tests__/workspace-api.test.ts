@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -35,6 +36,7 @@ import {
   listDailyNotesForMonth,
   moveWorkspaceNode,
   openDailyNote,
+  openPathInFileManager,
   readMarkdownSourceFiles,
   readAppSettings,
   readWorkspaceAssetData,
@@ -66,8 +68,13 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(),
 }));
 
+vi.mock('@tauri-apps/plugin-opener', () => ({
+  revealItemInDir: vi.fn(),
+}));
+
 const invokeMock = vi.mocked(invoke);
 const listenMock = vi.mocked(listen);
+const revealItemInDirMock = vi.mocked(revealItemInDir);
 
 const snapshot: WorkspaceSnapshot = {
   rootPath: '/repo',
@@ -123,6 +130,72 @@ describe('workspace-api history', () => {
     expect(getRecentWorkspacePath()).toBe('/repo');
   });
 
+});
+
+describe('workspace-api file manager opener', () => {
+  beforeEach(() => {
+    revealItemInDirMock.mockReset();
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  });
+
+  it('reveals a path in the native file manager when running in Tauri', async () => {
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    });
+
+    await openPathInFileManager('/repo/README.md');
+
+    expect(revealItemInDirMock).toHaveBeenCalledWith('/repo/README.md');
+  });
+
+  it('does nothing outside the Tauri runtime', async () => {
+    await openPathInFileManager('/repo/README.md');
+
+    expect(revealItemInDirMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('workspace-api node moves', () => {
+  beforeEach(() => {
+    invokeMock.mockReset();
+  });
+
+  it('keeps Windows parent paths intact when moving before a sibling', async () => {
+    invokeMock.mockResolvedValueOnce(snapshot);
+
+    await moveWorkspaceNode(String.raw`\\?\D:\vault`, {
+      nodePath: String.raw`\\?\D:\vault\Docs\B.md`,
+      position: 'before',
+      targetPath: String.raw`\\?\D:\vault\Docs\A.md`,
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith('move_workspace_node', {
+      rootPath: String.raw`\\?\D:\vault`,
+      nodePath: String.raw`\\?\D:\vault\Docs\B.md`,
+      targetParentPath: String.raw`\\?\D:\vault\Docs`,
+      beforePath: String.raw`\\?\D:\vault\Docs\A.md`,
+      afterPath: null,
+    });
+  });
+
+  it('keeps Windows directory targets intact when moving inside a directory', async () => {
+    invokeMock.mockResolvedValueOnce(snapshot);
+
+    await moveWorkspaceNode(String.raw`D:\vault`, {
+      nodePath: String.raw`D:\vault\README.md`,
+      position: 'inside',
+      targetPath: String.raw`D:\vault\Guides`,
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith('move_workspace_node', {
+      rootPath: String.raw`D:\vault`,
+      nodePath: String.raw`D:\vault\README.md`,
+      targetParentPath: String.raw`D:\vault\Guides`,
+      beforePath: null,
+      afterPath: null,
+    });
+  });
 });
 
 describe('workspace-api native Git commands', () => {

@@ -30,6 +30,12 @@ import {
   sanitizeTitleForFileName,
   serializeFrontmatter,
 } from '@/components/editor/markdown-frontmatter';
+import {
+  getBaseName,
+  getParentPath,
+  isDescendantPath,
+  joinPath,
+} from './workspace-paths';
 import { searchWorkspace } from './workspace-tree';
 import type {
   DocumentLoadState,
@@ -43,6 +49,8 @@ import type {
   WorkspaceNode,
   WorkspaceSnapshot,
 } from './workspace-types';
+
+const FRONTMATTER_OPENING_PATTERN = /^---\r?\n/;
 
 export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
   const [snapshot, setSnapshot] = React.useState<WorkspaceSnapshot | null>(
@@ -502,6 +510,7 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
     },
     [refreshWorkspaceTree, snapshot],
   );
+  const currentDocumentPath = currentDocument?.absolutePath ?? null;
 
   const deleteNode = React.useCallback(
     async (node: WorkspaceNode) => {
@@ -513,9 +522,10 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
       await refreshWorkspaceTree();
 
       if (
-        currentDocument?.absolutePath === node.absolutePath ||
+        currentDocumentPath === node.absolutePath ||
         (node.kind === 'directory' &&
-          currentDocument?.absolutePath.startsWith(`${node.absolutePath}/`))
+          currentDocumentPath &&
+          isDescendantPath(currentDocumentPath, node.absolutePath))
       ) {
         resetDocumentState();
       }
@@ -523,13 +533,14 @@ export function useWorkspace(initialSnapshot?: WorkspaceSnapshot | null) {
       if (
         currentDirectoryPath === node.absolutePath ||
         (node.kind === 'directory' &&
-          currentDirectoryPath?.startsWith(`${node.absolutePath}/`))
+          currentDirectoryPath &&
+          isDescendantPath(currentDirectoryPath, node.absolutePath))
       ) {
         setCurrentDirectoryPath(null);
       }
     },
     [
-      currentDocument?.absolutePath,
+      currentDocumentPath,
       currentDirectoryPath,
       refreshWorkspaceTree,
       resetDocumentState,
@@ -876,7 +887,7 @@ async function compensateMarkdownDocument(
 ): Promise<{ draft: MarkdownDraft; content: MarkdownDocumentContent }> {
   const fileStem = node.name.replace(/\.md$/i, '');
   const parsed = parseMarkdownMetadata(content.content, node.name);
-  const needsFrontmatter = !content.content.startsWith('---\n');
+  const needsFrontmatter = !FRONTMATTER_OPENING_PATTERN.test(content.content);
   const hasH1InBody = /^#{1}\s+\S/m.test(parsed.body);
   const needsH1 = !hasH1InBody;
 
@@ -941,7 +952,7 @@ function getMovedNodePath(
 ) {
   if (
     currentPath !== request.nodePath &&
-    !currentPath.startsWith(`${request.nodePath}/`)
+    !isDescendantPath(currentPath, request.nodePath)
   ) {
     return currentPath;
   }
@@ -954,28 +965,4 @@ function getMovedNodePath(
   const descendantSuffix = currentPath.slice(request.nodePath.length);
 
   return joinPath(targetParentPath, `${movedNodeName}${descendantSuffix}`);
-}
-
-function getParentPath(path: string) {
-  const normalizedPath = path.replace(/\\/g, '/');
-  const lastSlashIndex = normalizedPath.lastIndexOf('/');
-
-  return lastSlashIndex >= 0 ? normalizedPath.slice(0, lastSlashIndex) : '';
-}
-
-function getBaseName(path: string) {
-  const normalizedPath = path.replace(/\\/g, '/');
-  const lastSlashIndex = normalizedPath.lastIndexOf('/');
-
-  return lastSlashIndex >= 0
-    ? normalizedPath.slice(lastSlashIndex + 1)
-    : normalizedPath;
-}
-
-function joinPath(parentPath: string, childPath: string) {
-  if (!parentPath) {
-    return childPath;
-  }
-
-  return `${parentPath.replace(/\/$/, '')}/${childPath.replace(/^\//, '')}`;
 }

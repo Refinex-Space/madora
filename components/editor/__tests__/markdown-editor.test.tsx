@@ -793,6 +793,29 @@ describe('MarkdownEditor', () => {
     expect(screen.queryByDisplayValue(/title: Octarine/u)).toBeNull();
   });
 
+  it('编辑区不显示 Windows CRLF frontmatter 文本', () => {
+    render(
+      <MarkdownEditor
+        documentKey="doc-1"
+        markdown={[
+          '---',
+          'title: Octarine',
+          'createdAt: 2026-06-22T02:12:54.498Z',
+          '---',
+          '',
+          '# Octarine',
+        ].join('\r\n')}
+        onMarkdownChange={() => {}}
+      />,
+    );
+
+    expect(
+      (screen.getByLabelText('Markdown 正文') as HTMLTextAreaElement).value,
+    ).toBe('# Octarine');
+    expect(screen.queryByDisplayValue(/createdAt:/u)).toBeNull();
+    expect(screen.queryByDisplayValue(/title: Octarine/u)).toBeNull();
+  });
+
   it('编辑带 frontmatter 的正文时保留原始 metadata 字段', () => {
     const onMarkdownChange = vi.fn();
     render(

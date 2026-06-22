@@ -1618,10 +1618,15 @@ fn daily_note_has_content(raw: &str, date: &str) -> bool {
 fn daily_note_body_without_scaffold<'a>(raw: &'a str, date: &str) -> String {
     let mut body = raw;
 
-    if let Some(rest) = raw.strip_prefix("---\n") {
-        if let Some(end) = rest.find("\n---") {
-            let after = &rest[end + 4..];
-            body = after.strip_prefix('\n').unwrap_or(after);
+    if raw.starts_with("---\n") || raw.starts_with("---\r\n") {
+        if let Some(closing_start) = raw[3..].find("\n---") {
+            let closing_start = closing_start + 3;
+            let closing_end = closing_start + "\n---".len();
+            let after = &raw[closing_end..];
+            body = after
+                .strip_prefix("\r\n")
+                .or_else(|| after.strip_prefix('\n'))
+                .unwrap_or(after);
         }
     }
 
@@ -2805,6 +2810,52 @@ mod tests {
         assert_eq!(month.month, "2026-06");
         assert_eq!(month.entries.len(), 1);
         assert_eq!(month.entries[0].date, "2026-06-20");
+        assert!(month.entries[0].has_content);
+    }
+
+    #[test]
+    fn daily_note_with_crlf_frontmatter_and_only_heading_has_no_content_marker() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let root_path = temp_dir.path();
+        let note_dir = root_path.join("Daily/2026/06");
+        fs::create_dir_all(&note_dir).expect("创建每日笔记目录失败");
+        fs::write(
+            note_dir.join("2026-06-23.md"),
+            "---\r\ntitle: 2026-06-23\r\nrefinexDialect: 1\r\ndailyDate: 2026-06-23\r\n---\r\n\r\n# 2026-06-23\r\n",
+        )
+        .expect("写入每日笔记失败");
+
+        let month = list_daily_notes_for_month(
+            root_path.to_string_lossy().to_string(),
+            "2026-06".to_string(),
+        )
+        .expect("读取月索引失败");
+
+        assert_eq!(month.entries.len(), 1);
+        assert_eq!(month.entries[0].date, "2026-06-23");
+        assert!(!month.entries[0].has_content);
+    }
+
+    #[test]
+    fn daily_note_with_crlf_frontmatter_and_body_has_content_marker() {
+        let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
+        let root_path = temp_dir.path();
+        let note_dir = root_path.join("Daily/2026/06");
+        fs::create_dir_all(&note_dir).expect("创建每日笔记目录失败");
+        fs::write(
+            note_dir.join("2026-06-24.md"),
+            "---\r\ntitle: 2026-06-24\r\nrefinexDialect: 1\r\ndailyDate: 2026-06-24\r\n---\r\n\r\n# 2026-06-24\r\n\r\n真实内容\r\n",
+        )
+        .expect("写入每日笔记失败");
+
+        let month = list_daily_notes_for_month(
+            root_path.to_string_lossy().to_string(),
+            "2026-06".to_string(),
+        )
+        .expect("读取月索引失败");
+
+        assert_eq!(month.entries.len(), 1);
+        assert_eq!(month.entries[0].date, "2026-06-24");
         assert!(month.entries[0].has_content);
     }
 

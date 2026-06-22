@@ -41,6 +41,7 @@ import type {
   SystemFontOptions,
 } from './workspace-types';
 import type { AiProviderJsonRequest } from './ai-provider/provider-requests';
+import { getParentPath } from './workspace-paths';
 
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
@@ -346,6 +347,16 @@ export async function writeExportFile(targetPath: string, base64Data: string) {
     targetPath,
     base64Data,
   });
+}
+
+export async function openPathInFileManager(path: string) {
+  if (!isTauriRuntime()) {
+    return;
+  }
+
+  const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+
+  await revealItemInDir(path);
 }
 
 export async function readAppSettings() {
@@ -800,11 +811,4 @@ export async function closeAppWindow() {
   const { getCurrentWindow } = await import('@tauri-apps/api/window');
 
   await getCurrentWindow().close();
-}
-
-function getParentPath(path: string) {
-  const normalizedPath = path.replace(/\\/g, '/');
-  const lastSlashIndex = normalizedPath.lastIndexOf('/');
-
-  return lastSlashIndex >= 0 ? normalizedPath.slice(0, lastSlashIndex) : '';
 }

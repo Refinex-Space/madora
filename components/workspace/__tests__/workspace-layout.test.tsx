@@ -33,6 +33,7 @@ import {
   listenTerminalExit,
   loadWorkspaceTree,
   openDailyNote,
+  openPathInFileManager,
   readAppSettings,
   readMarkdownDocument,
   readWorkspaceAssetData,
@@ -112,24 +113,34 @@ vi.mock('@/components/editor/markdown-editor', () => ({
   MarkdownEditor: ({
     documentKey,
     markdown,
+    onMarkdownChange,
     pageWidthMode,
     readOnly,
   }: {
     documentKey?: string;
     markdown?: string;
+    onMarkdownChange?: (markdown: string) => void;
     pageWidthMode?: string;
     readOnly?: boolean;
   }) => (
-    <button
-      data-document-key={documentKey}
-      data-page-width-mode={pageWidthMode}
-      data-markdown={markdown}
-      data-read-only={String(Boolean(readOnly))}
-      data-testid="markdown-editor"
-      type="button"
-    >
-      editor
-    </button>
+    <div>
+      <button
+        data-document-key={documentKey}
+        data-page-width-mode={pageWidthMode}
+        data-markdown={markdown}
+        data-read-only={String(Boolean(readOnly))}
+        data-testid="markdown-editor"
+        type="button"
+      >
+        editor
+      </button>
+      <button
+        type="button"
+        onClick={() => onMarkdownChange?.(`${markdown ?? ''}\n编辑`)}
+      >
+        模拟编辑器输入
+      </button>
+    </div>
   ),
 }));
 
@@ -179,6 +190,7 @@ vi.mock('../workspace-api', async (importOriginal) => {
     listenTerminalExit: vi.fn(),
     loadWorkspaceTree: vi.fn(),
     openDailyNote: vi.fn(),
+    openPathInFileManager: vi.fn(),
     readMarkdownDocument: vi.fn(),
     readWorkspaceAssetData: vi.fn(),
     recordRecentDocument: vi.fn(),
@@ -235,6 +247,7 @@ const listenTerminalErrorMock = vi.mocked(listenTerminalError);
 const listenTerminalExitMock = vi.mocked(listenTerminalExit);
 const loadWorkspaceTreeMock = vi.mocked(loadWorkspaceTree);
 const openDailyNoteMock = vi.mocked(openDailyNote);
+const openPathInFileManagerMock = vi.mocked(openPathInFileManager);
 const readAppSettingsMock = vi.mocked(readAppSettings);
 const readMarkdownDocumentMock = vi.mocked(readMarkdownDocument);
 const readWorkspaceAssetDataMock = vi.mocked(readWorkspaceAssetData);
@@ -412,65 +425,6 @@ const fakeEchoProfile = {
   providerLabel: 'Local',
 };
 
-const codexDetectedProfile = {
-  capabilities: {
-    diff: true,
-    models: true,
-    readWorkspace: true,
-    shell: false,
-    slashCommands: true,
-    writeWorkspace: true,
-  },
-  detection: {
-    message: 'Codex adapter is pending runtime connection.',
-    status: 'misconfigured',
-  },
-  id: 'codex:gpt-5.4',
-  isTestRuntime: false,
-  kind: 'codex_app_server',
-  label: 'Codex / GPT-5.4',
-  modelId: 'gpt-5.4',
-  modelLabel: 'GPT-5.4',
-  providerId: 'openai',
-  providerLabel: 'OpenAI',
-};
-
-const detectedAiAccounts = [
-  {
-    commandPath: '/usr/local/bin/codex',
-    id: 'codex',
-    label: 'Codex',
-    message: 'Local Codex app-server detected.',
-    models: [
-      {
-        available: false,
-        id: 'gpt-5.4',
-        label: 'GPT-5.4',
-        profileId: 'codex:gpt-5.4',
-        providerId: 'openai',
-        providerLabel: 'OpenAI',
-      },
-    ],
-    providerId: 'openai',
-    providerLabel: 'OpenAI',
-    status: 'connected',
-    transport: 'app-server',
-    version: 'codex-cli 0.130.0',
-  },
-  {
-    commandPath: '/usr/local/bin/claude',
-    id: 'claude',
-    label: 'Claude',
-    message: 'Claude CLI detected; runtime adapter is not connected yet.',
-    models: [],
-    providerId: 'anthropic',
-    providerLabel: 'Anthropic',
-    status: 'detected',
-    transport: 'cli',
-    version: '2.1.161 (Claude Code)',
-  },
-];
-
 const defaultAiSettings = DEFAULT_AI_SETTINGS;
 
 const defaultAppSettings = DEFAULT_APP_SETTINGS;
@@ -528,6 +482,7 @@ describe('WorkspaceLayout', () => {
     listenTerminalExitMock.mockReset();
     loadWorkspaceTreeMock.mockReset();
     openDailyNoteMock.mockReset();
+    openPathInFileManagerMock.mockReset();
     readAppSettingsMock.mockReset();
     readMarkdownDocumentMock.mockReset();
     readWorkspaceAssetDataMock.mockReset();
@@ -748,6 +703,19 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('button', { name: '打开设置' }).className).toContain(
       'w-[calc(100%-0.75rem)]',
     );
+  });
+
+  it('opens a sidebar document in the file manager from the context menu', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.pointer({
+      keys: '[MouseRight]',
+      target: screen.getByText('项目说明'),
+    });
+    await user.click(screen.getByRole('menuitem', { name: '在文件夹中打开' }));
+
+    expect(openPathInFileManagerMock).toHaveBeenCalledWith('/repo/README.md');
   });
 
   it('renders the selected daily calendar day without a square today backing', () => {
@@ -1161,32 +1129,7 @@ describe('WorkspaceLayout', () => {
     );
   });
 
-  it('splits a tab into a second editor group', async () => {
-    const user = userEvent.setup();
-    readMarkdownDocumentMock
-      .mockResolvedValueOnce(markdownDocument({
-        path: '/repo/a.md',
-        title: '文档 A',
-      }))
-      .mockResolvedValueOnce(markdownDocument({
-        path: '/repo/b.md',
-        title: '文档 B',
-      }));
-
-    render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
-
-    await user.click(screen.getByText('文档 A'));
-
-    await user.pointer({
-      keys: '[MouseRight]',
-      target: await screen.findByRole('tab', { name: /文档 A/ }),
-    });
-    await user.click(await screen.findByRole('menuitem', { name: '向右拆分' }));
-
-    expect(screen.getAllByTestId(/document-editor-group-/u)).toHaveLength(2);
-  });
-
-  it('does not show split focus ring in a single editor group', async () => {
+  it('does not show split actions in the tab context menu', async () => {
     const user = userEvent.setup();
     readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
       path: '/repo/a.md',
@@ -1197,70 +1140,14 @@ describe('WorkspaceLayout', () => {
 
     await user.click(screen.getByText('文档 A'));
 
-    expect(screen.getByTestId('document-editor-group-group-1').className).not
-      .toContain('ring-1');
-  });
-
-  it('closes a split pane when its last tab is closed', async () => {
-    const user = userEvent.setup();
-    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
-      path: '/repo/a.md',
-      title: '文档 A',
-    }));
-
-    render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
-
-    await user.click(screen.getByText('文档 A'));
     await user.pointer({
       keys: '[MouseRight]',
       target: await screen.findByRole('tab', { name: /文档 A/ }),
     });
-    await user.click(await screen.findByRole('menuitem', { name: '向右拆分' }));
 
-    const [, splitGroup] = screen.getAllByTestId(/document-editor-group-/u);
-    await user.click(
-      within(splitGroup).getByRole('button', { name: /关闭标签页 文档 A/ }),
-    );
-
-    expect(screen.getAllByTestId(/document-editor-group-/u)).toHaveLength(1);
-    expect(screen.queryByText('没有打开的标签页')).toBeNull();
-    expect(screen.getByTestId('document-editor-group-group-1').className).not
-      .toContain('ring-1');
-  });
-
-  it('keeps editor content visible in each split group', async () => {
-    const user = userEvent.setup();
-    readMarkdownDocumentMock
-      .mockResolvedValueOnce(markdownDocument({
-        body: 'A body',
-        path: '/repo/a.md',
-        title: '文档 A',
-      }))
-      .mockResolvedValueOnce(markdownDocument({
-        body: 'B body',
-        path: '/repo/b.md',
-        title: '文档 B',
-      }));
-
-    render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
-
-    await user.click(screen.getByText('文档 A'));
-    await user.click(screen.getByText('文档 B'));
-    await user.pointer({
-      keys: '[MouseRight]',
-      target: await screen.findByRole('tab', { name: /文档 B/ }),
-    });
-    await user.click(await screen.findByRole('menuitem', { name: '向右拆分' }));
-
-    expect(screen.getAllByTestId('markdown-editor')).toHaveLength(2);
-    expect(
-      screen
-        .getAllByTestId('markdown-editor')
-        .map((editor) => editor.getAttribute('data-markdown')),
-    ).toEqual([
-      expect.stringContaining('文档 B'),
-      expect.stringContaining('文档 B'),
-    ]);
+    expect(await screen.findByRole('menuitem', { name: '关闭' })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: '向右拆分' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: '向下拆分' })).toBeNull();
   });
 
   it('keeps cached editor visible while reactivating an already opened tab', async () => {
@@ -1301,28 +1188,27 @@ describe('WorkspaceLayout', () => {
     }));
   });
 
-  it('uses unique editor keys for split panes showing the same document', async () => {
+  it('keeps the editor key stable while editing active content', async () => {
     const user = userEvent.setup();
-    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
-      body: 'A body',
-      path: '/repo/a.md',
-      title: '文档 A',
-    }));
+    readMarkdownDocumentMock.mockImplementation(async (_rootPath, documentPath) =>
+      markdownDocument({
+        body: documentPath === '/repo/a.md' ? 'A body' : 'B body',
+        path: documentPath,
+        title: documentPath === '/repo/a.md' ? '文档 A' : '文档 B',
+      }),
+    );
 
     render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
 
     await user.click(screen.getByText('文档 A'));
-    await user.pointer({
-      keys: '[MouseRight]',
-      target: await screen.findByRole('tab', { name: /文档 A/ }),
-    });
-    await user.click(await screen.findByRole('menuitem', { name: '向右拆分' }));
+    await user.click(screen.getByText('文档 B'));
+    const editor = await screen.findByTestId('markdown-editor');
+    const initialKey = editor.getAttribute('data-document-key');
 
-    const editorKeys = screen
-      .getAllByTestId('markdown-editor')
-      .map((editor) => editor.getAttribute('data-document-key'));
+    await user.click(screen.getByText('模拟编辑器输入'));
 
-    expect(new Set(editorKeys).size).toBe(editorKeys.length);
+    expect(screen.getByTestId('markdown-editor').getAttribute('data-document-key'))
+      .toBe(initialKey);
   });
 
   it('shows a polished directory page and opens document cards', async () => {
@@ -1709,7 +1595,7 @@ describe('WorkspaceLayout', () => {
     expect(await screen.findByText('提交差异')).toBeTruthy();
   });
 
-  it('keeps ai panel collapsed by default and expands from the right tool rail', async () => {
+  it('keeps the AI panel entry visible but temporarily unavailable', async () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
@@ -1718,36 +1604,23 @@ describe('WorkspaceLayout', () => {
     expect(screen.queryByTestId('ai-panel-island')).toBeNull();
     expect(screen.queryByText('总结此页面')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
+    const aiButton = screen.getByRole('button', { name: 'AI 面板暂不可用' });
+    expect(aiButton.getAttribute('disabled')).not.toBeNull();
+    expect(aiButton.className).toContain('opacity-45');
 
-    expect(screen.getByTestId('ai-panel-island')).toBeTruthy();
-    expect(screen.getByText('总结此页面')).toBeTruthy();
+    await user.click(aiButton);
+
+    expect(screen.queryByTestId('ai-panel-island')).toBeNull();
   });
 
-  it('opens the functional AI panel with the current document context', async () => {
+  it('does not open the AI panel while the entry is temporarily disabled', async () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     await user.click(screen.getByTestId('ai-panel-icon-button'));
 
-    expect(await screen.findByText('AI 助手')).toBeTruthy();
-    expect(await screen.findByText('Fake Echo')).toBeTruthy();
-    expect(screen.getByPlaceholderText('向 AI 询问当前工作区...')).toBeTruthy();
-  });
-
-  it('opens AI settings directly from the AI panel header', async () => {
-    const user = userEvent.setup();
-    render(<WorkspaceLayout initialSnapshot={snapshot} />);
-
-    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
-    await user.click(await screen.findByRole('button', { name: '打开 AI 设置' }));
-
-    expect(await screen.findByTestId('workspace-settings-page')).toBeTruthy();
-    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
-    expect(screen.queryByTestId('document-meta-panel')).toBeNull();
     expect(screen.queryByTestId('ai-panel-island')).toBeNull();
-    expect(screen.getByText('AI 模型')).toBeTruthy();
-    expect(screen.getByText('启用模型')).toBeTruthy();
+    expect(screen.queryByText('AI 助手')).toBeNull();
   });
 
   it('shows document metadata, resources, and downloads a resource from the right rail', async () => {
@@ -1878,13 +1751,13 @@ describe('WorkspaceLayout', () => {
     });
   });
 
-  it('keeps the active right tool visually highlighted', async () => {
+  it('does not keep the active right tool visually highlighted', async () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
-    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
+    await user.click(screen.getByRole('button', { name: '展开元信息面板' }));
 
-    expect(screen.getByTestId('ai-panel-icon-button').className).toContain(
+    expect(screen.getByTestId('ai-panel-icon-button').className).not.toContain(
       'bg-[#3574f0]',
     );
     expect(
@@ -1940,6 +1813,8 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('button', { name: '返回应用' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '外观' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '存储' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'AI' })).toBeNull();
+    expect(screen.queryByText('AI 模型')).toBeNull();
     expect(screen.getByRole('radio', { name: '跟随系统' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '亮色' })).toBeTruthy();
     expect(screen.getByRole('radio', { name: '暗色' })).toBeTruthy();
@@ -1984,6 +1859,34 @@ describe('WorkspaceLayout', () => {
       expect(card.className).not.toContain('hover:shadow');
       expect(card.className).not.toContain('hover:bg-[#3574f0]/5');
     }
+  });
+
+  it('uses the wide integrated settings surface for appearance and storage pages', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开设置' }));
+
+    const appearanceShell = await screen.findByTestId(
+      'appearance-settings-shell',
+    );
+    expect(appearanceShell.className).toContain('max-w-[1120px]');
+    expect(appearanceShell.className).toContain('mx-auto');
+    expect(screen.getByTestId('appearance-fonts-card').className).toContain(
+      'bg-muted/30',
+    );
+
+    await user.click(screen.getByRole('button', { name: '存储' }));
+
+    const storageShell = await screen.findByTestId('storage-settings-shell');
+    expect(storageShell.className).toContain('max-w-[1120px]');
+    expect(storageShell.className).toContain('mx-auto');
+    expect(screen.getByTestId('storage-provider-card').className).toContain(
+      'bg-muted/30',
+    );
+    expect(screen.getByTestId('storage-local-card').className).toContain(
+      'bg-muted/30',
+    );
   });
 
   it('opens storage settings from the settings menu', async () => {
@@ -2211,58 +2114,20 @@ describe('WorkspaceLayout', () => {
     ).toBeTruthy();
   });
 
-  it('opens AI settings and saves the enabled model profile', async () => {
+  it('hides AI settings from the settings navigation and search results', async () => {
     const user = userEvent.setup();
-    Object.defineProperty(window, '__TAURI_INTERNALS__', {
-      configurable: true,
-      value: {},
-    });
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
     await user.click(screen.getByRole('button', { name: '打开设置' }));
-    await user.click(await screen.findByRole('button', { name: 'AI' }));
 
     expect(await screen.findByTestId('workspace-settings-page')).toBeTruthy();
-    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
-    expect(screen.getByText('AI 模型')).toBeTruthy();
-    expect(screen.getByText('启用模型')).toBeTruthy();
-    expect(screen.getByText('Fake Echo')).toBeTruthy();
-    expect(screen.getByDisplayValue('Local')).toBeTruthy();
-    expect(screen.getByDisplayValue('fake-echo')).toBeTruthy();
-    expect(screen.getByText('测试运行时')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'AI' })).toBeNull();
+    expect(screen.queryByText('AI 模型')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: '应用' }));
+    await user.type(screen.getByRole('searchbox', { name: '搜索设置' }), 'AI');
 
-    expect(saveAppSettingsMock).toHaveBeenCalledWith(defaultAppSettings);
-  });
-
-  it('detects local assistant accounts and shows grouped models in AI settings', async () => {
-    const user = userEvent.setup();
-    Object.defineProperty(window, '__TAURI_INTERNALS__', {
-      configurable: true,
-      value: {},
-    });
-    listAiAgentProfilesMock.mockResolvedValue([
-      fakeEchoProfile,
-      codexDetectedProfile,
-    ]);
-    detectAiAccountsMock.mockResolvedValue(detectedAiAccounts);
-
-    render(<WorkspaceLayout initialSnapshot={snapshot} />);
-
-    await user.click(screen.getByRole('button', { name: '打开设置' }));
-    await user.click(await screen.findByRole('button', { name: 'AI' }));
-
-    expect(await screen.findByText('Accounts')).toBeTruthy();
-    expect(screen.getByText('Use assistant accounts without adding API keys.')).toBeTruthy();
-    expect(screen.getByText('Codex')).toBeTruthy();
-    expect(screen.getByText('Claude')).toBeTruthy();
-    expect(screen.getByText('Connected')).toBeTruthy();
-    expect(screen.getByText('Detected')).toBeTruthy();
-    expect(screen.getByText('codex-cli 0.130.0')).toBeTruthy();
-    expect(screen.getByText('Codex Models')).toBeTruthy();
-    expect(screen.getByText('GPT-5.4')).toBeTruthy();
-    expect(detectAiAccountsMock).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'AI' })).toBeNull();
+    expect(screen.queryByText('AI 模型')).toBeNull();
   });
 
   it('filters appearance settings with the settings search input', async () => {
@@ -2913,6 +2778,10 @@ describe('WorkspaceLayout', () => {
 
   it('removes a workspace from recent workspace menu', async () => {
     const user = userEvent.setup();
+    readMarkdownDocumentMock.mockResolvedValueOnce(markdownDocument({
+      path: '/repo/README.md',
+      title: '项目说明',
+    }));
     window.localStorage.setItem(
       'madora:workspace-history',
       JSON.stringify([
@@ -2925,14 +2794,23 @@ describe('WorkspaceLayout', () => {
     );
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
+    await user.click(screen.getByTestId('tree-row-readme'));
+
+    expect(await screen.findByRole('tab', { name: '项目说明' })).toBeTruthy();
+    expect(await screen.findByTestId('markdown-editor')).toBeTruthy();
+
     await user.click(screen.getByRole('button', { name: '打开工作区菜单' }));
     await user.click(screen.getByRole('button', { name: '移除工作区 repo' }));
 
     expect(
       screen.queryByRole('button', { name: '移除工作区 repo' }),
     ).toBeNull();
-    expect(screen.getByText('还没有打开过的工作区')).toBeTruthy();
-    expect(screen.queryByText('项目说明')).toBeNull();
+    await waitFor(() => {
+      expect(screen.getByText('还没有打开过的工作区')).toBeTruthy();
+      expect(screen.queryByText('项目说明')).toBeNull();
+      expect(screen.queryByRole('tab', { name: '项目说明' })).toBeNull();
+      expect(screen.queryByTestId('markdown-editor')).toBeNull();
+    });
     expect(screen.queryByText('/repo')).toBeNull();
     expect(screen.getByText('打开一个工作区')).toBeTruthy();
   });
@@ -2978,6 +2856,27 @@ describe('WorkspaceLayout', () => {
       screen.getByTestId('workspace-titlebar-drag-region').className,
     ).not.toContain('border-b');
     expect(screen.getByTestId('windows-titlebar-controls')).toBeTruthy();
+    expect(screen.getByTestId('sidebar-chrome-toggle').className).toContain(
+      'left-2',
+    );
+    expect(screen.getByTestId('workspace-main-header').className).toContain(
+      'h-8',
+    );
+    expect(screen.getByTestId('workspace-main-header').className).toContain(
+      'items-center',
+    );
+    expect(screen.getByTestId('workspace-main-header').className).not.toContain(
+      'h-11',
+    );
+    expect(screen.getByTestId('workspace-main-header').className).not.toContain(
+      'h-[76px]',
+    );
+    expect(screen.getByTestId('right-header-tools').className).toContain(
+      'mr-[150px]',
+    );
+    expect(screen.getByTestId('right-header-tools').className).not.toContain(
+      'self-end',
+    );
 
     await user.click(screen.getByRole('button', { name: '最小化窗口' }));
     await user.click(screen.getByRole('button', { name: '最大化或还原窗口' }));
@@ -3022,6 +2921,26 @@ describe('WorkspaceLayout', () => {
       );
     });
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps global search inside the viewport on narrow windows', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceLayout initialSnapshot={multiDocumentSnapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '搜索文档' }));
+
+    const dialogContent = document.querySelector('[data-slot="dialog-content"]');
+    const searchbox = await screen.findByRole('searchbox', { name: '搜索文档' });
+    const searchHeader = searchbox.closest('[data-global-search-header]');
+    const results = document.querySelector('[data-global-search-results]');
+
+    expect(dialogContent?.className).toContain('w-[min(calc(100vw-1.5rem),48rem)]');
+    expect(dialogContent?.className).toContain('max-h-[calc(100vh-2rem)]');
+    expect(dialogContent?.className).toContain('translate-y-0');
+    expect(searchHeader?.className).toContain('min-w-0');
+    expect(searchbox.className).toContain('min-w-0');
+    expect(searchbox.className).toContain('flex-1');
+    expect(results?.className).toContain('max-h-[calc(100vh-5rem)]');
   });
 
   it('opens global search from keyboard shortcuts', async () => {
@@ -3078,7 +2997,7 @@ describe('WorkspaceLayout', () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
 
-    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
+    await user.click(screen.getByRole('button', { name: '展开元信息面板' }));
 
     const handle = screen.getByRole('separator', {
       name: '调整右侧面板宽度',
@@ -3088,7 +3007,7 @@ describe('WorkspaceLayout', () => {
     fireEvent.pointerMove(document, { clientX: 600, pointerId: 1 });
     fireEvent.pointerUp(document, { pointerId: 1 });
 
-    expect(screen.getByTestId('ai-panel-island').style.width).toBe('520px');
+    expect(screen.getByTestId('document-meta-panel').style.width).toBe('520px');
     expect(
       window.localStorage.getItem('madora:workspace:right-panel-width'),
     ).toBe('520');
@@ -3119,7 +3038,7 @@ describe('WorkspaceLayout', () => {
       screen.queryByRole('separator', { name: '调整右侧面板宽度' }),
     ).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
+    await user.click(screen.getByRole('button', { name: '展开元信息面板' }));
 
     expect(
       screen.getByRole('separator', { name: '调整右侧面板宽度' }),
@@ -3141,7 +3060,7 @@ describe('WorkspaceLayout', () => {
       'transition-[width]',
     );
 
-    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
+    await user.click(screen.getByRole('button', { name: '展开元信息面板' }));
 
     const rightHandle = screen.getByRole('separator', {
       name: '调整右侧面板宽度',
@@ -3213,6 +3132,55 @@ describe('WorkspaceLayout', () => {
     ).toBe('false');
   });
 
+  it('refreshes the workspace tree from the sidebar chrome without blocking the shell', async () => {
+    const user = userEvent.setup();
+    let resolveRefresh: (snapshot: WorkspaceSnapshot) => void = () => {};
+    const refreshPromise = new Promise<WorkspaceSnapshot>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    loadWorkspaceTreeMock.mockReturnValueOnce(refreshPromise);
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    const refreshButton = screen.getByRole('button', { name: '刷新工作区' });
+
+    expect(refreshButton.parentElement).toBe(
+      screen.getByTestId('sidebar-chrome-toggle'),
+    );
+    expect(refreshButton.getAttribute('data-refreshing')).toBe('false');
+
+    await user.click(refreshButton);
+
+    expect(loadWorkspaceTreeMock).toHaveBeenCalledWith('/repo');
+    expect(refreshButton.getAttribute('data-refreshing')).toBe('true');
+    expect(refreshButton.querySelector('svg')?.className.baseVal).toContain(
+      'animate-spin',
+    );
+    expect(
+      screen
+        .getByRole('button', { name: '折叠侧边栏' })
+        .hasAttribute('disabled'),
+    ).toBe(false);
+
+    resolveRefresh({
+      ...snapshot,
+      nodes: [
+        ...snapshot.nodes,
+        {
+          id: 'external',
+          name: 'external.md',
+          kind: 'document',
+          relativePath: 'external.md',
+          absolutePath: '/repo/external.md',
+          title: '外部文档',
+        },
+      ],
+    });
+
+    expect(await screen.findByText('外部文档')).toBeTruthy();
+    expect(refreshButton.getAttribute('data-refreshing')).toBe('false');
+  });
+
   it('uses default widths for the resizable workspace panels', async () => {
     const user = userEvent.setup();
     render(<WorkspaceLayout initialSnapshot={snapshot} />);
@@ -3221,9 +3189,9 @@ describe('WorkspaceLayout', () => {
 
     expect(sidebar.style.width).toBe('280px');
 
-    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
+    await user.click(screen.getByRole('button', { name: '展开元信息面板' }));
 
-    expect(screen.getByTestId('ai-panel-island').style.width).toBe('340px');
+    expect(screen.getByTestId('document-meta-panel').style.width).toBe('340px');
   });
 
   it('loads persisted panel widths and clamps invalid stored values', async () => {
@@ -3241,9 +3209,9 @@ describe('WorkspaceLayout', () => {
 
     expect(screen.getByTestId('workspace-sidebar').style.width).toBe('420px');
 
-    await user.click(screen.getByRole('button', { name: '展开 AI 面板' }));
+    await user.click(screen.getByRole('button', { name: '展开元信息面板' }));
 
-    expect(screen.getByTestId('ai-panel-island').style.width).toBe('340px');
+    expect(screen.getByTestId('document-meta-panel').style.width).toBe('340px');
   });
 
   it('removes the left directory toggle and keeps global search centered in the header', () => {

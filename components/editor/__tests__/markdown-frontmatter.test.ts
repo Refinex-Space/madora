@@ -16,6 +16,23 @@ describe('parseFrontmatter', () => {
     expect(body).toBe('# 正文');
   });
 
+  it('解析 Windows CRLF 换行的 frontmatter 文档', () => {
+    const raw = [
+      '---',
+      'title: 标题',
+      'createdAt: 2026-01-01',
+      '---',
+      '',
+      '# 正文',
+    ].join('\r\n');
+
+    const { metadata, body } = parseFrontmatter(raw);
+
+    expect(metadata.title).toBe('标题');
+    expect(metadata.createdAt).toBe('2026-01-01');
+    expect(body).toBe('# 正文');
+  });
+
   it('无 frontmatter 时 metadata 为空对象，body 为原文 trimStart', () => {
     const raw = '# 正文';
     const { metadata, body } = parseFrontmatter(raw);
@@ -64,6 +81,10 @@ describe('parseMarkdownMetadata', () => {
     expect(
       parseMarkdownMetadata('---\ntitle: F\n---\n\n# H1', 'file.md').metadata
         .title,
+    ).toBe('F');
+    expect(
+      parseMarkdownMetadata('---\r\ntitle: F\r\n---\r\n\r\n# H1', 'file.md')
+        .metadata.title,
     ).toBe('F');
     expect(parseMarkdownMetadata('# H1', 'file.md').metadata.title).toBe('H1');
     expect(parseMarkdownMetadata('正文', 'file.md').metadata.title).toBe('file');
