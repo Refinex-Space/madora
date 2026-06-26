@@ -3028,6 +3028,19 @@ describe('WorkspaceLayout', () => {
     expect(
       await screen.findByRole('heading', { name: 'Preferences' }),
     ).toBeTruthy();
+    expect(screen.getByTestId('ai-preferences-settings-shell').className).toContain(
+      'p-6',
+    );
+    expect(
+      screen.getByTestId('ai-preferences-settings-title').className,
+    ).toContain('text-sm');
+    expect(
+      screen.getByTestId('ai-preferences-settings-description').className,
+    ).toContain('text-xs');
+    expect(screen.getByTestId('ai-preferences-row-extended-thinking').className)
+      .toContain('flex');
+    expect(screen.getByTestId('ai-preferences-row-extended-thinking').className)
+      .toContain('justify-between');
     expect(
       screen.getByText("Configure Claude's behavior and features"),
     ).toBeTruthy();
@@ -6207,6 +6220,61 @@ describe('WorkspaceLayout', () => {
       true,
     );
     expect(await screen.findByText('resolve-library-id')).toBeTruthy();
+  });
+
+  it('revokes approved plugin MCP servers from settings', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: {},
+    });
+    const approvedPluginServer = {
+      args: ['-y', '@upstash/context7'],
+      command: 'npx',
+      connectionType: 'stdio',
+      enabled: true,
+      envKeys: [],
+      groupName: 'Plugin: market:plugin-one',
+      name: 'context7',
+      pluginName: 'market:plugin-one',
+      projectPath: null,
+      provider: 'claude-code',
+      source: 'plugin',
+      status: 'connected',
+      tools: [{ description: 'Resolve docs', name: 'resolve-library-id' }],
+      url: null,
+    };
+    const pendingPluginServer = {
+      ...approvedPluginServer,
+      status: 'pending-approval',
+      tools: [],
+    };
+
+    listAiMcpServersMock
+      .mockResolvedValueOnce([approvedPluginServer])
+      .mockResolvedValueOnce([pendingPluginServer]);
+
+    render(<WorkspaceLayout initialSnapshot={snapshot} />);
+
+    await user.click(screen.getByRole('button', { name: '打开设置' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'MCP Servers' }),
+    );
+    expect(await screen.findByText('resolve-library-id')).toBeTruthy();
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Revoke plugin MCP server approval',
+      }),
+    );
+
+    expect(setAiPluginMcpServerApprovedMock).toHaveBeenCalledWith(
+      'market:plugin-one',
+      'context7',
+      false,
+    );
+    expect((await screen.findAllByText('pending-approval')).length).toBeGreaterThan(
+      0,
+    );
   });
 
   it('shows 1Code-style empty state for MCP servers', async () => {

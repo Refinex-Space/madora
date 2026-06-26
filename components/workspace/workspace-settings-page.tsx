@@ -2173,15 +2173,23 @@ function AiPreferencesSettingsSection({
   }
 
   return (
-    <div className="mx-auto max-w-[880px] space-y-6">
-      <div>
-        <h2 className="text-[18px] font-semibold">Preferences</h2>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+    <div className="space-y-6 p-6" data-testid="ai-preferences-settings-shell">
+      <div className="flex flex-col space-y-1.5 text-center sm:text-left">
+        <h2
+          className="text-sm font-semibold text-foreground"
+          data-testid="ai-preferences-settings-title"
+        >
+          Preferences
+        </h2>
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="ai-preferences-settings-description"
+        >
           Configure Claude&apos;s behavior and features
         </p>
       </div>
 
-      <section className="overflow-hidden rounded-lg border bg-background">
+      <section className="overflow-hidden rounded-lg border border-border bg-background">
         <PreferenceRow
           control={
             <PillSwitch
@@ -2192,6 +2200,7 @@ function AiPreferencesSettingsSection({
           }
           description="Enable deeper reasoning with more thinking tokens (uses more credits). Disables response streaming."
           label="Extended Thinking"
+          testId="ai-preferences-row-extended-thinking"
         />
         <PreferenceRow
           control={
@@ -2231,7 +2240,7 @@ function AiPreferencesSettingsSection({
         <p className="text-sm text-destructive">{claudeSettingsMessage}</p>
       ) : null}
 
-      <section className="overflow-hidden rounded-lg border bg-background">
+      <section className="overflow-hidden rounded-lg border border-border bg-background">
         <PreferenceRow
           control={
             <div className="flex flex-wrap justify-end gap-2">
@@ -2268,7 +2277,7 @@ function AiPreferencesSettingsSection({
         />
       </section>
 
-      <section className="overflow-hidden rounded-lg border bg-background">
+      <section className="overflow-hidden rounded-lg border border-border bg-background">
         <PreferenceRow
           control={
             <PillSwitch
@@ -2309,7 +2318,7 @@ function AiPreferencesSettingsSection({
         />
       </section>
 
-      <section className="overflow-hidden rounded-lg border bg-background">
+      <section className="overflow-hidden rounded-lg border border-border bg-background">
         <PreferenceRow
           control={
             <Select
@@ -2446,7 +2455,7 @@ function AiPreferencesSettingsSection({
         />
       </section>
 
-      <section className="overflow-hidden rounded-lg border bg-background">
+      <section className="overflow-hidden rounded-lg border border-border bg-background">
         <PreferenceRow
           control={
             <PillSwitch
@@ -2500,20 +2509,25 @@ function PreferenceRow({
   control,
   description,
   label,
+  testId,
 }: {
   control: React.ReactNode;
   description: React.ReactNode;
   label: string;
+  testId?: string;
 }) {
   return (
-    <div className="grid gap-4 border-b px-4 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(220px,auto)] sm:items-center">
-      <div className="min-w-0">
-        <h3 className="text-sm font-medium">{label}</h3>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+    <div
+      className="flex items-center justify-between gap-6 border-b border-border p-4 last:border-b-0"
+      data-testid={testId}
+    >
+      <div className="min-w-0 flex-1 space-y-1">
+        <h3 className="text-sm font-medium text-foreground">{label}</h3>
+        <p className="text-xs text-muted-foreground">
           {description}
         </p>
       </div>
-      <div className="flex justify-start sm:justify-end">{control}</div>
+      <div className="flex shrink-0 justify-end">{control}</div>
     </div>
   );
 }
