@@ -4990,6 +4990,8 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByText('Tags')).toBeTruthy();
     expect(screen.getByText('Commands (1)')).toBeTruthy();
     expect(screen.getByText('/commit')).toBeTruthy();
+    expect(screen.getByText('/commit').className).toContain('text-xs');
+    expect(screen.getByText('Commit workflow').className).toContain('text-[11px]');
     expect(screen.getByText('Skills (1)')).toBeTruthy();
     expect(screen.getByTestId('plugin-skill-icon-docx')).toBeTruthy();
     expect(screen.getByText('Agents (1)')).toBeTruthy();
@@ -6446,8 +6448,13 @@ describe('WorkspaceLayout', () => {
     expect(screen.getAllByText('2 tools').length).toBeGreaterThan(0);
     expect(screen.getByText('Enabled')).toBeTruthy();
     expect(screen.getByText('Connection')).toBeTruthy();
+    expect(screen.getByText('Connection').className).toContain('text-xs');
     expect(screen.getByText('Tools (2)')).toBeTruthy();
     expect(screen.getByText('ui_to_artifact')).toBeTruthy();
+    expect(screen.getByText('ui_to_artifact').className).toContain('text-[13px]');
+    expect(
+      screen.getByText('Convert UI screenshots into artifacts').className,
+    ).toContain('text-xs');
     expect(screen.getByText('Z_AI_API_KEY')).toBeTruthy();
     expect(screen.getByText('Error')).toBeTruthy();
     expect(

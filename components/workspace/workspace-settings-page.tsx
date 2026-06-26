@@ -6885,7 +6885,7 @@ function McpServerDetailPanel({
       {canWrite ? (
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h4 className="text-sm font-medium">Enabled</h4>
+            <h4 className="text-xs font-medium text-foreground">Enabled</h4>
             <p className="mt-1 text-xs text-muted-foreground">
               Disable to prevent this server from connecting
             </p>
@@ -6900,7 +6900,7 @@ function McpServerDetailPanel({
       ) : null}
 
       <div>
-        <h4 className="mb-2 text-sm font-medium">Connection</h4>
+        <h4 className="mb-2 text-xs font-medium text-foreground">Connection</h4>
         <div className="overflow-hidden rounded-md border">
           <ReadonlyInfoRow label="Type" value={server.connectionType} />
           {server.command ? (
@@ -6930,9 +6930,9 @@ function McpServerDetailPanel({
 
       {server.error ? (
         <div>
-          <h4 className="mb-2 text-sm font-medium text-destructive">Error</h4>
+          <h4 className="mb-2 text-xs font-medium text-destructive">Error</h4>
           <div className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2">
-            <p className="break-words font-mono text-sm text-destructive">
+            <p className="break-words font-mono text-xs text-destructive">
               {server.error}
             </p>
           </div>
@@ -6941,15 +6941,17 @@ function McpServerDetailPanel({
 
       {tools.length > 0 ? (
         <div>
-          <h4 className="mb-3 text-sm font-medium">
+          <h4 className="mb-3 text-xs font-medium text-foreground">
             {hideToolsCount ? 'Tools' : `Tools (${tools.length})`}
           </h4>
           <div className="grid gap-2">
             {tools.map((tool) => (
-              <div className="rounded-md border px-3.5 py-2.5" key={tool.name}>
-                <p className="font-mono text-sm font-medium">{tool.name}</p>
+              <div className="rounded-lg border px-3.5 py-2.5" key={tool.name}>
+                <p className="font-mono text-[13px] font-medium">
+                  {tool.name}
+                </p>
                 {tool.description ? (
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                     {tool.description}
                   </p>
                 ) : null}
@@ -7679,9 +7681,13 @@ function ConfirmAiSettingsDeleteDialog({
 
 function ReadonlyInfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid gap-2 border-b px-3 py-2 text-sm last:border-b-0 sm:grid-cols-[96px_minmax(0,1fr)]">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="min-w-0 break-words font-mono">{value}</span>
+    <div className="flex gap-3 border-b px-3 py-2 last:border-b-0">
+      <span className="w-16 shrink-0 text-xs text-muted-foreground">
+        {label}
+      </span>
+      <span className="min-w-0 break-words font-mono text-xs text-foreground">
+        {value}
+      </span>
     </div>
   );
 }
@@ -7818,14 +7824,14 @@ function PluginComponentSection({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <h4 className="text-sm font-semibold">
         {title} ({components.length})
       </h4>
-      <div className="grid gap-1.5">
+      <div className="grid gap-1">
         {components.map((component) => (
           <button
-            className="group flex w-full items-start gap-2 rounded-md border bg-background px-2.5 py-2 text-left transition-colors hover:bg-muted/60"
+            className="group flex w-full items-start gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left transition-colors hover:bg-muted/60"
             key={component.name}
             type="button"
             onClick={onNavigate}
@@ -7834,12 +7840,12 @@ function PluginComponentSection({
               {typeof icon === 'function' ? icon(component.name) : icon}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate font-mono text-sm font-medium">
+              <span className="block truncate font-mono text-xs font-medium text-foreground">
                 {namePrefix}
                 {component.name}
               </span>
               {component.description ? (
-                <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+                <span className="mt-0.5 block text-[11px] text-muted-foreground/60">
                   {component.description}
                 </span>
               ) : null}
@@ -7871,11 +7877,11 @@ function PluginMcpServerSection({
   title: string;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <h4 className="text-sm font-semibold">
         {title} ({items.length})
       </h4>
-      <div className="grid gap-1.5">
+      <div className="grid gap-1">
         {items.map(({ name, server }) => {
           const needsAuth =
             server ? server.needsAuth || server.status === 'needs-auth' : false;
@@ -7883,14 +7889,14 @@ function PluginMcpServerSection({
 
           return (
             <div
-              className="group flex w-full items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-left transition-colors hover:bg-muted/60"
+              className="group flex w-full items-start gap-2 rounded-md border bg-background px-2.5 py-1.5 text-left transition-colors hover:bg-muted/60"
               key={name}
             >
-              <span className="shrink-0 text-muted-foreground">
+              <span className="mt-0.5 shrink-0 text-muted-foreground">
                 {typeof icon === 'function' ? icon(name) : icon}
               </span>
               <button
-                className="min-w-0 flex-1 truncate text-left font-mono text-sm font-medium hover:underline"
+                className="min-w-0 flex-1 truncate text-left font-mono text-xs font-medium text-foreground hover:underline"
                 type="button"
                 onClick={onNavigate}
               >
