@@ -4504,7 +4504,7 @@ function AiSkillsSettingsSection({
 
             <div className="grid gap-4">
           {isCreating ? (
-            <label className="grid gap-2">
+            <label className="grid gap-1.5">
               <span className="text-sm font-medium">Type</span>
               <Select
                 value={draft.kind}
@@ -4531,7 +4531,7 @@ function AiSkillsSettingsSection({
           ) : null}
 
           {isCreating && hasProjectScope ? (
-            <label className="grid gap-2">
+            <label className="grid gap-1.5">
               <span className="text-sm font-medium">Scope</span>
               <Select
                 value={draft.source}
@@ -4561,7 +4561,7 @@ function AiSkillsSettingsSection({
             </label>
           ) : null}
 
-          <label className="grid gap-2">
+          <label className="grid gap-1.5">
             <span className="text-sm font-medium">Name</span>
             <Input
               aria-label="Name"
@@ -4582,7 +4582,7 @@ function AiSkillsSettingsSection({
             ) : null}
           </label>
 
-          <label className="grid gap-2">
+          <label className="grid gap-1.5">
             <span className="text-sm font-medium">Description</span>
             <Input
               aria-label="Description"
@@ -4604,7 +4604,7 @@ function AiSkillsSettingsSection({
           </label>
 
           {draft.kind === 'command' ? (
-            <label className="grid gap-2">
+            <label className="grid gap-1.5">
               <span className="text-sm font-medium">Argument hint</span>
               <Input
                 aria-label="Argument hint"
@@ -4622,7 +4622,7 @@ function AiSkillsSettingsSection({
           ) : null}
 
           {!isCreating ? (
-            <div className="grid gap-2">
+            <div className="grid gap-1.5">
               <span className="text-sm font-medium">Usage</span>
               <div className="rounded-md border bg-muted/40 px-3 py-2">
                 <code className="text-sm">
@@ -4632,7 +4632,7 @@ function AiSkillsSettingsSection({
             </div>
           ) : null}
 
-          <div className="grid gap-2">
+          <div className="grid gap-1.5">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-medium">Instructions</span>
               {!isCreating && isWritable ? (
@@ -4693,6 +4693,7 @@ function AiSkillsSettingsSection({
                     ? 'Skill instructions (markdown)...'
                     : 'Command prompt (markdown)...'
                 }
+                rows={isCreating ? 12 : 16}
                 value={draft.content}
                 onBlur={() => void handleAutosave()}
                 onChange={(event) =>
@@ -5465,7 +5466,7 @@ function AiCustomAgentsSettingsSection({
 
             <div className="grid gap-4">
               {isCreating && hasProjectScope ? (
-                <label className="grid gap-2">
+                <label className="grid gap-1.5">
                   <span className="text-sm font-medium">Scope</span>
                   <Select
                     value={draft.source}
@@ -5491,7 +5492,7 @@ function AiCustomAgentsSettingsSection({
                 </label>
               ) : null}
 
-          <label className="grid gap-2">
+          <label className="grid gap-1.5">
             <span className="text-sm font-medium">Name</span>
             <Input
               aria-label="Name"
@@ -5506,7 +5507,7 @@ function AiCustomAgentsSettingsSection({
             />
           </label>
 
-          <label className="grid gap-2">
+          <label className="grid gap-1.5">
             <span className="text-sm font-medium">Description</span>
             <Input
               aria-label="Description"
@@ -5574,12 +5575,13 @@ function AiCustomAgentsSettingsSection({
             </div>
           ) : null}
 
-          <label className="grid gap-2">
+          <label className="grid gap-1.5">
             <span className="text-sm font-medium">System Prompt</span>
             <textarea
               aria-label="System Prompt"
               className="min-h-[240px] resize-y rounded-md border bg-background px-3 py-2 font-mono text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!isWritable}
+              rows={isCreating ? 12 : 16}
               value={draft.prompt}
               onBlur={() => void handleAutosave()}
               onChange={(event) =>

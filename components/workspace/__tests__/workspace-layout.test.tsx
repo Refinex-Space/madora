@@ -3637,6 +3637,7 @@ describe('WorkspaceLayout', () => {
 
     await user.click(screen.getByRole('button', { name: 'Edit markdown' }));
     const editor = await screen.findByLabelText('Instructions');
+    expect((editor as HTMLTextAreaElement).rows).toBe(16);
     await user.clear(editor);
     await user.type(editor, 'Use updated docs.');
     fireEvent.blur(editor);
@@ -3674,9 +3675,11 @@ describe('WorkspaceLayout', () => {
       ),
     ).toBeTruthy();
     expect(screen.getByPlaceholderText('What this skill does...')).toBeTruthy();
-    expect(
-      screen.getByPlaceholderText('Skill instructions (markdown)...'),
-    ).toBeTruthy();
+    const skillInstructions = screen.getByPlaceholderText(
+      'Skill instructions (markdown)...',
+    ) as HTMLTextAreaElement;
+    expect(skillInstructions).toBeTruthy();
+    expect(skillInstructions.rows).toBe(12);
 
     await user.click(screen.getByRole('combobox', { name: 'Scope' }));
     expect(
@@ -3700,6 +3703,13 @@ describe('WorkspaceLayout', () => {
     expect(
       screen.getByPlaceholderText('Command prompt (markdown)...'),
     ).toBeTruthy();
+    expect(
+      (
+        screen.getByPlaceholderText(
+          'Command prompt (markdown)...',
+        ) as HTMLTextAreaElement
+      ).rows,
+    ).toBe(12);
 
     await user.click(screen.getByRole('combobox', { name: 'Scope' }));
     expect(
@@ -3892,6 +3902,9 @@ describe('WorkspaceLayout', () => {
     expect(
       screen.getByRole('heading', { name: 'New Agent' }).className,
     ).not.toContain('text-[18px]');
+    expect(
+      (screen.getByLabelText('System Prompt') as HTMLTextAreaElement).rows,
+    ).toBe(12);
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
     expect(
       getSettingsCreateButton().disabled,
@@ -4286,6 +4299,7 @@ describe('WorkspaceLayout', () => {
     });
 
     const prompt = await screen.findByLabelText('System Prompt');
+    expect((prompt as HTMLTextAreaElement).rows).toBe(16);
     await user.clear(prompt);
     await user.type(prompt, 'Review more carefully.');
     fireEvent.blur(prompt);
