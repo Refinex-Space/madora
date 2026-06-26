@@ -3908,6 +3908,14 @@ describe('WorkspaceLayout', () => {
     expect(
       (screen.getByLabelText('System Prompt') as HTMLTextAreaElement).rows,
     ).toBe(12);
+    expect(screen.getByPlaceholderText('my-agent')).toBeTruthy();
+    expect(
+      screen.getByText('Lowercase letters, numbers, and hyphens'),
+    ).toBeTruthy();
+    expect(screen.getByPlaceholderText('What this agent does...')).toBeTruthy();
+    expect(
+      screen.getByPlaceholderText('You are a specialized agent that...'),
+    ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy();
     expect(
       getSettingsCreateButton().disabled,

@@ -5504,6 +5504,7 @@ function AiCustomAgentsSettingsSection({
             <Input
               aria-label="Name"
               disabled={!isCreating || !isWritable}
+              placeholder="my-agent"
               value={draft.name}
               onChange={(event) =>
                 setDraft((current) => ({
@@ -5512,6 +5513,11 @@ function AiCustomAgentsSettingsSection({
                 }))
               }
             />
+            {isCreating ? (
+              <span className="text-[11px] text-muted-foreground">
+                Lowercase letters, numbers, and hyphens
+              </span>
+            ) : null}
           </label>
 
           <label className="grid gap-1.5">
@@ -5519,6 +5525,9 @@ function AiCustomAgentsSettingsSection({
             <Input
               aria-label="Description"
               disabled={!isWritable}
+              placeholder={
+                isCreating ? 'What this agent does...' : 'Agent description...'
+              }
               value={draft.description}
               onBlur={() => void handleAutosave()}
               onChange={(event) =>
@@ -5588,6 +5597,11 @@ function AiCustomAgentsSettingsSection({
               aria-label="System Prompt"
               className="min-h-[240px] resize-y rounded-md border bg-background px-3 py-2 font-mono text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!isWritable}
+              placeholder={
+                isCreating
+                  ? 'You are a specialized agent that...'
+                  : 'System prompt for this agent...'
+              }
               rows={isCreating ? 12 : 16}
               value={draft.prompt}
               onBlur={() => void handleAutosave()}
