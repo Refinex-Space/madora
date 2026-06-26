@@ -6363,7 +6363,7 @@ function AiMcpServersSettingsSection({
         onResize={onSettingsSidebarWidthChange}
       />
 
-      <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-7">
+      <section className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {message ? (
           <p className="mb-4 text-sm text-destructive">{message}</p>
         ) : null}
@@ -6775,11 +6775,23 @@ function McpServerDetailPanel({
   const canLogout = canCodexLogout || canClaudeLogout;
 
   return (
-    <div className="mx-auto max-w-[720px] space-y-6">
+    <div
+      className="h-full overflow-y-auto"
+      data-testid="ai-mcp-detail-shell"
+    >
+      <div
+        className="mx-auto max-w-2xl space-y-6 p-6"
+        data-testid="ai-mcp-detail-inner"
+      >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-[18px] font-semibold">{server.name}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h3
+            className="truncate text-sm font-semibold text-foreground"
+            data-testid="ai-mcp-detail-title"
+          >
+            {server.name}
+          </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
             {formatMcpServerSummary(server, hideToolsCount)}
           </p>
         </div>
@@ -6932,6 +6944,7 @@ function McpServerDetailPanel({
           </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
@@ -7337,7 +7350,7 @@ function AiPluginsSettingsSection({
         onResize={onSettingsSidebarWidthChange}
       />
 
-      <section className="min-h-0 min-w-0 flex-1 overflow-y-auto px-8 py-7">
+      <section className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {message ? (
           <p className="text-sm text-destructive">{message}</p>
         ) : null}
@@ -7473,11 +7486,25 @@ function PluginDetailPanel({
   }));
 
   return (
-    <div className="mx-auto max-w-[720px] space-y-5">
+    <div
+      className="flex h-full flex-col overflow-hidden"
+      data-testid="ai-plugin-detail-shell"
+    >
+      <div
+        className="flex-1 overflow-y-auto"
+        data-testid="ai-plugin-detail-scroll"
+      >
+        <div
+          className="mx-auto max-w-2xl space-y-5 p-6"
+          data-testid="ai-plugin-detail-inner"
+        >
       <div>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h3 className="text-[18px] font-semibold">
+            <h3
+              className="text-sm font-semibold text-foreground"
+              data-testid="ai-plugin-detail-title"
+            >
               {formatPluginDisplayName(plugin.name)}
             </h3>
             {plugin.category ? (
@@ -7579,6 +7606,8 @@ function PluginDetailPanel({
             onMcpAuth={onMcpAuth}
           />
         ) : null}
+      </div>
+        </div>
       </div>
     </div>
   );

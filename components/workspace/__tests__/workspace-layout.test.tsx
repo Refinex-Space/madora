@@ -4953,6 +4953,24 @@ describe('WorkspaceLayout', () => {
     expect(
       screen.getByRole('heading', { name: 'Document Skills' }),
     ).toBeTruthy();
+    expect(screen.getByTestId('ai-plugin-detail-shell').className).toContain(
+      'h-full',
+    );
+    expect(screen.getByTestId('ai-plugin-detail-scroll').className).toContain(
+      'overflow-y-auto',
+    );
+    expect(screen.getByTestId('ai-plugin-detail-inner').className).toContain(
+      'max-w-2xl',
+    );
+    expect(screen.getByTestId('ai-plugin-detail-inner').className).toContain(
+      'p-6',
+    );
+    expect(screen.getByTestId('ai-plugin-detail-title').className).toContain(
+      'text-sm',
+    );
+    expect(screen.getByTestId('ai-plugin-detail-title').className).not.toContain(
+      'text-[18px]',
+    );
     expect(screen.getByText('productivity')).toBeTruthy();
     expect(screen.getByText('Version')).toBeTruthy();
     expect(screen.getByText('Source')).toBeTruthy();
@@ -6339,6 +6357,24 @@ describe('WorkspaceLayout', () => {
     expect(
       screen.getByRole('heading', { name: 'zai-mcp-server' }),
     ).toBeTruthy();
+    expect(screen.getByTestId('ai-mcp-detail-shell').className).toContain(
+      'h-full',
+    );
+    expect(screen.getByTestId('ai-mcp-detail-shell').className).toContain(
+      'overflow-y-auto',
+    );
+    expect(screen.getByTestId('ai-mcp-detail-inner').className).toContain(
+      'max-w-2xl',
+    );
+    expect(screen.getByTestId('ai-mcp-detail-inner').className).toContain(
+      'p-6',
+    );
+    expect(screen.getByTestId('ai-mcp-detail-title').className).toContain(
+      'text-sm',
+    );
+    expect(screen.getByTestId('ai-mcp-detail-title').className).not.toContain(
+      'text-[18px]',
+    );
     expect(screen.getAllByText('2 tools').length).toBeGreaterThan(0);
     expect(screen.getByText('Enabled')).toBeTruthy();
     expect(screen.getByText('Connection')).toBeTruthy();
