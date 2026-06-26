@@ -4570,26 +4570,39 @@ function AiSkillsSettingsSection({
             ) : null}
           </label>
 
-          <label className="grid gap-1.5">
-            <span className="text-sm font-medium">Description</span>
-            <Input
-              aria-label="Description"
-              disabled={!isWritable}
-              placeholder={
-                draft.kind === 'skill'
-                  ? 'What this skill does...'
-                  : 'What this command does...'
-              }
-              value={draft.description}
-              onBlur={() => void handleAutosave()}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  description: event.target.value,
-                }))
-              }
-            />
-          </label>
+          {isWritable ? (
+            <label className="grid gap-1.5">
+              <span className="text-sm font-medium">Description</span>
+              <Input
+                aria-label="Description"
+                placeholder={
+                  draft.kind === 'skill'
+                    ? 'What this skill does...'
+                    : 'What this command does...'
+                }
+                value={draft.description}
+                onBlur={() => void handleAutosave()}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          ) : (
+            <div className="grid gap-1.5">
+              <span className="text-sm font-medium">Description</span>
+              <p
+                className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-foreground"
+                data-testid="ai-skills-readonly-description"
+              >
+                {draft.description || (
+                  <span className="text-muted-foreground">No description</span>
+                )}
+              </p>
+            </div>
+          )}
 
           {draft.kind === 'command' ? (
             <label className="grid gap-1.5">

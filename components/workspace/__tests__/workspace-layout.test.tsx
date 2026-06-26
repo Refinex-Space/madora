@@ -4491,6 +4491,15 @@ describe('WorkspaceLayout', () => {
     expect(await screen.findByText('Plugin')).toBeTruthy();
     expect(screen.getByText('plugin-skill')).toBeTruthy();
     expect(screen.getByText('project-command')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /plugin-skill/ }));
+    const readonlyDescription = await screen.findByTestId(
+      'ai-skills-readonly-description',
+    );
+    expect(readonlyDescription.textContent).toBe('Plugin skill');
+    expect(readonlyDescription.className).toContain('bg-muted/50');
+    expect(screen.queryByLabelText('Description')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit markdown' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete skill' })).toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Custom Agents' }));
     expect(await screen.findByText('project-agent')).toBeTruthy();
